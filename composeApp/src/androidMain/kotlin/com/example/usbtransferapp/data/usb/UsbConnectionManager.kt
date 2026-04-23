@@ -1,0 +1,95 @@
+package com.example.usbtransferapp.data.usb
+
+import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbDevice
+import android.hardware.usb.UsbDeviceConnection
+import android.hardware.usb.UsbEndpoint
+import javax.inject.Inject
+import android.util.Log
+
+class UsbConnectionManager @Inject constructor(
+    private val wrapper: UsbManagerWrapper
+) : IUsbConnection {
+
+    private  val TAG = "UsbConnManager"
+    private var connection: UsbDeviceConnection? = null
+    private var endpointIn: UsbEndpoint? = null
+    private var endpointOut: UsbEndpoint? = null
+
+
+        fun connect(device: UsbDevice): Boolean {
+            Log.d(TAG, "Connecting to device: ${device.deviceName}")
+            val usbInterface = device.getInterface(0)
+            connection = wrapper.usbManager.openDevice(device)
+
+            if (connection == null) {
+                Log.e(TAG, "Failed to open device connection")
+                return false
+            }
+
+            if (connection?.claimInterface(usbInterface, true) != true) {
+                Log.e(TAG, "Failed to claim interface 0")
+                return false
+            }
+
+            Log.d(TAG, "Interface 0 claimed. Scanning endpoints...")
+            for (i in 0 until usbInterface.endpointCount) {
+                val ep = usbInterface.getEndpoint(i)
+                if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK) {
+                    if (ep.direction == UsbConstants.USB_DIR_IN) {
+                        endpointIn = ep
+                        Log.d(TAG, "Found Bulk IN endpoint: ${ep.address}")
+                    } else {
+                        endpointOut = ep
+                        Log.d(TAG, "Found Bulk OUT endpoint: ${ep.address}")
+                    }
+                }
+            }
+
+            if (endpointIn == null || endpointOut == null) {
+                Log.e(TAG, "Missing bulk endpoints: IN=$endpointIn, OUT=$endpointOut")
+                return false
+            }
+
+            Log.d(TAG, "Connection fully established")
+            return true
+        }
+
+        override fun send(data: ByteArray): Int {
+            Log.d(TAG, "Sending ${data.size} bytes...")
+            val result = connection?.bulkTransfer(endpointOut, data, data.size, 5000) ?: -1
+            if (result >= 0) Log.d(TAG, "Sent $result bytes")
+            else Log.e(TAG, "Failed to send data: result=$result")
+            return result
+        }
+
+        override fun receive(maxSize: Int): ByteArray? {
+            Log.d(TAG, "Receiving up to $maxSize bytes...")
+            val buffer = ByteArray(maxSize)
+            val len = connection?.bulkTransfer(endpointIn, buffer, buffer.size, 5000) ?: -1
+            return if (len > 0) {
+                Log.d(TAG, "Received $len bytes")
+                buffer.copyOf(len)
+            } else {
+                Log.e(TAG, "Failed to receive or no data: len=$len")
+                null
+            }
+        }
+
+        override fun receiveExact(size: Int): ByteArray? {
+            Log.d(TAG, "Receiving exactly $size bytes...")
+            val buffer = ByteArray(size)
+            var offset = 0
+            while (offset < size) {
+                val remaining = size - offset
+                val len = connection?.bulkTransfer(endpointIn, buffer, offset, remaining, 5000) ?: -1
+                if (len <= 0) {
+                    Log.e(TAG, "Failed to receive exact bytes at offset $offset: len=$len")
+                    return null
+                }
+                offset += len
+            }
+            Log.d(TAG, "Successfully received $size bytes")
+            return buffer
+        }
+    }

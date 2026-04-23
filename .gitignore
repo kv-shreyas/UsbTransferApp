@@ -1,0 +1,104 @@
+# =========================
+# Gradle
+# =========================
+.gradle/
+build/
+**/build/
+!gradle/wrapper/gradle-wrapper.jar
+
+# Local Gradle config
+local.properties
+
+# =========================
+# Kotlin / KMP
+# =========================
+.kotlinc/
+.kotlin/
+**/*.kotlin_module
+
+# Kotlin Native (if added later)
+**/kotlin-native/
+**/konan/
+
+# =========================
+# Compose Multiplatform
+# =========================
+.compose/
+composeApp/build/
+
+# Desktop distributions
+composeApp/distributions/
+composeApp/*.dmg
+composeApp/*.msi
+composeApp/*.exe
+
+# =========================
+# Android
+# =========================
+*.apk
+*.aab
+*.ap_
+*.dex
+
+# Android Studio captures
+captures/
+
+# Signing
+*.jks
+*.keystore
+*.pem
+
+# Generated files
+**/generated/
+**/intermediates/
+**/outputs/
+
+# =========================
+# IntelliJ / Android Studio
+# =========================
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Keep shared run configs if needed
+.idea/runConfigurations/
+
+# =========================
+# VS Code (if used)
+# =========================
+.vscode/
+
+# =========================
+# OS Files
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# Environment / Secrets
+# =========================
+.env
+.env.local
+*.properties.local
+
+# =========================
+# Node (if tooling is added)
+# =========================
+node_modules/
+
+# =========================
+# Misc
+# =========================
+tmp/
+temp/
+*.swp
+*~
+
+
