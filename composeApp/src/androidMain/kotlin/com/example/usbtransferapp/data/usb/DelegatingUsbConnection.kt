@@ -22,4 +22,8 @@ class DelegatingUsbConnection @Inject constructor() : IUsbConnection {
     override fun receiveExact(size: Int): ByteArray? {
         return delegate?.receiveExact(size)
     }
+
+    override fun clearBuffer() {
+        delegate?.clearBuffer()
+    }
 }

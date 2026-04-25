@@ -32,8 +32,26 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         handleIntent(intent)
+        
+        checkStoragePermissions()
+
         setContent {
             TransferScreen(viewModel)
+        }
+    }
+
+    private fun checkStoragePermissions() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            if (!android.os.Environment.isExternalStorageManager()) {
+                val intent = Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION)
+                intent.data = android.net.Uri.parse("package:${packageName}")
+                startActivity(intent)
+            }
+        } else {
+            requestPermissions(arrayOf(
+                android.Manifest.permission.READ_EXTERNAL_STORAGE,
+                android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+            ), 1)
         }
     }
 
@@ -43,9 +61,15 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
-        if (intent?.action == UsbManager.ACTION_USB_ACCESSORY_ATTACHED) {
-            Log.d("MainActivity", "Accessory attached via intent")
-            viewModel.detectDevice()
+        when (intent?.action) {
+            UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
+                Log.d("MainActivity", "Accessory attached via intent")
+                viewModel.detectDevice()
+            }
+            UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
+                Log.d("MainActivity", "Accessory detached via intent")
+                viewModel.disconnect()
+            }
         }
     }
 }

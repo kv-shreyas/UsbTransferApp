@@ -64,7 +64,12 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
                         fadeIn() + scaleIn() togetherWith fadeOut() + scaleOut()
                     }
                 ) { targetState ->
-                    StateContent(targetState, onConnect = { viewModel.requestPermissionAndConnect() })
+                    StateContent(
+                        targetState, 
+                        onConnect = { viewModel.requestPermissionAndConnect() },
+                        onDisconnect = { viewModel.disconnect() },
+                        onScan = { viewModel.detectDevice() }
+                    )
                 }
             }
 
@@ -110,7 +115,12 @@ fun StatusHeader(state: UsbUiState) {
 }
 
 @Composable
-fun StateContent(state: UsbUiState, onConnect: () -> Unit) {
+fun StateContent(
+    state: UsbUiState, 
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit,
+    onScan: () -> Unit
+) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -121,6 +131,12 @@ fun StateContent(state: UsbUiState, onConnect: () -> Unit) {
                 BigIcon(Icons.Default.UsbOff, Color.LightGray)
                 Text("No USB Device Found", style = MaterialTheme.typography.headlineSmall)
                 Text("Please connect your desktop via USB cable.", textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+                OutlinedButton(onClick = onScan) {
+                    Icon(Icons.Default.Refresh, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Scan Again")
+                }
             }
             is UsbUiState.DeviceDetected -> {
                 BigIcon(Icons.Default.Devices, MaterialTheme.colorScheme.primary)
@@ -140,6 +156,12 @@ fun StateContent(state: UsbUiState, onConnect: () -> Unit) {
                 BigIcon(Icons.Default.CheckCircle, Color(0xFF4CAF50))
                 Text("Channel Encrypted", style = MaterialTheme.typography.headlineSmall)
                 Text("Waiting for desktop commands...", color = MaterialTheme.colorScheme.secondary)
+                Spacer(Modifier.height(24.dp))
+                TextButton(onClick = onDisconnect, colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)) {
+                    Icon(Icons.Default.LinkOff, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Terminate Session")
+                }
             }
             is UsbUiState.Error -> {
                 BigIcon(Icons.Default.Error, Color.Red)

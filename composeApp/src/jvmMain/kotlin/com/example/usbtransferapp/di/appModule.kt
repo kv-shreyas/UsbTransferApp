@@ -17,10 +17,12 @@ val appModule = module {
     }
 
     factory { ConnectUsbUseCase(get()) }
+    factory { DisconnectUsbUseCase(get()) }
     factory { ReceiveFileUseCase(get()) }
     factory { SendFileUseCase(get()) }
     factory { FetchFileUseCase(get()) }
+    factory { FetchDirectoryUseCase(get()) }
     factory { ListDirectoryUseCase(get()) }
 
-    single { MainViewModel(get(), get(), get(), get(), get()) }
+    single { MainViewModel(get(), get(), get(), get(), get(), get(), get()) }
 }

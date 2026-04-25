@@ -75,6 +75,12 @@ class AoaConnectionManager @Inject constructor(
         }
     }
 
+    override fun clearBuffer() {
+        // available() often fails with "Invalid argument" on USB file descriptors
+        // We'll skip it and rely on the handshake completion state
+        Log.d(TAG, "Buffer clear requested (skipping available() check)")
+    }
+
     fun close() {
         try {
             fileDescriptor?.close()

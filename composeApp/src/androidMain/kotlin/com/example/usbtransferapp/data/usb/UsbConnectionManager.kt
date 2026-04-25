@@ -15,6 +15,7 @@ class UsbConnectionManager @Inject constructor(
     private var connection: UsbDeviceConnection? = null
     private var endpointIn: UsbEndpoint? = null
     private var endpointOut: UsbEndpoint? = null
+    private var currentInterface: android.hardware.usb.UsbInterface? = null
 
 
         fun connect(device: UsbDevice): Boolean {
@@ -32,6 +33,7 @@ class UsbConnectionManager @Inject constructor(
                 return false
             }
 
+            currentInterface = usbInterface
             Log.d(TAG, "Interface 0 claimed. Scanning endpoints...")
             for (i in 0 until usbInterface.endpointCount) {
                 val ep = usbInterface.getEndpoint(i)
@@ -91,5 +93,28 @@ class UsbConnectionManager @Inject constructor(
             }
             Log.d(TAG, "Successfully received $size bytes")
             return buffer
+        }
+
+        override fun clearBuffer() {
+            // Bulk endpoints don't have an easy "available()" so we just do a short read if data is there
+            val temp = ByteArray(1024)
+            while (true) {
+                val len = connection?.bulkTransfer(endpointIn, temp, temp.size, 10) ?: -1
+                if (len <= 0) break
+            }
+        }
+
+        fun close() {
+            try {
+                currentInterface?.let { connection?.releaseInterface(it) }
+                connection?.close()
+            } catch (e: Exception) {
+                Log.e(TAG, "Error closing connection", e)
+            } finally {
+                connection = null
+                endpointIn = null
+                endpointOut = null
+                currentInterface = null
+            }
         }
     }

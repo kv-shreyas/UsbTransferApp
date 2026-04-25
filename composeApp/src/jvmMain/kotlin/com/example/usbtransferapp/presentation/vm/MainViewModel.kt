@@ -2,18 +2,23 @@ package com.example.usbtransferapp.presentation.vm
 
 import com.example.usbtransferapp.domain.usecases.*
 import com.example.usbtransferapp.domain.model.RemoteFile
+import com.example.usbtransferapp.data.converter.AnfToCsvConverter
+import com.example.usbtransferapp.presentation.ui.formatSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import java.io.File
+import java.io.FileInputStream
 
 class MainViewModel(
     private val connectUseCase: ConnectUsbUseCase,
+    private val disconnectUseCase: DisconnectUsbUseCase,
     private val receiveUseCase: ReceiveFileUseCase,
     private val sendUseCase: SendFileUseCase,
     private val fetchUseCase: FetchFileUseCase,
+    private val fetchDirectoryUseCase: FetchDirectoryUseCase,
     private val listDirUseCase: ListDirectoryUseCase
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -24,25 +29,65 @@ class MainViewModel(
     private val _remoteFiles = MutableStateFlow<List<RemoteFile>>(emptyList())
     val remoteFiles: StateFlow<List<RemoteFile>> = _remoteFiles
 
-    private val _currentRemotePath = MutableStateFlow("/")
+    private val _currentRemotePath = MutableStateFlow("/sdcard")
     val currentRemotePath: StateFlow<String> = _currentRemotePath
+
+    data class TransferProgress(
+        val isVisible: Boolean = false,
+        val filename: String = "",
+        val percentage: Int = 0,
+        val speed: String = "0 B/s",
+        val transferred: String = "0 B",
+        val total: String = "0 B",
+        val eta: String = "Unknown",
+        val elapsed: String = "0s"
+    )
+
+    private val _progressState = MutableStateFlow(TransferProgress())
+    val progressState: StateFlow<TransferProgress> = _progressState
+
+    private var transferJob: kotlinx.coroutines.Job? = null
+
+    fun cancelTransfer() {
+        transferJob?.cancel()
+        _progressState.value = TransferProgress()
+        _state.value = "Transfer Cancelled ❌"
+        println("[ViewModel] Transfer cancelled by user.")
+    }
 
     fun connect() {
         scope.launch {
+            println("[ViewModel] Attempting to connect to USB device...")
             _state.value = "Searching..."
             val success = connectUseCase()
             _state.value = if (success) "Ready" else "Connection Failed"
+            println("[ViewModel] Connection status: success=$success")
             if (success) refreshRemoteFiles()
+        }
+    }
+
+    fun disconnect() {
+        scope.launch {
+            println("[ViewModel] Disconnecting device...")
+            cancelTransfer()
+            disconnectUseCase()
+            _remoteFiles.value = emptyList()
+            _currentRemotePath.value = "/sdcard"
+            _state.value = "Idle"
         }
     }
 
     fun refreshRemoteFiles() {
         scope.launch {
             try {
+                println("[ViewModel] Listing directory: ${_currentRemotePath.value}")
                 _state.value = "Listing ${_currentRemotePath.value}..."
-                _remoteFiles.value = listDirUseCase(_currentRemotePath.value)
+                val files = listDirUseCase(_currentRemotePath.value)
+                _remoteFiles.value = files
                 _state.value = "Ready"
+                println("[ViewModel] Successfully listed ${files.size} items.")
             } catch (e: Exception) {
+                println("[ViewModel] Error listing directory: ${e.message}")
                 _state.value = "Error: ${e.message}"
             }
         }
@@ -50,6 +95,7 @@ class MainViewModel(
 
     fun navigateTo(file: RemoteFile) {
         if (file.isDirectory) {
+            println("[ViewModel] Navigating into directory: ${file.path}")
             _currentRemotePath.value = file.path
             refreshRemoteFiles()
         }
@@ -59,33 +105,180 @@ class MainViewModel(
         val current = _currentRemotePath.value
         if (current == "/") return
         val parent = if (current.count { it == '/' } == 1) "/" else current.substringBeforeLast("/")
+        println("[ViewModel] Navigating up from $current to ${if (parent.isEmpty()) "/" else parent}")
         _currentRemotePath.value = if (parent.isEmpty()) "/" else parent
         refreshRemoteFiles()
     }
 
     fun sendFile(file: File) {
         scope.launch {
+            println("[ViewModel] Sending file: ${file.name} (size: ${file.length()} bytes)")
             _state.value = "Sending: ${file.name}..."
-            sendUseCase(file).collect { progress -> _state.value = "Sending: $progress%" }
+            sendUseCase(file).collect { progress -> 
+                _state.value = "Sending: $progress%" 
+                if (progress % 20 == 0) println("[ViewModel] Upload progress: $progress%")
+            }
             _state.value = "Sent Successfully ✅"
+            println("[ViewModel] File sent successfully: ${file.name}")
             refreshRemoteFiles()
         }
     }
 
     fun fetchFile(remoteFile: RemoteFile) {
-        scope.launch {
+        transferJob = scope.launch {
+            if (remoteFile.isDirectory) {
+                fetchDirectory(remoteFile)
+                return@launch
+            }
             val localFile = File("fetched_${remoteFile.name}")
+            val startTime = System.currentTimeMillis()
+            
+            _progressState.value = TransferProgress(
+                isVisible = true, 
+                filename = remoteFile.name, 
+                total = formatSize(remoteFile.size)
+            )
+
+            try {
+                fetchUseCase(remoteFileName = remoteFile.path, localFile = localFile).collect { progress ->
+                    val currentTime = System.currentTimeMillis()
+                    val elapsedSeconds = (currentTime - startTime) / 1000L
+                    val transferredBytes = (remoteFile.size * progress) / 100
+
+                    val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
+                    val speed = formatSize(speedBytesPerSec) + "/s"
+
+                    val eta = if (speedBytesPerSec > 0) {
+                        val remainingBytes = remoteFile.size - transferredBytes
+                        val remainingSeconds = remainingBytes / speedBytesPerSec
+                        formatTime(remainingSeconds)
+                    } else "Calculating..."
+
+                    _progressState.value = _progressState.value.copy(
+                        percentage = progress,
+                        speed = speed,
+                        transferred = formatSize(transferredBytes),
+                        eta = eta,
+                        elapsed = formatTime(elapsedSeconds)
+                    )
+                }
+                _state.value = "Fetched to ${localFile.absolutePath} ✅"
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _state.value = "Error: ${e.message}"
+                }
+            } finally {
+                _progressState.value = TransferProgress() // Hide
+            }
+        }
+    }
+
+    private fun fetchDirectory(remoteFile: RemoteFile) {
+        transferJob = scope.launch {
+            val localFile = File("fetched_${remoteFile.name}.zip")
+            val startTime = System.currentTimeMillis()
+            
+            _progressState.value = TransferProgress(
+                isVisible = true, 
+                filename = "${remoteFile.name}.zip", 
+                total = "Calculating..."
+            )
+
+            try {
+                fetchDirectoryUseCase(remotePath = remoteFile.path, localFile = localFile).collect { progress -> 
+                    val currentTime = System.currentTimeMillis()
+                    val elapsedSeconds = (currentTime - startTime) / 1000L
+                    val transferredBytes = localFile.length()
+
+                    val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
+                    val speed = formatSize(speedBytesPerSec) + "/s"
+
+                    _progressState.value = _progressState.value.copy(
+                        percentage = progress,
+                        speed = speed,
+                        transferred = formatSize(transferredBytes),
+                        total = "ZIP Stream",
+                        eta = "Processing...",
+                        elapsed = formatTime(elapsedSeconds)
+                    )
+                }
+                _state.value = "Fetched ZIP to ${localFile.absolutePath} ✅"
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _state.value = "Error: ${e.message}"
+                }
+            } finally {
+                _progressState.value = TransferProgress() // Hide
+            }
+        }
+    }
+
+    private fun formatTime(seconds: Long): String {
+        return when {
+            seconds < 60 -> "${seconds}s"
+            seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
+            else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
+        }
+    }
+
+    fun convertAnfFile(remoteFile: RemoteFile) {
+        scope.launch {
+            val tempAnf = File("temp_${remoteFile.name}")
+            val csvFile = File(remoteFile.name.substringBeforeLast(".") + ".csv")
+            
+            println("[ViewModel] Conversion requested for: ${remoteFile.name}")
+            println("[ViewModel] Step 1: Fetching remote ANF file to temporary location: ${tempAnf.absolutePath}")
             _state.value = "Fetching: ${remoteFile.name}..."
-            fetchUseCase(remoteFile.path, localFile).collect { progress -> _state.value = "Fetching: $progress%" }
-            _state.value = "Fetched to ${localFile.absolutePath} ✅"
+            fetchUseCase(remoteFile.path, tempAnf).collect { progress -> 
+                _state.value = "Fetching: $progress%" 
+            }
+            
+            println("[ViewModel] Step 2: Converting ${tempAnf.name} to ${csvFile.name}...")
+            _state.value = "Converting to CSV..."
+            try {
+                FileInputStream(tempAnf).use { input ->
+                    AnfToCsvConverter.convert(input, csvFile)
+                }
+                _state.value = "Converted to ${csvFile.absolutePath} ✅"
+                println("[ViewModel] Conversion successful! CSV file created at: ${csvFile.absolutePath}")
+            } catch (e: Exception) {
+                println("[ViewModel] Conversion error: ${e.message}")
+                _state.value = "Conversion Error: ${e.message}"
+            } finally {
+                println("[ViewModel] Step 3: Cleaning up temporary file: ${tempAnf.absolutePath}")
+                tempAnf.delete()
+            }
+        }
+    }
+
+    fun convertLocalAnfFile(file: File) {
+        scope.launch {
+            val csvFile = File(file.parent, file.name.substringBeforeLast(".") + ".csv")
+            println("[ViewModel] Local conversion requested for: ${file.absolutePath}")
+            _state.value = "Converting ${file.name}..."
+            
+            try {
+                FileInputStream(file).use { input ->
+                    AnfToCsvConverter.convert(input, csvFile)
+                }
+                _state.value = "Converted to ${csvFile.absolutePath} ✅"
+                println("[ViewModel] Local conversion successful: ${csvFile.absolutePath}")
+            } catch (e: Exception) {
+                println("[ViewModel] Local conversion error: ${e.message}")
+                _state.value = "Conversion Error: ${e.message}"
+            }
         }
     }
 
     fun receiveFile() {
         scope.launch {
             val file = File("received.bin")
-            receiveUseCase(file).collect { bytes -> _state.value = "Received: $bytes bytes" }
+            println("[ViewModel] Receiving data to: ${file.absolutePath}")
+            receiveUseCase(file).collect { bytes -> 
+                _state.value = "Received: $bytes bytes" 
+            }
             _state.value = "Completed ✅"
+            println("[ViewModel] Data reception completed.")
         }
     }
 }

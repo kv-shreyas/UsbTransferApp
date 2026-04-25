@@ -1,8 +1,6 @@
 package com.example.usbtransferapp.data.usb
 
-import org.usb4java.Device
-import org.usb4java.DeviceHandle
-import org.usb4java.LibUsb
+import org.usb4java.*
 import java.nio.ByteBuffer
 import java.nio.IntBuffer
 import kotlin.experimental.or
@@ -11,8 +9,9 @@ class UsbConnection {
 
     private var handle: DeviceHandle? = null
     
-    private val ENDPOINT_IN = 0x81.toByte()
-    private val ENDPOINT_OUT = 0x01.toByte()
+    // Default endpoints for AOA, but we will auto-detect them if possible
+    private var endpointIn = 0x81.toByte()
+    private var endpointOut = 0x01.toByte()
 
     // AOA Constants
     private val ACCESSORY_GET_PROTOCOL = 51
@@ -24,6 +23,9 @@ class UsbConnection {
         if (LibUsb.open(device, tempHandle) != LibUsb.SUCCESS) return false
 
         try {
+            // Detach kernel driver if necessary to ensure control transfers work
+            LibUsb.detachKernelDriver(tempHandle, 0)
+
             // 1. Get Protocol
             val protocolBuffer = ByteBuffer.allocateDirect(2)
             val protocolResult = LibUsb.controlTransfer(
@@ -36,7 +38,8 @@ class UsbConnection {
                 2000
             )
             if (protocolResult < 0) return false
-            val protocol = protocolBuffer.getShort(0)
+            protocolBuffer.rewind()
+            val protocol = protocolBuffer.getShort()
             if (protocol < 1) return false
 
             // 2. Send Strings (Manufacturer, Model, etc.)
@@ -50,9 +53,11 @@ class UsbConnection {
             )
 
             for (i in strings.indices) {
-                val stringBuffer = ByteBuffer.allocateDirect(strings[i].length + 1)
-                stringBuffer.put(strings[i].toByteArray())
+                val data = strings[i].toByteArray()
+                val stringBuffer = ByteBuffer.allocateDirect(data.size + 1)
+                stringBuffer.put(data)
                 stringBuffer.put(0x00.toByte())
+                stringBuffer.rewind()
 
                 val result = LibUsb.controlTransfer(
                     tempHandle,
@@ -87,61 +92,170 @@ class UsbConnection {
     fun open(device: Device): Boolean {
         handle = DeviceHandle()
 
-        if (LibUsb.open(device, handle) != LibUsb.SUCCESS) return false
+        val result = LibUsb.open(device, handle)
+        if (result != LibUsb.SUCCESS) {
+            println("[UsbConnection] Error: Failed to open device handle. Code: $result (${LibUsb.strError(result)})")
+            return false
+        }
 
-        // Attempt to detach kernel driver (only relevant on Linux)
-        val result = LibUsb.detachKernelDriver(handle, 0)
-        if (result != LibUsb.SUCCESS && result != LibUsb.ERROR_NOT_SUPPORTED && result != LibUsb.ERROR_NOT_FOUND) {
-            // Optional: log error if it wasn't a "not supported" or "not found" error
+        // Enable auto-detach if supported (LibUsb 1.0.16+)
+        LibUsb.setAutoDetachKernelDriver(handle, true)
+
+        // Auto-detect endpoints and interface
+        val endpointInfo = findAoaEndpoints(device)
+        if (endpointInfo == null) {
+            println("[UsbConnection] Error: Could not find AOA bulk endpoints.")
+            LibUsb.close(handle)
+            return false
         }
         
-        if (LibUsb.claimInterface(handle, 0) != LibUsb.SUCCESS) return false
+        val ifaceNum = endpointInfo.interfaceNumber
+        endpointIn = endpointInfo.inAddr
+        endpointOut = endpointInfo.outAddr
+        
+        println("[UsbConnection] Using Interface $ifaceNum, IN=${String.format("0x%02X", endpointIn)}, OUT=${String.format("0x%02X", endpointOut)}")
+
+        val claimResult = LibUsb.claimInterface(handle, ifaceNum)
+        if (claimResult != LibUsb.SUCCESS) {
+            println("[UsbConnection] Error: Failed to claim interface $ifaceNum. Code: $claimResult (${LibUsb.strError(claimResult)})")
+            LibUsb.close(handle)
+            handle = null
+            return false
+        }
         
         return true
     }
 
-    fun bulkRead(): ByteArray? {
-        if (handle == null) return null
+    data class AoaEndpoints(val interfaceNumber: Int, val inAddr: Byte, val outAddr: Byte)
+
+    private fun findAoaEndpoints(device: Device): AoaEndpoints? {
+        val desc = DeviceDescriptor()
+        LibUsb.getDeviceDescriptor(device, desc)
         
-        // Increase buffer to handle ciphertext + IV + TAG + Header
+        val config = ConfigDescriptor()
+        if (LibUsb.getConfigDescriptor(device, 0, config) != LibUsb.SUCCESS) return null
+        
+        try {
+            for (i in 0 until config.bNumInterfaces().toInt()) {
+                val iface = config.iface()[i]
+                for (j in 0 until iface.numAltsetting()) {
+                    val alt = iface.altsetting()[j]
+                    var inEp: Byte? = null
+                    var outEp: Byte? = null
+                    
+                    for (k in 0 until alt.bNumEndpoints().toInt()) {
+                        val ep = alt.endpoint()[k]
+                        val addr = ep.bEndpointAddress()
+                        val attr = ep.bmAttributes()
+                        
+                        if ((attr.toInt() and LibUsb.TRANSFER_TYPE_MASK.toInt()) == LibUsb.TRANSFER_TYPE_BULK.toInt()) {
+                            if ((addr.toInt() and LibUsb.ENDPOINT_DIR_MASK.toInt()) == LibUsb.ENDPOINT_IN.toInt()) {
+                                inEp = addr
+                            } else {
+                                outEp = addr
+                            }
+                        }
+                    }
+                    
+                    if (inEp != null && outEp != null) {
+                        return AoaEndpoints(i, inEp, outEp)
+                    }
+                }
+            }
+        } finally {
+            LibUsb.freeConfigDescriptor(config)
+        }
+        return null
+    }
+
+    private fun detectEndpoints(device: Device) {
+        // No longer used, replaced by findAoaEndpoints
+    }
+
+    fun bulkRead(): ByteArray? {
+        if (handle == null) {
+            println("[UsbConnection] Error: bulkRead failed - handle is null.")
+            return null
+        }
+        
         val buffer = ByteBuffer.allocateDirect(128 * 1024) 
         val transferred = IntBuffer.allocate(1)
 
         val result = LibUsb.bulkTransfer(
             handle,
-            ENDPOINT_IN,
+            endpointIn,
             buffer,
             transferred,
-            10000 // 10s timeout for stability
+            20000 // 20s
         )
 
-        if (result != LibUsb.SUCCESS) return null
+        if (result != LibUsb.SUCCESS) {
+            println("[UsbConnection] Error: bulkRead failed. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointIn)}")
+            return null
+        }
 
         val size = transferred.get()
-        if (size <= 0) return ByteArray(0)
+        if (size < 0) return null
         
         val data = ByteArray(size)
+        buffer.rewind()
         buffer.get(data, 0, size)
 
         return data
     }
 
+    fun clearInputBuffer() {
+        if (handle == null) return
+        val buffer = ByteBuffer.allocateDirect(4096)
+        val transferred = IntBuffer.allocate(1)
+        var result: Int
+        do {
+            transferred.rewind() // Reset position
+            // Very short timeout to just flush what's already there
+            result = LibUsb.bulkTransfer(handle, endpointIn, buffer, transferred, 10)
+        } while (result == LibUsb.SUCCESS && transferred.get(0) > 0)
+    }
+
     fun bulkWrite(data: ByteArray): Boolean {
-        if (handle == null) return false
+        if (handle == null) {
+            println("[UsbConnection] Error: bulkWrite failed - handle is null.")
+            return false
+        }
         
         val buffer = ByteBuffer.allocateDirect(data.size)
         buffer.put(data)
+        buffer.rewind()
+
         val transferred = IntBuffer.allocate(1)
 
-        val result = LibUsb.bulkTransfer(
-            handle,
-            ENDPOINT_OUT,
-            buffer,
-            transferred,
-            10000
-        )
+        // Add small retry for robustness
+        var attempt = 0
+        var result: Int
+        do {
+            result = LibUsb.bulkTransfer(
+                handle,
+                endpointOut,
+                buffer,
+                transferred,
+                20000 // 20s
+            )
+            if (result == LibUsb.SUCCESS) break
+            attempt++
+            if (attempt < 2) Thread.sleep(100)
+        } while (attempt < 2)
 
-        return result == LibUsb.SUCCESS && transferred.get() == data.size
+        if (result != LibUsb.SUCCESS) {
+            println("[UsbConnection] Error: bulkWrite failed after $attempt attempts. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointOut)}")
+            return false
+        }
+
+        val sent = transferred.get()
+        if (sent != data.size) {
+            println("[UsbConnection] Error: Incomplete write. Expected ${data.size} bytes, sent $sent bytes.")
+            return false
+        }
+
+        return true
     }
 
     fun close() {
