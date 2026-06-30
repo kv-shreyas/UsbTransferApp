@@ -73,12 +73,13 @@ class UsbRepositoryImpl(
         }
         
         println("[UsbRepo] USB Pipe established. Performing handshake...")
+        leftoverBuffer = ByteArray(0)
+        connection.clearInputBuffer()
         val handshakeSuccess = performHandshake()
         if (handshakeSuccess) {
             println("[UsbRepo] Handshake successful. Waiting for remote READY signal...")
-            connection.clearInputBuffer()
-            val readyPacket = receiveEncrypted()
-            if (readyPacket != null && readyPacket.isNotEmpty() && readyPacket[0] == Packet.TYPE_ACK) {
+            val readyPacket = readNextPacket()
+            if (readyPacket != null && readyPacket.type == Packet.TYPE_ACK) {
                 println("[UsbRepo] Remote READY signal received. Secure channel SYNCED.")
             } else {
                 println("[UsbRepo] Warning: Did not receive expected READY signal, continuing anyway...")
@@ -102,13 +103,8 @@ class UsbRepositoryImpl(
             }
             
             println("[UsbRepo] Handshake Step 2: Waiting for remote public key...")
-            val response = connection.bulkRead() ?: run {
-                println("[UsbRepo] Handshake Error: Read timeout.")
-                return false
-            }
-            
-            val packet = Packet.parse(response) ?: run {
-                println("[UsbRepo] Handshake Error: Failed to parse packet (Size: ${response.size} bytes).")
+            val packet = readNextPacket() ?: run {
+                println("[UsbRepo] Handshake Error: Read timeout or parse failed.")
                 return false
             }
             
@@ -138,12 +134,32 @@ class UsbRepositoryImpl(
         return success
     }
 
-    private fun receiveEncrypted(): ByteArray? {
-        val raw = connection.bulkRead() ?: run {
-            return null
+    private var leftoverBuffer = ByteArray(0)
+
+    private fun readNextPacket(): Packet.PacketData? {
+        while (leftoverBuffer.size < Packet.HEADER_SIZE) {
+            val raw = connection.bulkRead() ?: return null
+            leftoverBuffer = leftoverBuffer + raw
         }
-        val packet = Packet.parse(raw) ?: run {
-            println("[UsbRepo] Error: Failed to parse incoming packet.")
+        
+        val bb = ByteBuffer.wrap(leftoverBuffer)
+        val type = bb.get()
+        val length = bb.int
+        
+        while (leftoverBuffer.size < Packet.HEADER_SIZE + length) {
+            val raw = connection.bulkRead() ?: return null
+            leftoverBuffer = leftoverBuffer + raw
+        }
+        
+        val payload = leftoverBuffer.copyOfRange(Packet.HEADER_SIZE, Packet.HEADER_SIZE + length)
+        leftoverBuffer = leftoverBuffer.copyOfRange(Packet.HEADER_SIZE + length, leftoverBuffer.size)
+        
+        return Packet.PacketData(type, length, payload)
+    }
+
+    private fun receiveEncrypted(): ByteArray? {
+        val packet = readNextPacket() ?: run {
+            println("[UsbRepo] Error: Failed to read incoming packet.")
             return null
         }
         if (packet.type != Packet.TYPE_DATA) {
@@ -175,9 +191,10 @@ class UsbRepositoryImpl(
         println("[UsbRepo] Data stream ended.")
     }
 
-    override fun sendFile(file: File): Flow<Int> = flow {
-        println("[UsbRepo] --- UPLOAD START: ${file.name} ---")
-        val fileNameBytes = file.name.toByteArray()
+    override fun sendFile(file: File, destinationPath: String): Flow<Int> = flow {
+        println("[UsbRepo] --- UPLOAD START: ${file.name} to $destinationPath ---")
+        val fullRemotePath = if (destinationPath.endsWith("/")) destinationPath + file.name else "$destinationPath/${file.name}"
+        val fileNameBytes = fullRemotePath.toByteArray()
         val fileSize = file.length()
         
         val header = ByteBuffer.allocate(1 + 4 + fileNameBytes.size + 8)
@@ -195,7 +212,7 @@ class UsbRepositoryImpl(
         val fis = FileInputStream(file)
         val buffer = ByteArray(16 * 1024)
         var totalSent = 0L
-        try {
+        fis.use { fis ->
             while (totalSent < fileSize) {
                 val read = fis.read(buffer)
                 if (read == -1) break
@@ -204,12 +221,11 @@ class UsbRepositoryImpl(
                     totalSent += read
                     emit(((totalSent * 100) / fileSize).toInt())
                 } else {
-                    println("[UsbRepo] Error: Failed to send chunk at $totalSent bytes.")
-                    break
+                    val errorMsg = "Failed to send chunk at $totalSent bytes."
+                    println("[UsbRepo] Error: $errorMsg")
+                    throw java.io.IOException(errorMsg)
                 }
             }
-        } finally {
-            fis.close()
         }
         println("[UsbRepo] --- UPLOAD COMPLETE: $totalSent bytes sent ---")
     }

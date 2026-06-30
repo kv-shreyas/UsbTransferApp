@@ -22,58 +22,42 @@ class UsbDataSource @Inject constructor(
 
     private var aesKey: SecretKey? = null
 
-    /**
-     * Reads a full packet by reading the available stream data.
-     * Improved to handle cases where header and payload arrive in the same USB frame.
-     */
+    private var leftoverBuffer = ByteArray(0)
+
     private suspend fun receivePacket(): Packet.PacketData? = withContext(Dispatchers.IO) {
-        Log.d(TAG, "receivePacket: Waiting for data...")
-        
-        // Read a large chunk (USB bulk packets are typically 512 or 1024 bytes)
-        val rawData = manager.receive(16384) ?: run {
-            Log.e(TAG, "receivePacket: Failed to read from USB stream (null response)")
-            return@withContext null
+        while (leftoverBuffer.size < Packet.HEADER_SIZE) {
+            val rawData = manager.receive(16384) ?: run {
+                Log.e(TAG, "receivePacket: Failed to read from USB stream")
+                return@withContext null
+            }
+            leftoverBuffer = leftoverBuffer + rawData
         }
 
-        if (rawData.size < Packet.HEADER_SIZE) {
-            Log.e(TAG, "receivePacket: Received incomplete header (${rawData.size} bytes)")
-            return@withContext null
-        }
-
-        val bb = ByteBuffer.wrap(rawData)
+        val bb = ByteBuffer.wrap(leftoverBuffer)
         val type = bb.get()
         val length = bb.int
 
-        Log.d(TAG, "receivePacket: Detected packet Type=$type, Length=$length")
-
-        if (length < 0 || length > 1024 * 1024) {
+        if (length < 0 || length > 1024 * 1024 * 10) { // 10MB limit
             Log.e(TAG, "receivePacket: Invalid packet length: $length")
             return@withContext null
         }
 
-        // Extract payload from the same buffer if possible
-        val payload = if (length > 0) {
-            val remaining = rawData.size - Packet.HEADER_SIZE
-            if (remaining >= length) {
-                // Entire payload was in the first read
-                rawData.copyOfRange(Packet.HEADER_SIZE, Packet.HEADER_SIZE + length)
-            } else {
-                Log.w(TAG, "receivePacket: Payload fragmented. Need $length, got $remaining. Reading more...")
-                // If fragmented (rare for small handshake packets), read the rest
-                val rest = manager.receiveExact(length - remaining) ?: return@withContext null
-                val combined = ByteArray(length)
-                System.arraycopy(rawData, Packet.HEADER_SIZE, combined, 0, remaining)
-                System.arraycopy(rest, 0, combined, remaining, length - remaining)
-                combined
+        while (leftoverBuffer.size < Packet.HEADER_SIZE + length) {
+            val rawData = manager.receive(16384) ?: run {
+                Log.e(TAG, "receivePacket: Failed to read full payload from USB stream")
+                return@withContext null
             }
-        } else {
-            ByteArray(0)
+            leftoverBuffer = leftoverBuffer + rawData
         }
+
+        val payload = leftoverBuffer.copyOfRange(Packet.HEADER_SIZE, Packet.HEADER_SIZE + length)
+        leftoverBuffer = leftoverBuffer.copyOfRange(Packet.HEADER_SIZE + length, leftoverBuffer.size)
 
         Packet.PacketData(type, length, payload)
     }
 
     suspend fun performHandshake(): Boolean = withContext(Dispatchers.IO) {
+        leftoverBuffer = ByteArray(0)
         Log.i(TAG, "Handshake: STARTING")
         val keyPair = keyExchange.generateKeyPair()
 

@@ -111,16 +111,56 @@ class MainViewModel(
     }
 
     fun sendFile(file: File) {
-        scope.launch {
-            println("[ViewModel] Sending file: ${file.name} (size: ${file.length()} bytes)")
+        val destinationPath = _currentRemotePath.value
+        transferJob = scope.launch {
+            println("[ViewModel] Sending file: ${file.name} (size: ${file.length()} bytes) to $destinationPath")
             _state.value = "Sending: ${file.name}..."
-            sendUseCase(file).collect { progress -> 
-                _state.value = "Sending: $progress%" 
-                if (progress % 20 == 0) println("[ViewModel] Upload progress: $progress%")
+
+            val startTime = System.currentTimeMillis()
+            val fileSize = file.length()
+            
+            _progressState.value = TransferProgress(
+                isVisible = true,
+                filename = file.name,
+                total = formatSize(fileSize)
+            )
+
+            try {
+                sendUseCase(file, destinationPath).collect { progress -> 
+                    _state.value = "Sending: $progress%" 
+                    if (progress % 2 == 0) println("[ViewModel] Upload progress: $progress%")
+
+                    val currentTime = System.currentTimeMillis()
+                    val elapsedSeconds = (currentTime - startTime) / 1000L
+                    val transferredBytes = (fileSize * progress) / 100
+
+                    val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
+                    val speed = formatSize(speedBytesPerSec) + "/s"
+
+                    val eta = if (speedBytesPerSec > 0) {
+                        val remainingBytes = fileSize - transferredBytes
+                        val remainingSeconds = remainingBytes / speedBytesPerSec
+                        formatTime(remainingSeconds)
+                    } else "Calculating..."
+
+                    _progressState.value = _progressState.value.copy(
+                        percentage = progress,
+                        speed = speed,
+                        transferred = formatSize(transferredBytes),
+                        eta = eta,
+                        elapsed = formatTime(elapsedSeconds)
+                    )
+                }
+                _state.value = "Sent Successfully ✅"
+                println("[ViewModel] File sent successfully: ${file.name}")
+                refreshRemoteFiles()
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _state.value = "Error: ${e.message}"
+                }
+            } finally {
+                _progressState.value = TransferProgress() // Hide
             }
-            _state.value = "Sent Successfully ✅"
-            println("[ViewModel] File sent successfully: ${file.name}")
-            refreshRemoteFiles()
         }
     }
 

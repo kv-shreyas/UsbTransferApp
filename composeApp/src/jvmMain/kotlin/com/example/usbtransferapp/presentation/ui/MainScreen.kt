@@ -61,7 +61,7 @@ fun MainScreen(vm: MainViewModel) {
 
                 Spacer(Modifier.height(16.dp))
                 
-                ActionBar(onSendFile = {
+                ActionBar(currentPath = currentPath, onSendFile = {
                     val fileChooser = JFileChooser()
                     if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
                         vm.sendFile(fileChooser.selectedFile)
@@ -302,7 +302,7 @@ fun FileRow(
 }
 
 @Composable
-fun ActionBar(onSendFile: () -> Unit) {
+fun ActionBar(currentPath: String, onSendFile: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
@@ -311,9 +311,12 @@ fun ActionBar(onSendFile: () -> Unit) {
         Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
             Icon(Icons.Default.CloudUpload, null, tint = MaterialTheme.colorScheme.primary)
             Spacer(Modifier.width(16.dp))
-            Text("Want to transfer files to Android?", modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Upload file to Android device", fontWeight = FontWeight.Medium)
+                Text("Destination: $currentPath", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+            }
             Button(onClick = onSendFile) {
-                Text("Upload to Device")
+                Text("Upload to Current Folder")
             }
         }
     }

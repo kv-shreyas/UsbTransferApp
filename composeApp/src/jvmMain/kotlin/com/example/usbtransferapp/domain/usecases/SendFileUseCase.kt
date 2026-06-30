@@ -5,5 +5,5 @@ import kotlinx.coroutines.flow.Flow
 import java.io.File
 
 class SendFileUseCase(private val repo: UsbRepository) {
-    operator fun invoke(file: File): Flow<Int> = repo.sendFile(file)
+    operator fun invoke(file: File, destinationPath: String): Flow<Int> = repo.sendFile(file, destinationPath)
 }

@@ -183,21 +183,31 @@ class UsbCommandProcessor @Inject constructor(
         
         Log.d(TAG, "handleReceive: File = $fileName ($fileSize bytes)")
         
-        val file = resolveFile(fileName)
-        file.parentFile?.mkdirs()
+        var fos: FileOutputStream? = null
+        try {
+            val file = resolveFile(fileName)
+            file.parentFile?.mkdirs()
+            fos = FileOutputStream(file)
+        } catch (e: Exception) {
+            Log.e(TAG, "handleReceive: Failed to open FileOutputStream for $fileName. Sinking data to keep pipe clear.", e)
+        }
         
-        val fos = FileOutputStream(file)
         try {
             var received = 0L
             while (received < fileSize) {
                 val chunk = dataSource.receiveSecure() ?: break
-                fos.write(chunk)
+                fos?.write(chunk)
                 received += chunk.size
             }
         } finally {
-            fos.close()
+            fos?.close()
         }
-        Log.d(TAG, "handleReceive: Successfully received $fileName")
+        
+        if (fos != null) {
+            Log.d(TAG, "handleReceive: Successfully received $fileName")
+        } else {
+            Log.w(TAG, "handleReceive: Finished sinking $fileName (failed to save)")
+        }
     }
 
     private suspend fun handleFetch(buffer: ByteBuffer) {
