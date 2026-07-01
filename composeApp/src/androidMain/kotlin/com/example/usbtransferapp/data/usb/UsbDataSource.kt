@@ -22,18 +22,43 @@ class UsbDataSource @Inject constructor(
 
     private var aesKey: SecretKey? = null
 
-    private var leftoverBuffer = ByteArray(0)
+    // Optimized circular/sliding buffer to prevent O(N^2) array copies and GC pressure
+    private var leftoverBuffer = ByteArray(1024 * 1024 * 5) // 5MB buffer
+    private var bufferHead = 0
+    private var bufferTail = 0
+
+    private fun availableBytes() = bufferTail - bufferHead
+
+    private fun compactBuffer() {
+        if (bufferHead > 0) {
+            val len = availableBytes()
+            System.arraycopy(leftoverBuffer, bufferHead, leftoverBuffer, 0, len)
+            bufferTail = len
+            bufferHead = 0
+        }
+    }
 
     private suspend fun receivePacket(): Packet.PacketData? = withContext(Dispatchers.IO) {
-        while (leftoverBuffer.size < Packet.HEADER_SIZE) {
-            val rawData = manager.receive(16384) ?: run {
+        while (availableBytes() < Packet.HEADER_SIZE) {
+            compactBuffer()
+            // Read in larger chunks (256KB) to reduce JNI calls
+            val rawData = manager.receive(256 * 1024) ?: run {
                 Log.e(TAG, "receivePacket: Failed to read from USB stream")
                 return@withContext null
             }
-            leftoverBuffer = leftoverBuffer + rawData
+            if (bufferTail + rawData.size > leftoverBuffer.size) {
+                // Expand buffer if needed (should be rare with 5MB)
+                val newBuffer = ByteArray(leftoverBuffer.size * 2)
+                System.arraycopy(leftoverBuffer, bufferHead, newBuffer, 0, availableBytes())
+                leftoverBuffer = newBuffer
+                bufferTail = availableBytes()
+                bufferHead = 0
+            }
+            System.arraycopy(rawData, 0, leftoverBuffer, bufferTail, rawData.size)
+            bufferTail += rawData.size
         }
 
-        val bb = ByteBuffer.wrap(leftoverBuffer)
+        val bb = ByteBuffer.wrap(leftoverBuffer, bufferHead, availableBytes())
         val type = bb.get()
         val length = bb.int
 
@@ -42,22 +67,34 @@ class UsbDataSource @Inject constructor(
             return@withContext null
         }
 
-        while (leftoverBuffer.size < Packet.HEADER_SIZE + length) {
-            val rawData = manager.receive(16384) ?: run {
+        while (availableBytes() < Packet.HEADER_SIZE + length) {
+            compactBuffer()
+            val rawData = manager.receive(256 * 1024) ?: run {
                 Log.e(TAG, "receivePacket: Failed to read full payload from USB stream")
                 return@withContext null
             }
-            leftoverBuffer = leftoverBuffer + rawData
+            if (bufferTail + rawData.size > leftoverBuffer.size) {
+                val newBuffer = ByteArray(leftoverBuffer.size * 2)
+                System.arraycopy(leftoverBuffer, bufferHead, newBuffer, 0, availableBytes())
+                leftoverBuffer = newBuffer
+                bufferTail = availableBytes()
+                bufferHead = 0
+            }
+            System.arraycopy(rawData, 0, leftoverBuffer, bufferTail, rawData.size)
+            bufferTail += rawData.size
         }
 
-        val payload = leftoverBuffer.copyOfRange(Packet.HEADER_SIZE, Packet.HEADER_SIZE + length)
-        leftoverBuffer = leftoverBuffer.copyOfRange(Packet.HEADER_SIZE + length, leftoverBuffer.size)
+        val payload = ByteArray(length)
+        System.arraycopy(leftoverBuffer, bufferHead + Packet.HEADER_SIZE, payload, 0, length)
+        
+        bufferHead += Packet.HEADER_SIZE + length
 
         Packet.PacketData(type, length, payload)
     }
 
     suspend fun performHandshake(): Boolean = withContext(Dispatchers.IO) {
-        leftoverBuffer = ByteArray(0)
+        bufferHead = 0
+        bufferTail = 0
         Log.i(TAG, "Handshake: STARTING")
         val keyPair = keyExchange.generateKeyPair()
 

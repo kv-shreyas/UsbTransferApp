@@ -100,11 +100,15 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.example.usbtransferapp.MainKt"
-
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "com.example.usbtransferapp"
+            packageName = "USB Transfer App"
             packageVersion = "1.0.0"
+/*
+            proguard {
+                isEnabled.set(true)
+                configurationFiles.from(files("proguard-rules.pro"))
+            }*/
         }
     }
 }

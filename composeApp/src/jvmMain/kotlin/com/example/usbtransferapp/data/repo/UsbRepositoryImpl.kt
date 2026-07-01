@@ -73,7 +73,8 @@ class UsbRepositoryImpl(
         }
         
         println("[UsbRepo] USB Pipe established. Performing handshake...")
-        leftoverBuffer = ByteArray(0)
+        bufferHead = 0
+        bufferTail = 0
         connection.clearInputBuffer()
         val handshakeSuccess = performHandshake()
         if (handshakeSuccess) {
@@ -134,25 +135,58 @@ class UsbRepositoryImpl(
         return success
     }
 
-    private var leftoverBuffer = ByteArray(0)
+    private var leftoverBuffer = ByteArray(1024 * 1024 * 5) // 5MB buffer
+    private var bufferHead = 0
+    private var bufferTail = 0
+
+    private fun availableBytes() = bufferTail - bufferHead
+
+    private fun compactBuffer() {
+        if (bufferHead > 0) {
+            val len = availableBytes()
+            System.arraycopy(leftoverBuffer, bufferHead, leftoverBuffer, 0, len)
+            bufferTail = len
+            bufferHead = 0
+        }
+    }
 
     private fun readNextPacket(): Packet.PacketData? {
-        while (leftoverBuffer.size < Packet.HEADER_SIZE) {
+        while (availableBytes() < Packet.HEADER_SIZE) {
+            compactBuffer()
             val raw = connection.bulkRead() ?: return null
-            leftoverBuffer = leftoverBuffer + raw
+            if (bufferTail + raw.size > leftoverBuffer.size) {
+                val newBuffer = ByteArray(leftoverBuffer.size * 2)
+                System.arraycopy(leftoverBuffer, bufferHead, newBuffer, 0, availableBytes())
+                leftoverBuffer = newBuffer
+                bufferTail = availableBytes()
+                bufferHead = 0
+            }
+            System.arraycopy(raw, 0, leftoverBuffer, bufferTail, raw.size)
+            bufferTail += raw.size
         }
         
-        val bb = ByteBuffer.wrap(leftoverBuffer)
+        val bb = ByteBuffer.wrap(leftoverBuffer, bufferHead, availableBytes())
         val type = bb.get()
         val length = bb.int
         
-        while (leftoverBuffer.size < Packet.HEADER_SIZE + length) {
+        while (availableBytes() < Packet.HEADER_SIZE + length) {
+            compactBuffer()
             val raw = connection.bulkRead() ?: return null
-            leftoverBuffer = leftoverBuffer + raw
+            if (bufferTail + raw.size > leftoverBuffer.size) {
+                val newBuffer = ByteArray(leftoverBuffer.size * 2)
+                System.arraycopy(leftoverBuffer, bufferHead, newBuffer, 0, availableBytes())
+                leftoverBuffer = newBuffer
+                bufferTail = availableBytes()
+                bufferHead = 0
+            }
+            System.arraycopy(raw, 0, leftoverBuffer, bufferTail, raw.size)
+            bufferTail += raw.size
         }
         
-        val payload = leftoverBuffer.copyOfRange(Packet.HEADER_SIZE, Packet.HEADER_SIZE + length)
-        leftoverBuffer = leftoverBuffer.copyOfRange(Packet.HEADER_SIZE + length, leftoverBuffer.size)
+        val payload = ByteArray(length)
+        System.arraycopy(leftoverBuffer, bufferHead + Packet.HEADER_SIZE, payload, 0, length)
+        
+        bufferHead += Packet.HEADER_SIZE + length
         
         return Packet.PacketData(type, length, payload)
     }
@@ -210,7 +244,7 @@ class UsbRepositoryImpl(
         }
         
         val fis = FileInputStream(file)
-        val buffer = ByteArray(16 * 1024)
+        val buffer = ByteArray(256 * 1024)
         var totalSent = 0L
         fis.use { fis ->
             while (totalSent < fileSize) {

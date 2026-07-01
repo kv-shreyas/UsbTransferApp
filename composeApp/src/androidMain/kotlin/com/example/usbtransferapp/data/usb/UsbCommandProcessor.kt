@@ -80,7 +80,7 @@ class UsbCommandProcessor @Inject constructor(
             
             val fis = FileInputStream(tempZip)
             fis.use { input ->
-                val streamBuffer = ByteArray(16 * 1024)
+                val streamBuffer = ByteArray(256 * 1024)
                 var read: Int
                 while (input.read(streamBuffer).also { read = it } != -1) {
                     val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)
@@ -230,7 +230,7 @@ class UsbCommandProcessor @Inject constructor(
         
         val fis = FileInputStream(file)
         try {
-            val streamBuffer = ByteArray(16 * 1024)
+            val streamBuffer = ByteArray(256 * 1024)
             var read: Int
             while (fis.read(streamBuffer).also { read = it } != -1) {
                 val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)

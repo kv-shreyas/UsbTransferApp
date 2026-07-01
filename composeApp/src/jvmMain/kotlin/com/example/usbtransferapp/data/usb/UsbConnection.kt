@@ -178,7 +178,7 @@ class UsbConnection {
             return null
         }
         
-        val buffer = ByteBuffer.allocateDirect(128 * 1024) 
+        val buffer = ByteBuffer.allocateDirect(300 * 1024) 
         val transferred = IntBuffer.allocate(1)
 
         val result = LibUsb.bulkTransfer(

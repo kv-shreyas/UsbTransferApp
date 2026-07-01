@@ -57,41 +57,47 @@ class UsbConnectionManager @Inject constructor(
             return true
         }
 
+        private val MAX_USBFS_BUFFER_SIZE = 16384
+
         override fun send(data: ByteArray): Int {
-            Log.d(TAG, "Sending ${data.size} bytes...")
-            val result = connection?.bulkTransfer(endpointOut, data, data.size, 5000) ?: -1
-            if (result >= 0) Log.d(TAG, "Sent $result bytes")
-            else Log.e(TAG, "Failed to send data: result=$result")
-            return result
+            var offset = 0
+            while (offset < data.size) {
+                val chunk = minOf(MAX_USBFS_BUFFER_SIZE, data.size - offset)
+                val result = connection?.bulkTransfer(endpointOut, data, offset, chunk, 5000) ?: -1
+                if (result < 0) {
+                    Log.e(TAG, "Failed to send data at offset $offset (result=$result)")
+                    return -1
+                }
+                offset += result
+            }
+            return data.size
         }
 
         override fun receive(maxSize: Int): ByteArray? {
-            Log.d(TAG, "Receiving up to $maxSize bytes...")
-            val buffer = ByteArray(maxSize)
+            val chunk = minOf(MAX_USBFS_BUFFER_SIZE, maxSize)
+            val buffer = ByteArray(chunk)
             val len = connection?.bulkTransfer(endpointIn, buffer, buffer.size, 5000) ?: -1
             return if (len > 0) {
-                Log.d(TAG, "Received $len bytes")
                 buffer.copyOf(len)
             } else {
-                Log.e(TAG, "Failed to receive or no data: len=$len")
+                if (len < 0) Log.e(TAG, "Failed to receive data: len=$len")
                 null
             }
         }
 
         override fun receiveExact(size: Int): ByteArray? {
-            Log.d(TAG, "Receiving exactly $size bytes...")
             val buffer = ByteArray(size)
             var offset = 0
             while (offset < size) {
                 val remaining = size - offset
-                val len = connection?.bulkTransfer(endpointIn, buffer, offset, remaining, 5000) ?: -1
+                val chunk = minOf(MAX_USBFS_BUFFER_SIZE, remaining)
+                val len = connection?.bulkTransfer(endpointIn, buffer, offset, chunk, 5000) ?: -1
                 if (len <= 0) {
                     Log.e(TAG, "Failed to receive exact bytes at offset $offset: len=$len")
                     return null
                 }
                 offset += len
             }
-            Log.d(TAG, "Successfully received $size bytes")
             return buffer
         }
 
