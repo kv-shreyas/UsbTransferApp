@@ -19,7 +19,7 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
-          cache: 'gradle' # Automatically caches Gradle dependencies to speed up builds
+          # Disabled cache on Windows to prevent tar.exe error
 
       - name: Build Windows Installer (MSI)
         run: ./gradlew.bat :composeApp:packageReleaseMsi
@@ -28,7 +28,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: USB-Transfer-App-Windows
-          path: composeApp/build/compose/binaries/**/*.msi
+          path: composeApp/build/compose/binaries/main-release/msi/*.msi
           retention-days: 7
 
   build-linux:
@@ -55,5 +55,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: USB-Transfer-App-Linux
-          path: composeApp/build/compose/binaries/**/*.deb
+          path: composeApp/build/compose/binaries/main-release/deb/*.deb
           retention-days: 7
