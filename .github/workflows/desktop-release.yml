@@ -24,11 +24,17 @@ jobs:
       - name: Build Windows Installer (MSI)
         run: ./gradlew.bat :composeApp:packageReleaseMsi
 
+      - name: Rename MSI file
+        run: |
+          cd composeApp/build/compose/binaries/main-release/msi/
+          mv *.msi Secure-data-Transfer-Setup.msi
+        shell: bash
+
       - name: Upload Windows MSI Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: USB-Transfer-App-Windows
-          path: composeApp/build/compose/binaries/main-release/msi/*.msi
+          name: Secure-data-Transfer
+          path: composeApp/build/compose/binaries/main-release/msi/Secure-data-Transfer-Setup.msi
           retention-days: 7
 
   build-linux:
@@ -51,9 +57,15 @@ jobs:
       - name: Build Linux Installer (DEB)
         run: ./gradlew :composeApp:packageReleaseDeb
 
+      - name: Rename DEB file
+        run: |
+          cd composeApp/build/compose/binaries/main-release/deb/
+          mv *.deb Secure-data-Transfer-Setup.deb
+        shell: bash
+
       - name: Upload Linux DEB Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: USB-Transfer-App-Linux
-          path: composeApp/build/compose/binaries/main-release/deb/*.deb
+          name: Secure-data-Transfer-Linux
+          path: composeApp/build/compose/binaries/main-release/deb/Secure-data-Transfer-Setup.deb
           retention-days: 7
