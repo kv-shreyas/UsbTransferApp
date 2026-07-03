@@ -104,7 +104,10 @@ compose.desktop {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "SecureQuickTransfer"
             packageVersion = "1.0.0"
-            modules("jdk.unsupported", "java.naming", "java.sql", "java.instrument")
+            includeAllModules = true
+            windows {
+                console = true
+            }
 /*
             proguard {
                 isEnabled.set(true)
