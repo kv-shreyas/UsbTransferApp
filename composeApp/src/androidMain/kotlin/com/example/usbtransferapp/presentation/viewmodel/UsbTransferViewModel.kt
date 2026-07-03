@@ -66,6 +66,11 @@ class UsbTransferViewModel @Inject constructor(
 
     fun requestPermissionAndConnect() {
         viewModelScope.launch {
+            // Ensure any previous stale connection is closed before retrying
+            delegatingConnection.disconnect()
+            aoaManager.disconnect()
+            hostManager.disconnect()
+
             val device = currentDevice
             val accessory = currentAccessory
 
@@ -103,6 +108,7 @@ class UsbTransferViewModel @Inject constructor(
                 }
             } else {
                 Log.e(TAG, "requestPermissionAndConnect: Failed - No device or accessory selected.")
+                _uiState.value = UsbUiState.NoDevice
             }
         }
     }
@@ -146,7 +152,8 @@ class UsbTransferViewModel @Inject constructor(
                 delegatingConnection.clearBuffer()
                 commandProcessor.startListening()
                 _uiState.value = UsbUiState.Idle
-                Log.i(TAG, "startHandshakeAndListen: Command listener terminated.")
+                Log.i(TAG, "startHandshakeAndListen: Command listener terminated. Resetting connection.")
+                disconnect()
             }
         } else {
             Log.e(TAG, "startHandshakeAndListen: Handshake FAILED.")
@@ -159,8 +166,9 @@ class UsbTransferViewModel @Inject constructor(
         commandJob?.cancel()
         commandJob = null
         
-        aoaManager.close()
-        hostManager.close() // Need to ensure hostManager has close()
+        delegatingConnection.disconnect()
+        aoaManager.disconnect()
+        hostManager.disconnect()
         
         currentDevice = null
         currentAccessory = null

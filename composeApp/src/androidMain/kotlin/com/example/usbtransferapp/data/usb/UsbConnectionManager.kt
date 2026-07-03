@@ -110,7 +110,7 @@ class UsbConnectionManager @Inject constructor(
             }
         }
 
-        fun close() {
+        override fun disconnect() {
             try {
                 currentInterface?.let { connection?.releaseInterface(it) }
                 connection?.close()

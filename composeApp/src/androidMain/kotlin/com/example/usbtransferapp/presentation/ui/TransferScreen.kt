@@ -167,8 +167,33 @@ fun StateContent(
                 BigIcon(Icons.Default.Error, Color.Red)
                 Text("Connection Failed", style = MaterialTheme.typography.headlineSmall)
                 Text(state.error, color = Color.Red, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                    Button(onClick = onConnect) {
+                        Icon(Icons.Default.Refresh, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Try Reconnect")
+                    }
+                    OutlinedButton(onClick = onScan) {
+                        Icon(Icons.Default.Search, null)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Scan Again")
+                    }
+                }
             }
-            is UsbUiState.Transferring, is UsbUiState.Connecting -> {
+            is UsbUiState.RequestingPermission -> {
+                CircularProgressIndicator(modifier = Modifier.size(64.dp))
+                Spacer(Modifier.height(16.dp))
+                Text("Awaiting OS Permission...", fontWeight = FontWeight.Medium)
+                Spacer(Modifier.height(8.dp))
+                Text("Please accept the system dialog to proceed.", color = MaterialTheme.colorScheme.secondary, textAlign = TextAlign.Center)
+            }
+            is UsbUiState.Connecting -> {
+                CircularProgressIndicator(modifier = Modifier.size(64.dp))
+                Spacer(Modifier.height(16.dp))
+                Text("Establishing Connection...", fontWeight = FontWeight.Medium)
+            }
+            is UsbUiState.Transferring -> {
                 CircularProgressIndicator(modifier = Modifier.size(64.dp))
                 Spacer(Modifier.height(16.dp))
                 Text("Handshaking...", fontWeight = FontWeight.Medium)

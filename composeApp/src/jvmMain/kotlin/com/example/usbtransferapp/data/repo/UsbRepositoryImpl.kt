@@ -8,6 +8,8 @@ import com.example.usbtransferapp.data.security.CryptoManager
 import com.example.usbtransferapp.data.Packet
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -90,8 +92,23 @@ class UsbRepositoryImpl(
     }
 
     override fun disconnect() {
+        println("[UsbRepo] Sending disconnect signal...")
+        try {
+            sendEncrypted(byteArrayOf(4.toByte())) // CMD_DISCONNECT
+        } catch (e: Exception) {
+            println("[UsbRepo] Failed to send disconnect signal: ${e.message}")
+        }
         println("[UsbRepo] Disconnecting and closing connection...")
         connection.close()
+    }
+
+    override fun cancelTransfer() {
+        println("[UsbRepo] Sending CANCEL signal to remote...")
+        try {
+            connection.bulkWrite(Packet.build(Packet.TYPE_CANCEL, ByteArray(0)))
+        } catch (e: Exception) {
+            println("[UsbRepo] Failed to send CANCEL signal: ${e.message}")
+        }
     }
 
     private fun performHandshake(): Boolean {
@@ -363,20 +380,22 @@ class UsbRepositoryImpl(
             .array()
         
         if (!sendEncrypted(header)) {
-            println("[UsbRepo] Error: Failed to send list request.")
-            return emptyList()
+            val err = "Failed to send list request."
+            println("[UsbRepo] Error: $err")
+            throw java.io.IOException(err)
         }
         
         val countData = receiveEncrypted() ?: run {
-            println("[UsbRepo] Error: Failed to receive directory count.")
-            return emptyList()
+            val err = "Failed to receive directory count."
+            println("[UsbRepo] Error: $err")
+            throw java.io.IOException(err)
         }
         val count = ByteBuffer.wrap(countData).getInt()
         
         val result = mutableListOf<RemoteFile>()
         println("[UsbRepo] Discovered $count items.")
         for (i in 0 until count) {
-            val itemData = receiveEncrypted() ?: break
+            val itemData = receiveEncrypted() ?: throw java.io.IOException("Connection lost while reading directory items")
             val buffer = ByteBuffer.wrap(itemData)
             val isDir = buffer.get() == 1.toByte()
             val size = buffer.getLong()

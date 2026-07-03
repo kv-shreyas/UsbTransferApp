@@ -31,7 +31,7 @@ class UsbCommandProcessor @Inject constructor(
             
             while (true) {
                 val raw = dataSource.receiveSecure() ?: break
-                processCommand(raw)
+                if (!processCommand(raw)) break
             }
         } catch (e: Exception) {
             Log.e(TAG, "Command loop error", e)
@@ -39,19 +39,28 @@ class UsbCommandProcessor @Inject constructor(
         Log.d(TAG, "Command loop stopped")
     }
 
-    private suspend fun processCommand(data: ByteArray) {
-        if (data.isEmpty()) return
+    private suspend fun processCommand(data: ByteArray): Boolean {
+        if (data.isEmpty()) return true
         val buffer = ByteBuffer.wrap(data)
         
         val commandType = buffer.get()
         
-        when (commandType) {
-            0.toByte() -> handleList(buffer)
-            1.toByte() -> handleReceive(buffer)
-            2.toByte() -> handleFetch(buffer)
-            3.toByte() -> handleFetchDir(buffer)
-            else -> Log.e(TAG, "Unknown command type: $commandType")
+        try {
+            when (commandType) {
+                0.toByte() -> handleList(buffer)
+                1.toByte() -> handleReceive(buffer)
+                2.toByte() -> handleFetch(buffer)
+                3.toByte() -> handleFetchDir(buffer)
+                4.toByte() -> {
+                    Log.d(TAG, "Received DISCONNECT command.")
+                    return false
+                }
+                else -> Log.e(TAG, "Unknown command type: $commandType")
+            }
+        } catch (e: UsbDataSource.TransferCancelledException) {
+            Log.w(TAG, "Transfer was cancelled by the remote client. Returning to idle state.")
         }
+        return true
     }
 
     private suspend fun handleFetchDir(buffer: ByteBuffer) {

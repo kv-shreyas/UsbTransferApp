@@ -7,6 +7,7 @@ object Packet {
     const val TYPE_PUBLIC_KEY: Byte = 0x01
     const val TYPE_DATA: Byte = 0x02
     const val TYPE_ACK: Byte = 0x03
+    const val TYPE_CANCEL: Byte = 0x04
 
     const val HEADER_SIZE = 5
 

@@ -13,6 +13,8 @@ class UsbConnection {
     private var endpointIn = 0x81.toByte()
     private var endpointOut = 0x01.toByte()
 
+    private var currentInterface = 0
+
     // AOA Constants
     private val ACCESSORY_GET_PROTOCOL = 51
     private val ACCESSORY_SEND_STRING = 52
@@ -24,7 +26,9 @@ class UsbConnection {
 
         try {
             // Detach kernel driver if necessary to ensure control transfers work
-            LibUsb.detachKernelDriver(tempHandle, 0)
+            if (LibUsb.kernelDriverActive(tempHandle, 0) == 1) {
+                LibUsb.detachKernelDriver(tempHandle, 0)
+            }
 
             // 1. Get Protocol
             val protocolBuffer = ByteBuffer.allocateDirect(2)
@@ -98,9 +102,6 @@ class UsbConnection {
             return false
         }
 
-        // Enable auto-detach if supported (LibUsb 1.0.16+)
-        LibUsb.setAutoDetachKernelDriver(handle, true)
-
         // Auto-detect endpoints and interface
         val endpointInfo = findAoaEndpoints(device)
         if (endpointInfo == null) {
@@ -110,10 +111,20 @@ class UsbConnection {
         }
         
         val ifaceNum = endpointInfo.interfaceNumber
+        currentInterface = ifaceNum
         endpointIn = endpointInfo.inAddr
         endpointOut = endpointInfo.outAddr
         
         println("[UsbConnection] Using Interface $ifaceNum, IN=${String.format("0x%02X", endpointIn)}, OUT=${String.format("0x%02X", endpointOut)}")
+
+        // Enable auto-detach if supported, but explicitly detach kernel driver as fallback
+        LibUsb.setAutoDetachKernelDriver(handle, true)
+        if (LibUsb.kernelDriverActive(handle, ifaceNum) == 1) {
+            val detachRes = LibUsb.detachKernelDriver(handle, ifaceNum)
+            if (detachRes != LibUsb.SUCCESS) {
+                println("[UsbConnection] Warning: Failed to detach kernel driver on iface $ifaceNum. Code: $detachRes")
+            }
+        }
 
         val claimResult = LibUsb.claimInterface(handle, ifaceNum)
         if (claimResult != LibUsb.SUCCESS) {
@@ -260,7 +271,17 @@ class UsbConnection {
 
     fun close() {
         handle?.let {
-            LibUsb.releaseInterface(it, 0)
+            LibUsb.releaseInterface(it, currentInterface)
+            // Attempt to re-attach kernel driver to leave device in proper state
+            if (LibUsb.kernelDriverActive(it, currentInterface) == 0) {
+                LibUsb.attachKernelDriver(it, currentInterface)
+            }
+            
+            // Force a USB port reset so the Android device drops out of Accessory mode.
+            // This ensures that on the next connection attempt, the AOA switch triggers again,
+            // which fires the necessary ATTACHED intents on the Android side to auto-connect.
+            LibUsb.resetDevice(it)
+            
             LibUsb.close(it)
         }
         handle = null

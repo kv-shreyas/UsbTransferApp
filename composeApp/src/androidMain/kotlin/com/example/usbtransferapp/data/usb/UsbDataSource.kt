@@ -149,9 +149,16 @@ class UsbDataSource @Inject constructor(
         manager.send(Packet.build(Packet.TYPE_DATA, payload)) > 0
     }
 
+class TransferCancelledException : Exception("Transfer cancelled by remote")
+
     suspend fun receiveSecure(): ByteArray? = withContext(Dispatchers.IO) {
         val key = aesKey ?: return@withContext null
         val packet = receivePacket() ?: return@withContext null
+        
+        if (packet.type == Packet.TYPE_CANCEL) {
+            throw TransferCancelledException()
+        }
+        
         if (packet.type != Packet.TYPE_DATA) return@withContext null
 
         val payload = packet.payload

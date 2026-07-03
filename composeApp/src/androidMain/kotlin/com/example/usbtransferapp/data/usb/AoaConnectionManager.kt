@@ -81,7 +81,7 @@ class AoaConnectionManager @Inject constructor(
         Log.d(TAG, "Buffer clear requested (skipping available() check)")
     }
 
-    fun close() {
+    override fun disconnect() {
         try {
             fileDescriptor?.close()
         } catch (e: Exception) {

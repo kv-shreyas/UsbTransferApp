@@ -5,4 +5,5 @@ interface IUsbConnection {
     fun receive(maxSize: Int = 4096): ByteArray?
     fun receiveExact(size: Int): ByteArray?
     fun clearBuffer()
+    fun disconnect()
 }

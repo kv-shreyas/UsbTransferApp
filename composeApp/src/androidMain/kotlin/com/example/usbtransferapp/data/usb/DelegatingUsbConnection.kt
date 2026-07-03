@@ -26,4 +26,9 @@ class DelegatingUsbConnection @Inject constructor() : IUsbConnection {
     override fun clearBuffer() {
         delegate?.clearBuffer()
     }
+
+    override fun disconnect() {
+        delegate?.disconnect()
+        delegate = null
+    }
 }
