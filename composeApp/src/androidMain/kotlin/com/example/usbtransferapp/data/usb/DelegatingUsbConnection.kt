@@ -19,6 +19,10 @@ class DelegatingUsbConnection @Inject constructor() : IUsbConnection {
         return delegate?.receive(maxSize)
     }
 
+    override fun receive(buffer: ByteArray): Int {
+        return delegate?.receive(buffer) ?: -1
+    }
+
     override fun receiveExact(size: Int): ByteArray? {
         return delegate?.receiveExact(size)
     }

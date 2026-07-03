@@ -38,15 +38,18 @@ class UsbDataSource @Inject constructor(
         }
     }
 
+    private val readBuffer = ByteArray(256 * 1024)
+
     private suspend fun receivePacket(): Packet.PacketData? = withContext(Dispatchers.IO) {
         while (availableBytes() < Packet.HEADER_SIZE) {
             compactBuffer()
-            // Read in larger chunks (256KB) to reduce JNI calls
-            val rawData = manager.receive(256 * 1024) ?: run {
+            // Read directly into our pre-allocated array to avoid creating 512KB of garbage per read
+            val bytesRead = manager.receive(readBuffer)
+            if (bytesRead <= 0) {
                 Log.e(TAG, "receivePacket: Failed to read from USB stream")
                 return@withContext null
             }
-            if (bufferTail + rawData.size > leftoverBuffer.size) {
+            if (bufferTail + bytesRead > leftoverBuffer.size) {
                 // Expand buffer if needed (should be rare with 5MB)
                 val newBuffer = ByteArray(leftoverBuffer.size * 2)
                 System.arraycopy(leftoverBuffer, bufferHead, newBuffer, 0, availableBytes())
@@ -54,8 +57,8 @@ class UsbDataSource @Inject constructor(
                 bufferTail = availableBytes()
                 bufferHead = 0
             }
-            System.arraycopy(rawData, 0, leftoverBuffer, bufferTail, rawData.size)
-            bufferTail += rawData.size
+            System.arraycopy(readBuffer, 0, leftoverBuffer, bufferTail, bytesRead)
+            bufferTail += bytesRead
         }
 
         val bb = ByteBuffer.wrap(leftoverBuffer, bufferHead, availableBytes())
@@ -69,19 +72,20 @@ class UsbDataSource @Inject constructor(
 
         while (availableBytes() < Packet.HEADER_SIZE + length) {
             compactBuffer()
-            val rawData = manager.receive(256 * 1024) ?: run {
+            val bytesRead = manager.receive(readBuffer)
+            if (bytesRead <= 0) {
                 Log.e(TAG, "receivePacket: Failed to read full payload from USB stream")
                 return@withContext null
             }
-            if (bufferTail + rawData.size > leftoverBuffer.size) {
+            if (bufferTail + bytesRead > leftoverBuffer.size) {
                 val newBuffer = ByteArray(leftoverBuffer.size * 2)
                 System.arraycopy(leftoverBuffer, bufferHead, newBuffer, 0, availableBytes())
                 leftoverBuffer = newBuffer
                 bufferTail = availableBytes()
                 bufferHead = 0
             }
-            System.arraycopy(rawData, 0, leftoverBuffer, bufferTail, rawData.size)
-            bufferTail += rawData.size
+            System.arraycopy(readBuffer, 0, leftoverBuffer, bufferTail, bytesRead)
+            bufferTail += bytesRead
         }
 
         val payload = ByteArray(length)

@@ -6,6 +6,8 @@ import android.util.Log
 import com.example.usbtransferapp.data.Packet
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileInputStream
@@ -20,18 +22,24 @@ class UsbCommandProcessor @Inject constructor(
     private val dataSource: UsbDataSource
 ) {
 
+    private var transferJob: kotlinx.coroutines.Job? = null
+
     suspend fun startListening() = withContext(Dispatchers.IO) {
         Log.d(TAG, "Command loop started - Sending READY signal")
         try {
-            // Give desktop a moment to switch from write to read mode
             kotlinx.coroutines.delay(100)
-
-            // Signal to desktop that we are ready for commands
             dataSource.sendSecure(byteArrayOf(Packet.TYPE_ACK))
             
-            while (true) {
-                val raw = dataSource.receiveSecure() ?: break
-                if (!processCommand(raw)) break
+            while (isActive) {
+                try {
+                    val raw = dataSource.receiveSecure() ?: break
+                    if (!processCommand(raw)) break
+                } catch (e: UsbDataSource.TransferCancelledException) {
+                    Log.w(TAG, "Transfer cancelled by remote. Aborting current transfer job.")
+                    transferJob?.cancel()
+                    transferJob?.join()
+                    transferJob = null
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Command loop error", e)
@@ -45,20 +53,32 @@ class UsbCommandProcessor @Inject constructor(
         
         val commandType = buffer.get()
         
-        try {
-            when (commandType) {
-                0.toByte() -> handleList(buffer)
-                1.toByte() -> handleReceive(buffer)
-                2.toByte() -> handleFetch(buffer)
-                3.toByte() -> handleFetchDir(buffer)
-                4.toByte() -> {
-                    Log.d(TAG, "Received DISCONNECT command.")
-                    return false
+        when (commandType) {
+            0.toByte() -> handleList(buffer)
+            1.toByte() -> {
+                try {
+                    handleReceive(buffer)
+                } catch (e: UsbDataSource.TransferCancelledException) {
+                    Log.w(TAG, "Receive was cancelled by remote.")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Receive error", e)
                 }
-                else -> Log.e(TAG, "Unknown command type: $commandType")
             }
-        } catch (e: UsbDataSource.TransferCancelledException) {
-            Log.w(TAG, "Transfer was cancelled by the remote client. Returning to idle state.")
+            2.toByte() -> {
+                transferJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                    try { handleFetch(buffer) } catch(e: Exception) { Log.e(TAG, "Fetch error", e) }
+                }
+            }
+            3.toByte() -> {
+                transferJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
+                    try { handleFetchDir(buffer) } catch(e: Exception) { Log.e(TAG, "FetchDir error", e) }
+                }
+            }
+            4.toByte() -> {
+                Log.d(TAG, "Received DISCONNECT command.")
+                return false
+            }
+            else -> Log.e(TAG, "Unknown command type: $commandType")
         }
         return true
     }

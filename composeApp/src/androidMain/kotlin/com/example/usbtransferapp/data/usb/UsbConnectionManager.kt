@@ -85,6 +85,11 @@ class UsbConnectionManager @Inject constructor(
             }
         }
 
+        override fun receive(buffer: ByteArray): Int {
+            val chunk = minOf(MAX_USBFS_BUFFER_SIZE, buffer.size)
+            return connection?.bulkTransfer(endpointIn, buffer, chunk, 5000) ?: -1
+        }
+
         override fun receiveExact(size: Int): ByteArray? {
             val buffer = ByteArray(size)
             var offset = 0

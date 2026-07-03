@@ -106,6 +106,13 @@ class UsbRepositoryImpl(
         println("[UsbRepo] Sending CANCEL signal to remote...")
         try {
             connection.bulkWrite(Packet.build(Packet.TYPE_CANCEL, ByteArray(0)))
+            
+            // Give Android a moment to process the cancel packet and abort its write loop,
+            // then completely flush the Desktop's USB input buffer to discard any 
+            // lingering file chunks that Android sent before it stopped.
+            Thread.sleep(150)
+            connection.clearInputBuffer()
+            println("[UsbRepo] Cancel signal sent and lingering input buffer flushed.")
         } catch (e: Exception) {
             println("[UsbRepo] Failed to send CANCEL signal: ${e.message}")
         }

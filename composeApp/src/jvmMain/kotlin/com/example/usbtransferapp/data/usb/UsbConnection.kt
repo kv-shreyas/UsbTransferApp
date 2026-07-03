@@ -183,20 +183,25 @@ class UsbConnection {
         // No longer used, replaced by findAoaEndpoints
     }
 
+    // Reusable direct buffers to prevent severe GC thrashing and allocation overhead during transfers
+    private val readBuffer = ByteBuffer.allocateDirect(300 * 1024)
+    private val writeBuffer = ByteBuffer.allocateDirect(300 * 1024)
+    private val transferredBuffer = IntBuffer.allocate(1)
+
     fun bulkRead(): ByteArray? {
         if (handle == null) {
             println("[UsbConnection] Error: bulkRead failed - handle is null.")
             return null
         }
         
-        val buffer = ByteBuffer.allocateDirect(300 * 1024) 
-        val transferred = IntBuffer.allocate(1)
+        readBuffer.clear()
+        transferredBuffer.clear()
 
         val result = LibUsb.bulkTransfer(
             handle,
             endpointIn,
-            buffer,
-            transferred,
+            readBuffer,
+            transferredBuffer,
             20000 // 20s
         )
 
@@ -205,25 +210,25 @@ class UsbConnection {
             return null
         }
 
-        val size = transferred.get()
+        val size = transferredBuffer.get(0)
         if (size < 0) return null
         
         val data = ByteArray(size)
-        buffer.rewind()
-        buffer.get(data, 0, size)
+        readBuffer.rewind()
+        readBuffer.get(data, 0, size)
 
         return data
     }
 
     fun clearInputBuffer() {
         if (handle == null) return
-        val buffer = ByteBuffer.allocateDirect(4096)
+        val buffer = ByteBuffer.allocateDirect(16384)
         val transferred = IntBuffer.allocate(1)
         var result: Int
         do {
             transferred.rewind() // Reset position
-            // Very short timeout to just flush what's already there
-            result = LibUsb.bulkTransfer(handle, endpointIn, buffer, transferred, 10)
+            // Short timeout to flush what's already there without freezing
+            result = LibUsb.bulkTransfer(handle, endpointIn, buffer, transferred, 50)
         } while (result == LibUsb.SUCCESS && transferred.get(0) > 0)
     }
 
@@ -233,11 +238,20 @@ class UsbConnection {
             return false
         }
         
-        val buffer = ByteBuffer.allocateDirect(data.size)
-        buffer.put(data)
-        buffer.rewind()
+        // If data is larger than our buffer, allocate a temporary one, otherwise use the fast reusable buffer
+        val useTempBuffer = data.size > writeBuffer.capacity()
+        val baseBuffer = if (useTempBuffer) ByteBuffer.allocateDirect(data.size) else writeBuffer
+        
+        if (!useTempBuffer) baseBuffer.clear()
+        
+        baseBuffer.put(data)
+        baseBuffer.flip() 
 
-        val transferred = IntBuffer.allocate(1)
+        // usb4java often ignores position/limit and passes the raw buffer capacity to C.
+        // We MUST use .slice() so the JNI layer sees exactly 'data.size' as the buffer's capacity!
+        val buffer = baseBuffer.slice()
+
+        transferredBuffer.clear()
 
         // Add small retry for robustness
         var attempt = 0
@@ -247,7 +261,7 @@ class UsbConnection {
                 handle,
                 endpointOut,
                 buffer,
-                transferred,
+                transferredBuffer,
                 20000 // 20s
             )
             if (result == LibUsb.SUCCESS) break
@@ -260,7 +274,7 @@ class UsbConnection {
             return false
         }
 
-        val sent = transferred.get()
+        val sent = transferredBuffer.get(0)
         if (sent != data.size) {
             println("[UsbConnection] Error: Incomplete write. Expected ${data.size} bytes, sent $sent bytes.")
             return false

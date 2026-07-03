@@ -59,6 +59,15 @@ class AoaConnectionManager @Inject constructor(
         }
     }
 
+    override fun receive(buffer: ByteArray): Int {
+        return try {
+            inputStream?.read(buffer) ?: -1
+        } catch (e: Exception) {
+            Log.e(TAG, "Error receiving zero-alloc data", e)
+            -1
+        }
+    }
+
     override fun receiveExact(size: Int): ByteArray? {
         val buffer = ByteArray(size)
         var offset = 0
