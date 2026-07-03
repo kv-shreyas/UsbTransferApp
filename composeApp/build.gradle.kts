@@ -102,8 +102,9 @@ compose.desktop {
         mainClass = "com.example.usbtransferapp.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "USB Transfer App"
+            packageName = "SecureQuickTransfer"
             packageVersion = "1.0.0"
+            modules("jdk.unsupported", "java.naming", "java.sql", "java.instrument")
 /*
             proguard {
                 isEnabled.set(true)
