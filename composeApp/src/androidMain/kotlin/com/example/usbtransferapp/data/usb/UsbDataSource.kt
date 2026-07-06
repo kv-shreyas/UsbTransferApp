@@ -141,23 +141,42 @@ class UsbDataSource @Inject constructor(
     }
 
     // ... (rest of the file remains the same)
-    suspend fun sendSecure(data: ByteArray): Boolean = withContext(Dispatchers.IO) {
-        val key = aesKey ?: return@withContext false
+    suspend fun encryptData(data: ByteArray): ByteArray? = withContext(Dispatchers.Default) {
+        val key = aesKey ?: return@withContext null
         val (iv, encrypted) = crypto.encrypt(data, key)
+        ByteBuffer.allocate(iv.size + encrypted.size).put(iv).put(encrypted).array()
+    }
 
-        val payload = ByteBuffer.allocate(iv.size + encrypted.size)
-            .put(iv)
-            .put(encrypted)
-            .array()
+    suspend fun sendRawPacket(type: Byte, payload: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        manager.send(Packet.build(type, payload)) > 0
+    }
 
-        manager.send(Packet.build(Packet.TYPE_DATA, payload)) > 0
+    suspend fun receiveRawPacket(): Packet.PacketData? = withContext(Dispatchers.IO) {
+        receivePacket()
+    }
+
+    suspend fun decryptData(payload: ByteArray): ByteArray? = withContext(Dispatchers.Default) {
+        val key = aesKey ?: return@withContext null
+        if (payload.size < 12) return@withContext null
+        val iv = payload.copyOfRange(0, 12)
+        val encrypted = payload.copyOfRange(12, payload.size)
+        try {
+            crypto.decrypt(iv, encrypted, key)
+        } catch (e: Exception) {
+            Log.e(TAG, "Decryption failed", e)
+            null
+        }
+    }
+
+    suspend fun sendSecure(data: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        val payload = encryptData(data) ?: return@withContext false
+        sendRawPacket(Packet.TYPE_DATA, payload)
     }
 
 class TransferCancelledException : Exception("Transfer cancelled by remote")
 
     suspend fun receiveSecure(): ByteArray? = withContext(Dispatchers.IO) {
-        val key = aesKey ?: return@withContext null
-        val packet = receivePacket() ?: return@withContext null
+        val packet = receiveRawPacket() ?: return@withContext null
         
         if (packet.type == Packet.TYPE_CANCEL) {
             throw TransferCancelledException()
@@ -165,17 +184,6 @@ class TransferCancelledException : Exception("Transfer cancelled by remote")
         
         if (packet.type != Packet.TYPE_DATA) return@withContext null
 
-        val payload = packet.payload
-        if (payload.size < 12) return@withContext null
-
-        val iv = payload.copyOfRange(0, 12)
-        val encrypted = payload.copyOfRange(12, payload.size)
-
-        try {
-            crypto.decrypt(iv, encrypted, key)
-        } catch (e: Exception) {
-            Log.e(TAG, "Decryption failed", e)
-            null
-        }
+        decryptData(packet.payload)
     }
 }

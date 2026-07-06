@@ -6,8 +6,11 @@ import com.example.usbtransferapp.data.usb.UsbConnection
 import com.example.usbtransferapp.data.usb.UsbDeviceManager
 import com.example.usbtransferapp.data.security.CryptoManager
 import com.example.usbtransferapp.data.Packet
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
@@ -241,10 +244,48 @@ class UsbRepositoryImpl(
 
     override fun receiveStream(): Flow<ByteArray> = flow {
         println("[UsbRepo] Starting data stream reception...")
-        while (true) {
-            val data = receiveEncrypted() ?: break
-            if (data.isEmpty()) break
-            emit(data)
+        kotlinx.coroutines.coroutineScope {
+            val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+            val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+
+            // Worker 1: USB Receive
+            launch(kotlinx.coroutines.Dispatchers.IO) {
+                try {
+                    while (isActive) {
+                        val packet = readNextPacket() ?: break
+                        if (packet.type != Packet.TYPE_DATA) break
+                        rawPacketChannel.send(packet.payload)
+                    }
+                } finally {
+                    rawPacketChannel.close()
+                }
+            }
+
+            // Worker 2: Decrypt
+            launch(kotlinx.coroutines.Dispatchers.Default) {
+                try {
+                    for (payload in rawPacketChannel) {
+                        if (payload.size < 12) break
+                        val iv = payload.copyOfRange(0, 12)
+                        val ciphertext = payload.copyOfRange(12, payload.size)
+                        val decrypted = try {
+                            cryptoManager.decrypt(iv, ciphertext)
+                        } catch (e: Exception) {
+                            println("[UsbRepo] Error: Decryption failed - ${e.message}")
+                            break
+                        }
+                        decryptedChannel.send(decrypted)
+                    }
+                } finally {
+                    decryptedChannel.close()
+                }
+            }
+
+            // Worker 3: Emit (Main Coroutine)
+            for (chunk in decryptedChannel) {
+                if (chunk.isEmpty()) break
+                emit(chunk)
+            }
         }
         println("[UsbRepo] Data stream ended.")
     }
@@ -268,20 +309,53 @@ class UsbRepositoryImpl(
         }
         
         val fis = FileInputStream(file)
-        val buffer = ByteArray(256 * 1024)
         var totalSent = 0L
-        fis.use { fis ->
-            while (totalSent < fileSize) {
-                val read = fis.read(buffer)
-                if (read == -1) break
-                val chunk = if (read == buffer.size) buffer else buffer.copyOf(read)
-                if (sendEncrypted(chunk)) {
-                    totalSent += read
-                    emit(((totalSent * 100) / fileSize).toInt())
-                } else {
-                    val errorMsg = "Failed to send chunk at $totalSent bytes."
-                    println("[UsbRepo] Error: $errorMsg")
-                    throw java.io.IOException(errorMsg)
+        coroutineScope {
+            fis.use { fis ->
+                val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+                val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+
+                // Worker 1: Disk Read
+                launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        val buffer = ByteArray(256 * 1024)
+                        var read: Int
+                        while (fis.read(buffer).also { read = it } != -1 && isActive) {
+                            val chunk = if (read == buffer.size) buffer else buffer.copyOf(read)
+                            chunkChannel.send(chunk)
+                        }
+                    } finally {
+                        chunkChannel.close()
+                    }
+                }
+
+                // Worker 2: Encrypt
+                launch(kotlinx.coroutines.Dispatchers.Default) {
+                    try {
+                        for (chunk in chunkChannel) {
+                            val encrypted = cryptoManager.encrypt(chunk)
+                            val securePayload = ByteBuffer.allocate(encrypted.iv.size + encrypted.ciphertext.size)
+                                .put(encrypted.iv)
+                                .put(encrypted.ciphertext)
+                                .array()
+                            encryptedChannel.send(securePayload)
+                        }
+                    } finally {
+                        encryptedChannel.close()
+                    }
+                }
+
+                // Worker 3: USB Write (Main Coroutine)
+                for (securePayload in encryptedChannel) {
+                    if (connection.bulkWrite(Packet.build(Packet.TYPE_DATA, securePayload))) {
+                        val chunkSize = securePayload.size - 28 // Subtract IV (12) + Tag (16)
+                        totalSent += chunkSize
+                        emit(((totalSent * 100) / fileSize).toInt())
+                    } else {
+                        val errorMsg = "Failed to send chunk at $totalSent bytes."
+                        println("[UsbRepo] Error: $errorMsg")
+                        throw java.io.IOException(errorMsg)
+                    }
                 }
             }
         }
@@ -316,18 +390,54 @@ class UsbRepositoryImpl(
 
         val fos = FileOutputStream(localFile)
         var totalReceived = 0L
-        try {
-            while (totalReceived < fileSize) {
-                val chunk = receiveEncrypted() ?: run {
-                    println("[UsbRepo] Error: Connection lost during download.")
-                    break
+        coroutineScope {
+            try {
+                val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+                val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+
+                // Worker 1: USB Receive
+                launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        while (isActive) {
+                            val packet = readNextPacket() ?: break
+                            if (packet.type != Packet.TYPE_DATA) break
+                            rawPacketChannel.send(packet.payload)
+                        }
+                    } finally {
+                        rawPacketChannel.close()
+                    }
                 }
-                fos.write(chunk)
-                totalReceived += chunk.size
-                emit(((totalReceived * 100) / fileSize).toInt())
+
+                // Worker 2: Decrypt
+                launch(kotlinx.coroutines.Dispatchers.Default) {
+                    try {
+                        for (payload in rawPacketChannel) {
+                            if (payload.size < 12) break
+                            val iv = payload.copyOfRange(0, 12)
+                            val ciphertext = payload.copyOfRange(12, payload.size)
+                            val decrypted = try {
+                                cryptoManager.decrypt(iv, ciphertext)
+                            } catch (e: Exception) {
+                                println("[UsbRepo] Error: Decryption failed - ${e.message}")
+                                break
+                            }
+                            decryptedChannel.send(decrypted)
+                        }
+                    } finally {
+                        decryptedChannel.close()
+                    }
+                }
+
+                // Worker 3: Disk Write (Main Coroutine)
+                for (chunk in decryptedChannel) {
+                    fos.write(chunk)
+                    totalReceived += chunk.size
+                    emit(((totalReceived * 100) / fileSize).toInt())
+                    if (totalReceived >= fileSize) break
+                }
+            } finally {
+                fos.close()
             }
-        } finally {
-            fos.close()
         }
         println("[UsbRepo] --- DOWNLOAD COMPLETE: Saved to ${localFile.absolutePath} ---")
     }
@@ -360,18 +470,54 @@ class UsbRepositoryImpl(
 
         val fos = FileOutputStream(localFile)
         var totalReceived = 0L
-        try {
-            while (totalReceived < fileSize) {
-                val chunk = receiveEncrypted() ?: run {
-                    println("[UsbRepo] Error: Connection lost during dir download.")
-                    break
+        kotlinx.coroutines.coroutineScope {
+            try {
+                val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+                val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+
+                // Worker 1: USB Receive
+                launch(kotlinx.coroutines.Dispatchers.IO) {
+                    try {
+                        while (isActive) {
+                            val packet = readNextPacket() ?: break
+                            if (packet.type != Packet.TYPE_DATA) break
+                            rawPacketChannel.send(packet.payload)
+                        }
+                    } finally {
+                        rawPacketChannel.close()
+                    }
                 }
-                fos.write(chunk)
-                totalReceived += chunk.size
-                emit(((totalReceived * 100) / fileSize).toInt())
+
+                // Worker 2: Decrypt
+                launch(kotlinx.coroutines.Dispatchers.Default) {
+                    try {
+                        for (payload in rawPacketChannel) {
+                            if (payload.size < 12) break
+                            val iv = payload.copyOfRange(0, 12)
+                            val ciphertext = payload.copyOfRange(12, payload.size)
+                            val decrypted = try {
+                                cryptoManager.decrypt(iv, ciphertext)
+                            } catch (e: Exception) {
+                                println("[UsbRepo] Error: Decryption failed - ${e.message}")
+                                break
+                            }
+                            decryptedChannel.send(decrypted)
+                        }
+                    } finally {
+                        decryptedChannel.close()
+                    }
+                }
+
+                // Worker 3: Disk Write (Main Coroutine)
+                for (chunk in decryptedChannel) {
+                    fos.write(chunk)
+                    totalReceived += chunk.size
+                    emit(((totalReceived * 100) / fileSize).toInt())
+                    if (totalReceived >= fileSize) break
+                }
+            } finally {
+                fos.close()
             }
-        } finally {
-            fos.close()
         }
         println("[UsbRepo] --- DIR DOWNLOAD COMPLETE: Saved to ${localFile.absolutePath} ---")
     }

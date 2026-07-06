@@ -6,6 +6,7 @@ import android.util.Log
 import com.example.usbtransferapp.data.Packet
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -108,12 +109,41 @@ class UsbCommandProcessor @Inject constructor(
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(zipSize).array())
             
             val fis = FileInputStream(tempZip)
-            fis.use { input ->
-                val streamBuffer = ByteArray(256 * 1024)
-                var read: Int
-                while (input.read(streamBuffer).also { read = it } != -1) {
-                    val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)
-                    dataSource.sendSecure(chunk)
+            coroutineScope {
+                fis.use { input ->
+                    val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+                    val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+
+                    // Worker 1: Disk Read
+                    launch(Dispatchers.IO) {
+                        try {
+                            val streamBuffer = ByteArray(256 * 1024)
+                            var read: Int
+                            while (input.read(streamBuffer).also { read = it } != -1 && isActive) {
+                                val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)
+                                chunkChannel.send(chunk)
+                            }
+                        } finally {
+                            chunkChannel.close()
+                        }
+                    }
+
+                    // Worker 2: Encrypt
+                    launch(Dispatchers.Default) {
+                        try {
+                            for (chunk in chunkChannel) {
+                                val encrypted = dataSource.encryptData(chunk) ?: break
+                                encryptedChannel.send(encrypted)
+                            }
+                        } finally {
+                            encryptedChannel.close()
+                        }
+                    }
+
+                    // Worker 3: USB Send (Main Coroutine)
+                    for (encrypted in encryptedChannel) {
+                        if (!dataSource.sendRawPacket(Packet.TYPE_DATA, encrypted)) break
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -203,7 +233,7 @@ class UsbCommandProcessor @Inject constructor(
         }
     }
 
-    private suspend fun handleReceive(buffer: ByteBuffer) {
+    private suspend fun handleReceive(buffer: ByteBuffer) = kotlinx.coroutines.coroutineScope {
         val nameLen = buffer.getInt()
         val nameBytes = ByteArray(nameLen)
         buffer.get(nameBytes)
@@ -222,11 +252,41 @@ class UsbCommandProcessor @Inject constructor(
         }
         
         try {
+            val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+            val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+
+            // Worker 1: USB Receive
+            launch(Dispatchers.IO) {
+                try {
+                    while (isActive) {
+                        val packet = dataSource.receiveRawPacket() ?: break
+                        if (packet.type == Packet.TYPE_CANCEL) throw UsbDataSource.TransferCancelledException()
+                        if (packet.type != Packet.TYPE_DATA) break
+                        rawPacketChannel.send(packet.payload)
+                    }
+                } finally {
+                    rawPacketChannel.close()
+                }
+            }
+
+            // Worker 2: Decrypt
+            launch(Dispatchers.Default) {
+                try {
+                    for (payload in rawPacketChannel) {
+                        val decrypted = dataSource.decryptData(payload) ?: break
+                        decryptedChannel.send(decrypted)
+                    }
+                } finally {
+                    decryptedChannel.close()
+                }
+            }
+
+            // Worker 3: Disk Write (Main Coroutine)
             var received = 0L
-            while (received < fileSize) {
-                val chunk = dataSource.receiveSecure() ?: break
+            for (chunk in decryptedChannel) {
                 fos?.write(chunk)
                 received += chunk.size
+                if (received >= fileSize) break
             }
         } finally {
             fos?.close()
@@ -239,7 +299,7 @@ class UsbCommandProcessor @Inject constructor(
         }
     }
 
-    private suspend fun handleFetch(buffer: ByteBuffer) {
+    private suspend fun handleFetch(buffer: ByteBuffer) = coroutineScope {
         val pathLen = buffer.getInt()
         val pathBytes = ByteArray(pathLen)
         buffer.get(pathBytes)
@@ -251,7 +311,7 @@ class UsbCommandProcessor @Inject constructor(
         if (!file.exists() || file.isDirectory) {
             Log.w(TAG, "handleFetch: File not found or is directory: ${file.absolutePath}")
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
-            return
+            return@coroutineScope
         }
         
         Log.d(TAG, "handleFetch: Sending ${file.length()} bytes")
@@ -259,11 +319,38 @@ class UsbCommandProcessor @Inject constructor(
         
         val fis = FileInputStream(file)
         try {
-            val streamBuffer = ByteArray(256 * 1024)
-            var read: Int
-            while (fis.read(streamBuffer).also { read = it } != -1) {
-                val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)
-                dataSource.sendSecure(chunk)
+            val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+            val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+
+            // Worker 1: Disk Read
+            launch(Dispatchers.IO) {
+                try {
+                    val streamBuffer = ByteArray(256 * 1024)
+                    var read: Int
+                    while (fis.read(streamBuffer).also { read = it } != -1 && isActive) {
+                        val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)
+                        chunkChannel.send(chunk)
+                    }
+                } finally {
+                    chunkChannel.close()
+                }
+            }
+
+            // Worker 2: Encrypt
+            launch(Dispatchers.Default) {
+                try {
+                    for (chunk in chunkChannel) {
+                        val encrypted = dataSource.encryptData(chunk) ?: break
+                        encryptedChannel.send(encrypted)
+                    }
+                } finally {
+                    encryptedChannel.close()
+                }
+            }
+
+            // Worker 3: USB Send (Main Coroutine)
+            for (encrypted in encryptedChannel) {
+                if (!dataSource.sendRawPacket(Packet.TYPE_DATA, encrypted)) break
             }
         } finally {
             fis.close()
