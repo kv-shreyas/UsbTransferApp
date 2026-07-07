@@ -37,7 +37,11 @@ fun MainScreen(vm: MainViewModel) {
     val progress by vm.progressState.collectAsState()
 
     if (progress.isVisible) {
-        TransferProgressDialog(progress, onCancel = { vm.cancelTransfer() })
+        TransferProgressDialog(
+            progress = progress, 
+            onCancel = { vm.cancelTransfer() },
+            onDismiss = { vm.dismissProgress() }
+        )
     }
 
     Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
@@ -55,7 +59,7 @@ fun MainScreen(vm: MainViewModel) {
                     files = remoteFiles,
                     modifier = Modifier.weight(1f),
                     onFolderClick = { vm.navigateTo(it) },
-                    onFileFetch = { vm.fetchFile(it) },
+                    onFilesFetch = { vm.fetchFiles(it) },
                     onFileConvert = { vm.convertAnfFile(it) }
                 )
 
@@ -63,8 +67,10 @@ fun MainScreen(vm: MainViewModel) {
                 
                 ActionBar(currentPath = currentPath, onSendFile = {
                     val fileChooser = JFileChooser()
+                    fileChooser.fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
+                    fileChooser.isMultiSelectionEnabled = true
                     if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                        vm.sendFile(fileChooser.selectedFile)
+                        vm.sendFiles(fileChooser.selectedFiles.toList())
                     }
                 })
             } else {
@@ -206,7 +212,7 @@ fun AnfConverterScreen(vm: MainViewModel, files: List<RemoteFile>, path: String)
             files = files.filter { it.isDirectory || it.name.endsWith(".anf") },
             modifier = Modifier.weight(1f),
             onFolderClick = { vm.navigateTo(it) },
-            onFileFetch = { vm.fetchFile(it) },
+            onFilesFetch = { vm.fetchFiles(it) },
             onFileConvert = { vm.convertAnfFile(it) }
         )
     }
@@ -234,9 +240,11 @@ fun FileList(
     files: List<RemoteFile>, 
     modifier: Modifier = Modifier,
     onFolderClick: (RemoteFile) -> Unit, 
-    onFileFetch: (RemoteFile) -> Unit,
+    onFilesFetch: (List<RemoteFile>) -> Unit,
     onFileConvert: (RemoteFile) -> Unit
 ) {
+    var selectedFiles by androidx.compose.runtime.remember { mutableStateOf(setOf<RemoteFile>()) }
+    
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -252,10 +260,37 @@ fun FileList(
                 }
             }
         } else {
-            LazyColumn {
-                items(files) { file ->
-                    FileRow(file, onFolderClick, onFileFetch, onFileConvert)
-                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+            Column {
+                if (selectedFiles.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer).padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${selectedFiles.size} items selected", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Button(onClick = { 
+                            onFilesFetch(selectedFiles.toList())
+                            selectedFiles = emptySet()
+                        }) {
+                            Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Fetch Selected")
+                        }
+                    }
+                }
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(files) { file ->
+                        FileRow(
+                            file = file, 
+                            isSelected = selectedFiles.contains(file),
+                            onSelectionChange = { selected -> 
+                                if (selected) selectedFiles += file else selectedFiles -= file
+                            },
+                            onFolderClick = onFolderClick, 
+                            onFileFetch = { onFilesFetch(listOf(it)) }, 
+                            onFileConvert = onFileConvert
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }
                 }
             }
         }
@@ -265,6 +300,8 @@ fun FileList(
 @Composable
 fun FileRow(
     file: RemoteFile, 
+    isSelected: Boolean,
+    onSelectionChange: (Boolean) -> Unit,
     onFolderClick: (RemoteFile) -> Unit, 
     onFileFetch: (RemoteFile) -> Unit,
     onFileConvert: (RemoteFile) -> Unit
@@ -273,6 +310,11 @@ fun FileRow(
         modifier = Modifier.fillMaxWidth().clickable { if (file.isDirectory) onFolderClick(file) }.padding(12.dp, 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
+        androidx.compose.material3.Checkbox(
+            checked = isSelected,
+            onCheckedChange = onSelectionChange
+        )
+        Spacer(Modifier.width(8.dp))
         Icon(
             imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.Description,
             contentDescription = null,
@@ -346,24 +388,28 @@ fun formatSize(bytes: Long): String {
 @Composable
 fun TransferProgressDialog(
     progress: com.example.usbtransferapp.presentation.vm.MainViewModel.TransferProgress,
-    onCancel: () -> Unit
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit
 ) {
     androidx.compose.ui.window.Dialog(
-        onDismissRequest = {},
+        onDismissRequest = { if (progress.isComplete) onDismiss() },
         properties = androidx.compose.ui.window.DialogProperties()
     ) {
         Surface(
             shape = RoundedCornerShape(16.dp),
             tonalElevation = 8.dp,
-            modifier = Modifier.width(400.dp)
+            modifier = Modifier.width(600.dp)
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
                     Spacer(Modifier.width(16.dp))
                     Column {
-                        Text("Transferring Data", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(progress.filename, style = MaterialTheme.typography.bodyMedium, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(if (progress.isComplete) "Transfer Complete" else "Transferring Data", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = if (progress.isComplete) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface)
+                        Text(progress.statusMessage.ifEmpty { progress.filename }, style = MaterialTheme.typography.bodyMedium, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        if (progress.totalFiles > 1) {
+                            Text("File ${progress.currentFileIndex} of ${progress.totalFiles}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                        }
                     }
                 }
 
@@ -404,23 +450,41 @@ fun TransferProgressDialog(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )
+                    
+                    if (progress.totalFiles > 1) {
+                        Text(
+                            "Total Elapsed: ${progress.batchElapsed}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
                 }
                 
                 Spacer(Modifier.height(24.dp))
                 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(
-                        onClick = onCancel,
-                        colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) {
-                        Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Cancel Transfer")
+                    if (progress.isComplete) {
+                        Button(onClick = onDismiss) {
+                            Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Finish")
+                        }
+                    } else {
+                        TextButton(
+                            onClick = onCancel,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Cancel Transfer")
+                        }
                     }
                 }
 
-                Spacer(Modifier.height(8.dp))
-                Text("Please do not disconnect the USB cable", style = MaterialTheme.typography.labelSmall, color = Color.Red.copy(alpha = 0.5f))
+                if (!progress.isComplete) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("Please do not disconnect the USB cable", style = MaterialTheme.typography.labelSmall, color = Color.Red.copy(alpha = 0.5f))
+                }
             }
         }
     }

@@ -22,7 +22,11 @@ class UsbConnection {
 
     fun switchToAoa(device: Device): Boolean {
         val tempHandle = DeviceHandle()
-        if (LibUsb.open(device, tempHandle) != LibUsb.SUCCESS) return false
+        val openResult = LibUsb.open(device, tempHandle)
+        if (openResult != LibUsb.SUCCESS) {
+            println("[UsbConnection] switchToAoa Error: LibUsb.open failed with code $openResult (${LibUsb.strError(openResult)})")
+            return false
+        }
 
         try {
             // Detach kernel driver if necessary to ensure control transfers work
@@ -41,10 +45,16 @@ class UsbConnection {
                 protocolBuffer,
                 2000
             )
-            if (protocolResult < 0) return false
+            if (protocolResult < 0) {
+                println("[UsbConnection] switchToAoa Error: Get Protocol controlTransfer failed: $protocolResult (${LibUsb.strError(protocolResult)})")
+                return false
+            }
             protocolBuffer.rewind()
             val protocol = protocolBuffer.getShort()
-            if (protocol < 1) return false
+            if (protocol < 1) {
+                println("[UsbConnection] switchToAoa Error: Protocol version too low ($protocol)")
+                return false
+            }
 
             // 2. Send Strings (Manufacturer, Model, etc.)
             val strings = arrayOf(
@@ -72,7 +82,10 @@ class UsbConnection {
                     stringBuffer,
                     2000
                 )
-                if (result < 0) return false
+                if (result < 0) {
+                    println("[UsbConnection] switchToAoa Error: Send String [$i] failed: $result (${LibUsb.strError(result)})")
+                    return false
+                }
             }
 
             // 3. Start Accessory
@@ -85,8 +98,12 @@ class UsbConnection {
                 ByteBuffer.allocateDirect(0),
                 2000
             )
-            if (startResult < 0) return false
+            if (startResult < 0) {
+                println("[UsbConnection] switchToAoa Error: Start Accessory failed: $startResult (${LibUsb.strError(startResult)})")
+                return false
+            }
 
+            println("[UsbConnection] switchToAoa: Switch successful, device should reconnect in AOA mode.")
             return true
         } finally {
             LibUsb.close(tempHandle)

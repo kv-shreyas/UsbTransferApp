@@ -290,14 +290,15 @@ class UsbRepositoryImpl(
         println("[UsbRepo] Data stream ended.")
     }
 
-    override fun sendFile(file: File, destinationPath: String): Flow<Int> = flow {
-        println("[UsbRepo] --- UPLOAD START: ${file.name} to $destinationPath ---")
-        val fullRemotePath = if (destinationPath.endsWith("/")) destinationPath + file.name else "$destinationPath/${file.name}"
+    override fun sendFile(file: File, destinationPath: String, isDirectory: Boolean, remoteFileName: String): Flow<Int> = flow {
+        println("[UsbRepo] --- UPLOAD START: $remoteFileName to $destinationPath ---")
+        val fullRemotePath = if (destinationPath.endsWith("/")) destinationPath + remoteFileName else "$destinationPath/$remoteFileName"
         val fileNameBytes = fullRemotePath.toByteArray()
         val fileSize = file.length()
         
+        val cmd = if (isDirectory) 5.toByte() else CMD_SEND
         val header = ByteBuffer.allocate(1 + 4 + fileNameBytes.size + 8)
-            .put(CMD_SEND)
+            .put(cmd)
             .putInt(fileNameBytes.size)
             .put(fileNameBytes)
             .putLong(fileSize)
@@ -357,6 +358,7 @@ class UsbRepositoryImpl(
                         throw java.io.IOException(errorMsg)
                     }
                 }
+                connection.bulkWrite(Packet.build(Packet.TYPE_EOF, ByteArray(0)))
             }
         }
         println("[UsbRepo] --- UPLOAD COMPLETE: $totalSent bytes sent ---")
