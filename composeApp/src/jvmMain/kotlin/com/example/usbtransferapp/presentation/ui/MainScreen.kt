@@ -1,6 +1,7 @@
 package com.example.usbtransferapp.presentation.ui
 
 import androidx.compose.animation.*
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -18,6 +19,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -60,7 +62,9 @@ fun MainScreen(vm: MainViewModel) {
                     modifier = Modifier.weight(1f),
                     onFolderClick = { vm.navigateTo(it) },
                     onFilesFetch = { vm.fetchFiles(it) },
-                    onFileConvert = { vm.convertAnfFile(it) }
+                    onFileConvert = { vm.convertAnfFile(it) },
+                    onFileDelete = { vm.deleteFile(it) },
+                    onFileRename = { file, newName -> vm.renameFile(file, newName) }
                 )
 
                 Spacer(Modifier.height(16.dp))
@@ -231,7 +235,9 @@ fun AnfConverterScreen(vm: MainViewModel, files: List<RemoteFile>, path: String)
             modifier = Modifier.weight(1f),
             onFolderClick = { vm.navigateTo(it) },
             onFilesFetch = { vm.fetchFiles(it) },
-            onFileConvert = { vm.convertAnfFile(it) }
+            onFileConvert = { vm.convertAnfFile(it) },
+            onFileDelete = { vm.deleteFile(it) },
+            onFileRename = { file, newName -> vm.renameFile(file, newName) }
         )
     }
 }
@@ -259,7 +265,9 @@ fun FileList(
     modifier: Modifier = Modifier,
     onFolderClick: (RemoteFile) -> Unit, 
     onFilesFetch: (List<RemoteFile>) -> Unit,
-    onFileConvert: (RemoteFile) -> Unit
+    onFileConvert: (RemoteFile) -> Unit,
+    onFileDelete: (RemoteFile) -> Unit,
+    onFileRename: (RemoteFile, String) -> Unit
 ) {
     var selectedFiles by androidx.compose.runtime.remember { mutableStateOf(setOf<RemoteFile>()) }
     
@@ -305,7 +313,9 @@ fun FileList(
                             },
                             onFolderClick = onFolderClick, 
                             onFileFetch = { onFilesFetch(listOf(it)) }, 
-                            onFileConvert = onFileConvert
+                            onFileConvert = onFileConvert,
+                            onFileDelete = onFileDelete,
+                            onFileRename = onFileRename
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
                     }
@@ -322,220 +332,398 @@ fun FileRow(
     onSelectionChange: (Boolean) -> Unit,
     onFolderClick: (RemoteFile) -> Unit, 
     onFileFetch: (RemoteFile) -> Unit,
-    onFileConvert: (RemoteFile) -> Unit
+    onFileConvert: (RemoteFile) -> Unit,
+    onFileDelete: (RemoteFile) -> Unit,
+    onFileRename: (RemoteFile, String) -> Unit
 ) {
-    Row(
-        modifier = Modifier.fillMaxWidth().clickable { if (file.isDirectory) onFolderClick(file) }.padding(12.dp, 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        androidx.compose.material3.Checkbox(
-            checked = isSelected,
-            onCheckedChange = onSelectionChange
-        )
-        Spacer(Modifier.width(8.dp))
-        Icon(
-            imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.Description,
-            contentDescription = null,
-            tint = if (file.isDirectory) Color(0xFFFFC107) else MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(32.dp)
-        )
-        Spacer(Modifier.width(16.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(file.name, fontWeight = FontWeight.Medium)
-            Text(if (file.isDirectory) "Directory" else formatSize(file.size), style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-        }
-        if (!file.isDirectory) {
-            if (file.name.endsWith(".anf")) {
-                Button(onClick = { onFileConvert(file) }, modifier = Modifier.padding(end = 8.dp)) {
-                    Icon(Icons.Default.Transform, null, modifier = Modifier.size(18.dp))
-                    Spacer(Modifier.width(4.dp))
-                    Text("Convert to CSV")
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var renameText by remember(file.name, showRenameDialog) { mutableStateOf(file.name) }
+
+    if (showRenameDialog) {
+        AlertDialog(
+            onDismissRequest = { showRenameDialog = false },
+            title = { Text("Rename File") },
+            text = {
+                OutlinedTextField(
+                    value = renameText,
+                    onValueChange = { renameText = it },
+                    label = { Text("New Name") },
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    if (renameText.isNotBlank() && renameText != file.name) {
+                        onFileRename(file, renameText)
+                    }
+                    showRenameDialog = false
+                }) {
+                    Text("Rename")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameDialog = false }) {
+                    Text("Cancel")
                 }
             }
-            TextButton(onClick = { onFileFetch(file) }) {
-                Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Fetch")
-            }
-        }
+        )
     }
-}
 
-@Composable
-fun ActionBar(currentPath: String, onSendFile: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.CloudUpload, null, tint = MaterialTheme.colorScheme.primary)
+    var showContextMenu by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+
+    if (showDeleteConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteConfirmDialog = false },
+            title = { Text("Confirm Deletion") },
+            text = { Text("Are you sure you want to delete '${file.name}'?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onFileDelete(file)
+                        showDeleteConfirmDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    Box {
+        Row(
+            modifier = Modifier.fillMaxWidth()
+                .clickable { if (file.isDirectory) onFolderClick(file) }
+                .padding(12.dp, 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            androidx.compose.material3.Checkbox(
+                checked = isSelected,
+                onCheckedChange = onSelectionChange
+            )
+            Spacer(Modifier.width(8.dp))
+            Icon(
+                imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.Default.Description,
+                contentDescription = null,
+                tint = if (file.isDirectory) Color(0xFFFFC107) else MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(32.dp)
+            )
             Spacer(Modifier.width(16.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text("Upload file to Android device", fontWeight = FontWeight.Medium)
-                Text("Destination: $currentPath", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-            }
-            Button(onClick = onSendFile) {
-                Text("Upload to Current Folder")
-            }
-        }
-    }
-}
-
-@Composable
-fun SecurityInfo() {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
-        Divider(thickness = 0.5.dp)
-        Spacer(Modifier.height(16.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.Verified, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(16.dp))
-            Spacer(Modifier.width(8.dp))
-            Text("Encrypted Link", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-        }
-        Text("ECDH-P256 / AES-GCM", fontSize = 10.sp, color = Color.Gray)
-    }
-}
-
-fun formatSize(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
-    val pre = "KMGTPE"[exp - 1]
-    return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
-}
-
-@Composable
-fun TransferProgressDialog(
-    progress: com.example.usbtransferapp.presentation.vm.MainViewModel.TransferProgress,
-    onCancel: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    androidx.compose.ui.window.Dialog(
-        onDismissRequest = { if (progress.isComplete) onDismiss() },
-        properties = androidx.compose.ui.window.DialogProperties()
-    ) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            tonalElevation = 8.dp,
-            modifier = Modifier.fillMaxWidth(0.85f).widthIn(max = 1000.dp)
-        ) {
-            Column(modifier = Modifier.padding(24.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
-                    Spacer(Modifier.width(16.dp))
-                    Column {
-                        Text(if (progress.isComplete) "Transfer Complete" else "Transferring Data", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = if (progress.isComplete) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface)
-                        Text(progress.statusMessage.ifEmpty { progress.filename }, style = MaterialTheme.typography.bodyMedium, color = Color.Gray, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        if (progress.totalFiles > 1) {
-                            Text("File ${progress.currentFileIndex} of ${progress.totalFiles}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(24.dp))
-
-                LinearProgressIndicator(
-                    progress = progress.percentage / 100f,
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                    strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                Text(file.name, fontWeight = FontWeight.Medium)
+                Text(
+                    if (file.isDirectory) "Directory" else formatSize(file.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
                 )
+            }
 
-                Spacer(Modifier.height(16.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Column(horizontalAlignment = Alignment.Start) {
-                        Text("Speed", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                        Text(progress.speed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Elapsed", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                        Text(progress.elapsed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Remaining", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                        Text(progress.eta, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
-                    Column(horizontalAlignment = Alignment.End) {
-                        Text("Progress", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                        Text("${progress.percentage}%", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                    }
+            Box {
+                IconButton(onClick = { showContextMenu = true }) {
+                    Icon(Icons.Default.MoreVert, contentDescription = "More options")
                 }
+                DropdownMenu(
+                    expanded = showContextMenu,
+                    onDismissRequest = { showContextMenu = false }
+                ) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("Fetch") },
+                    onClick = {
+                        showContextMenu = false
+                        onFileFetch(file)
+                    },
+                    leadingIcon = { Icon(Icons.Default.Download, "Fetch") }
+                )
+                if (!file.isDirectory && file.name.endsWith(".anf")) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Convert to CSV") },
+                        onClick = {
+                            showContextMenu = false
+                            onFileConvert(file)
+                        },
+                        leadingIcon = { Icon(Icons.Default.Transform, "Convert") }
+                    )
+                }
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("Rename") },
+                    onClick = {
+                        showContextMenu = false
+                        showRenameDialog = true
+                    },
+                    leadingIcon = { Icon(Icons.Default.Edit, "Rename") }
+                )
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text("Delete") },
+                    onClick = {
+                        showContextMenu = false
+                        showDeleteConfirmDialog = true
+                    },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Default.Delete,
+                            "Delete",
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                    }
+                )
+            }
+            }
+        }
+    }
+}
 
-                Spacer(Modifier.height(12.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+    @Composable
+    fun ActionBar(currentPath: String, onSendFile: () -> Unit) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f),
+            shape = RoundedCornerShape(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.CloudUpload, null, tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.width(16.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Upload file to Android device", fontWeight = FontWeight.Medium)
                     Text(
-                        "${progress.transferred} / ${progress.total}",
+                        "Destination: $currentPath",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.secondary
                     )
-                    
-                    if (progress.totalFiles > 1) {
-                        Text(
-                            "Total Elapsed: ${progress.batchElapsed}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
-                    }
                 }
-                
-                if (progress.queue.isNotEmpty() && progress.totalFiles > 1) {
-                    Spacer(Modifier.height(16.dp))
-                    Text("Queue", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                    Spacer(Modifier.height(4.dp))
-                    androidx.compose.foundation.lazy.LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(max = 100.dp)
-                            .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Gray.copy(alpha = 0.1f))
-                            .padding(8.dp)
-                    ) {
-                        items(progress.queue.size) { i ->
-                            val item = progress.queue[i]
-                            val isCurrent = (i + 1) == progress.currentFileIndex
-                            val isDone = (i + 1) < progress.currentFileIndex
-                            val color = when {
-                                isDone -> Color(0xFF4CAF50)
-                                isCurrent -> MaterialTheme.colorScheme.primary
-                                else -> Color.Gray
-                            }
-                            Text(
-                                text = "${i + 1}. $item",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = color,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                }
-                
-                Spacer(Modifier.height(24.dp))
-                
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    if (progress.isComplete) {
-                        Button(onClick = onDismiss) {
-                            Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Finish")
-                        }
-                    } else {
-                        TextButton(
-                            onClick = onCancel,
-                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                        ) {
-                            Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Cancel Transfer")
-                        }
-                    }
-                }
-
-                if (!progress.isComplete) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("Please do not disconnect the USB cable", style = MaterialTheme.typography.labelSmall, color = Color.Red.copy(alpha = 0.5f))
+                Button(onClick = onSendFile) {
+                    Text("Upload to Current Folder")
                 }
             }
         }
     }
-}
+
+    @Composable
+    fun SecurityInfo() {
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
+            Divider(thickness = 0.5.dp)
+            Spacer(Modifier.height(16.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Default.Verified,
+                    null,
+                    tint = Color(0xFF4CAF50),
+                    modifier = Modifier.size(16.dp)
+                )
+                Spacer(Modifier.width(8.dp))
+                Text("Encrypted Link", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+            Text("ECDH-P256 / AES-GCM", fontSize = 10.sp, color = Color.Gray)
+        }
+    }
+
+    fun formatSize(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
+        val pre = "KMGTPE"[exp - 1]
+        return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
+    }
+
+    @Composable
+    fun TransferProgressDialog(
+        progress: com.example.usbtransferapp.presentation.vm.MainViewModel.TransferProgress,
+        onCancel: () -> Unit,
+        onDismiss: () -> Unit
+    ) {
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { if (progress.isComplete) onDismiss() },
+            properties = androidx.compose.ui.window.DialogProperties()
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                tonalElevation = 8.dp,
+                modifier = Modifier.fillMaxWidth(0.85f).widthIn(max = 1000.dp)
+            ) {
+                Column(modifier = Modifier.padding(24.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            Icons.Default.Download,
+                            null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(32.dp)
+                        )
+                        Spacer(Modifier.width(16.dp))
+                        Column {
+                            Text(
+                                if (progress.isComplete) "Transfer Complete" else "Transferring Data",
+                                style = MaterialTheme.typography.titleLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = if (progress.isComplete) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                progress.statusMessage.ifEmpty { progress.filename },
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = Color.Gray,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            if (progress.totalFiles > 1) {
+                                Text(
+                                    "File ${progress.currentFileIndex} of ${progress.totalFiles}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+
+                    LinearProgressIndicator(
+                        progress = progress.percentage / 100f,
+                        modifier = Modifier.fillMaxWidth().height(8.dp)
+                            .clip(RoundedCornerShape(4.dp)),
+                        strokeCap = androidx.compose.ui.graphics.StrokeCap.Round
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(horizontalAlignment = Alignment.Start) {
+                            Text(
+                                "Speed",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.Gray
+                            )
+                            Text(progress.speed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "Elapsed",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.Gray
+                            )
+                            Text(progress.elapsed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                "Remaining",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.Gray
+                            )
+                            Text(progress.eta, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+                        Column(horizontalAlignment = Alignment.End) {
+                            Text(
+                                "Progress",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.Gray
+                            )
+                            Text(
+                                "${progress.percentage}%",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "${progress.transferred} / ${progress.total}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+
+                        if (progress.totalFiles > 1) {
+                            Text(
+                                "Total Elapsed: ${progress.batchElapsed}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+
+                    if (progress.queue.isNotEmpty() && progress.totalFiles > 1) {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "Queue",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        androidx.compose.foundation.lazy.LazyColumn(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .heightIn(max = 100.dp)
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.Gray.copy(alpha = 0.1f))
+                                .padding(8.dp)
+                        ) {
+                            items(progress.queue.size) { i ->
+                                val item = progress.queue[i]
+                                val isCurrent = (i + 1) == progress.currentFileIndex
+                                val isDone = (i + 1) < progress.currentFileIndex
+                                val color = when {
+                                    isDone -> Color(0xFF4CAF50)
+                                    isCurrent -> MaterialTheme.colorScheme.primary
+                                    else -> Color.Gray
+                                }
+                                Text(
+                                    text = "${i + 1}. $item",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = color,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(24.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        if (progress.isComplete) {
+                            Button(onClick = onDismiss) {
+                                Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Finish")
+                            }
+                        } else {
+                            TextButton(
+                                onClick = onCancel,
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Cancel Transfer")
+                            }
+                        }
+                    }
+
+                    if (!progress.isComplete) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Please do not disconnect the USB cable",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color.Red.copy(alpha = 0.5f)
+                        )
+                    }
+                }
+            }
+        }
+    }

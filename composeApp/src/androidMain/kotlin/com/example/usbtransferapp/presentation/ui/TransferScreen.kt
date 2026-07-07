@@ -162,7 +162,7 @@ fun StateContent(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Text("✅ Android is ready", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
                         Spacer(Modifier.height(4.dp))
-                        Text("Click \"Connect Device\" on the Desktop app to start transferring files.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+//                        Text("Click \"Connect Device\" on the Desktop app to start transferring files.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                     }
                 }
                 

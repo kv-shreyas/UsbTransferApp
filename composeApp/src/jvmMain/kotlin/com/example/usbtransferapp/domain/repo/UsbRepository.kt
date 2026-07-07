@@ -13,5 +13,7 @@ interface UsbRepository {
     fun fetchFile(remotePath: String, localFile: File): Flow<Int>
     fun fetchDirectory(remotePath: String, localFile: File): Flow<Int>
     suspend fun listDirectory(path: String): List<RemoteFile>
+    suspend fun deleteFile(remotePath: String): Boolean
+    suspend fun renameFile(remotePath: String, newName: String): Boolean
     fun cancelTransfer()
 }

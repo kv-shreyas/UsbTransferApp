@@ -145,7 +145,10 @@ class UsbConnection {
 
         val claimResult = LibUsb.claimInterface(handle, ifaceNum)
         if (claimResult != LibUsb.SUCCESS) {
-            println("[UsbConnection] Error: Failed to claim interface $ifaceNum. Code: $claimResult (${LibUsb.strError(claimResult)})")
+            // -6 (Resource busy) is expected if the device is not yet in AOA mode and the kernel holds it.
+            if (claimResult != LibUsb.ERROR_BUSY) {
+                println("[UsbConnection] Warning: Failed to claim interface $ifaceNum. Code: $claimResult (${LibUsb.strError(claimResult)})")
+            }
             LibUsb.close(handle)
             handle = null
             return false

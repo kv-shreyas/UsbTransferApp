@@ -88,9 +88,69 @@ class UsbCommandProcessor @Inject constructor(
                     Log.e(TAG, "ReceiveDir error", e)
                 }
             }
+            6.toByte() -> {
+                try { handleDelete(buffer) } catch(e: Exception) { Log.e(TAG, "Delete error", e) }
+            }
+            7.toByte() -> {
+                try { handleRename(buffer) } catch(e: Exception) { Log.e(TAG, "Rename error", e) }
+            }
             else -> Log.e(TAG, "Unknown command type: $commandType")
         }
         return true
+    }
+
+    private suspend fun handleDelete(buffer: ByteBuffer) {
+        val pathLen = buffer.getInt()
+        val pathBytes = ByteArray(pathLen)
+        buffer.get(pathBytes)
+        val path = String(pathBytes)
+        
+        Log.d(TAG, "handleDelete: Path = $path")
+        val file = resolveFile(path)
+        
+        val success = try {
+            if (file.exists()) {
+                if (file.isDirectory) file.deleteRecursively() else file.delete()
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "handleDelete: Error deleting file", e)
+            false
+        }
+        
+        Log.d(TAG, "handleDelete: Success = $success")
+        dataSource.sendSecure(byteArrayOf(if (success) 1.toByte() else 0.toByte()))
+    }
+
+    private suspend fun handleRename(buffer: ByteBuffer) {
+        val pathLen = buffer.getInt()
+        val pathBytes = ByteArray(pathLen)
+        buffer.get(pathBytes)
+        val oldPath = String(pathBytes)
+        
+        val newNameLen = buffer.getInt()
+        val newNameBytes = ByteArray(newNameLen)
+        buffer.get(newNameBytes)
+        val newName = String(newNameBytes)
+        
+        Log.d(TAG, "handleRename: $oldPath to $newName")
+        val file = resolveFile(oldPath)
+        
+        val success = try {
+            if (file.exists()) {
+                val newFile = java.io.File(file.parentFile, newName)
+                file.renameTo(newFile)
+            } else {
+                false
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "handleRename: Error renaming file", e)
+            false
+        }
+        
+        Log.d(TAG, "handleRename: Success = $success")
+        dataSource.sendSecure(byteArrayOf(if (success) 1.toByte() else 0.toByte()))
     }
 
     private suspend fun handleFetchDir(buffer: ByteBuffer) {

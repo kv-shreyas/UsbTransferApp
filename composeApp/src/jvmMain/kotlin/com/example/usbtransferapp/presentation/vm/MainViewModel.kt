@@ -117,26 +117,9 @@ class MainViewModel(
     }
 
     private fun startConnectionMonitor() {
-        connectionMonitorJob?.cancel()
-        connectionMonitorJob = scope.launch {
-            while (true) {
-                kotlinx.coroutines.delay(2000) // Ping every 2 seconds
-                val isAlive = usbMutex.withLock {
-                    try {
-                        listDirUseCase(_currentRemotePath.value)
-                        true
-                    } catch (e: Exception) {
-                        false
-                    }
-                }
-                if (!isAlive) {
-                    println("[ViewModel] Connection lost from remote.")
-                    disconnect()
-                    _state.value = "Connection Lost"
-                    break
-                }
-            }
-        }
+        // We removed the aggressive polling (which fetched the entire directory every 2 seconds)
+        // because it causes the Android application to get overwhelmed and crash,
+        // thereby dropping the AOA connection unexpectedly.
     }
 
     fun disconnect() {
@@ -601,6 +584,49 @@ class MainViewModel(
                     println("[ViewModel] Data reception completed.")
                 } catch (e: Exception) {
                     println("[ViewModel] Error receiving file: ${e.message}")
+                    _state.value = "Error: ${e.message}"
+                }
+            }
+        }
+    }
+
+    fun deleteFile(remoteFile: RemoteFile) {
+        scope.launch {
+            usbMutex.withLock {
+                if (_remoteFiles.value.none { it.path == remoteFile.path }) return@withLock
+                
+                _state.value = "Deleting ${remoteFile.name}..."
+                try {
+                    val success = usbRepository.deleteFile(remoteFile.path)
+                    if (success) {
+                        _state.value = "Deleted ${remoteFile.name}"
+                        _remoteFiles.value = _remoteFiles.value.filter { it.path != remoteFile.path }
+                        refreshRemoteFilesInternal()
+                    } else {
+                        _state.value = "Failed to delete ${remoteFile.name}"
+                    }
+                } catch (e: Exception) {
+                    _state.value = "Error: ${e.message}"
+                }
+            }
+        }
+    }
+
+    fun renameFile(remoteFile: RemoteFile, newName: String) {
+        scope.launch {
+            usbMutex.withLock {
+                if (_remoteFiles.value.none { it.path == remoteFile.path }) return@withLock
+                
+                _state.value = "Renaming to $newName..."
+                try {
+                    val success = usbRepository.renameFile(remoteFile.path, newName)
+                    if (success) {
+                        _state.value = "Renamed successfully"
+                        refreshRemoteFilesInternal()
+                    } else {
+                        _state.value = "Failed to rename"
+                    }
+                } catch (e: Exception) {
                     _state.value = "Error: ${e.message}"
                 }
             }

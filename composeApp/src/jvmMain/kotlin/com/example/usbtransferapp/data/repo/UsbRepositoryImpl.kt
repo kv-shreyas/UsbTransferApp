@@ -30,6 +30,8 @@ class UsbRepositoryImpl(
     private val CMD_SEND = 1.toByte()
     private val CMD_FETCH = 2.toByte()
     private val CMD_FETCH_DIR = 3.toByte()
+    private val CMD_DELETE = 6.toByte()
+    private val CMD_RENAME = 7.toByte()
 
     override var isAoaMode: Boolean = false
         private set
@@ -572,5 +574,48 @@ class UsbRepositoryImpl(
             result.add(RemoteFile(name, isDir, size, if (path.endsWith("/")) "$path$name" else "$path/$name"))
         }
         return result
+    }
+
+    override suspend fun deleteFile(remotePath: String): Boolean {
+        println("[UsbRepo] --- DELETE START: $remotePath ---")
+        val pathBytes = remotePath.toByteArray()
+        val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
+            .put(CMD_DELETE)
+            .putInt(pathBytes.size)
+            .put(pathBytes)
+            .array()
+        
+        if (!sendEncrypted(header)) {
+            println("[UsbRepo] Error: Failed to send delete request.")
+            return false
+        }
+        
+        val response = receiveEncrypted() ?: return false
+        val success = response.isNotEmpty() && response[0] == 1.toByte()
+        println("[UsbRepo] --- DELETE RESULT: $success ---")
+        return success
+    }
+
+    override suspend fun renameFile(remotePath: String, newName: String): Boolean {
+        println("[UsbRepo] --- RENAME START: $remotePath to $newName ---")
+        val pathBytes = remotePath.toByteArray()
+        val newNameBytes = newName.toByteArray()
+        val header = ByteBuffer.allocate(1 + 4 + pathBytes.size + 4 + newNameBytes.size)
+            .put(CMD_RENAME)
+            .putInt(pathBytes.size)
+            .put(pathBytes)
+            .putInt(newNameBytes.size)
+            .put(newNameBytes)
+            .array()
+            
+        if (!sendEncrypted(header)) {
+            println("[UsbRepo] Error: Failed to send rename request.")
+            return false
+        }
+        
+        val response = receiveEncrypted() ?: return false
+        val success = response.isNotEmpty() && response[0] == 1.toByte()
+        println("[UsbRepo] --- RENAME RESULT: $success ---")
+        return success
     }
 }
