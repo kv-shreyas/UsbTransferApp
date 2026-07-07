@@ -95,7 +95,7 @@ fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, onNavigate:
             NavigationItem("ANF Converter", Icons.Default.Transform, currentScreen == "converter") { onNavigate("converter") }
 
             Spacer(Modifier.height(32.dp))
-            ConnectionCard(state, onConnect = { vm.connect() }, onDisconnect = onDisconnect)
+            ConnectionCard(state, vm.isAoaMode, onConnect = { vm.connect() }, onDisconnect = onDisconnect)
 
             Spacer(Modifier.height(32.dp))
             Text("Recent Transfers", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -126,9 +126,15 @@ fun NavigationItem(label: String, icon: ImageVector, selected: Boolean, onClick:
 }
 
 @Composable
-fun ConnectionCard(state: String, onConnect: () -> Unit, onDisconnect: () -> Unit) {
-    val isConnected = state == "Ready" || state.startsWith("Fetching") || state.startsWith("Sending") || state.contains("✅")
-    val statusColor = if (isConnected) Color(0xFF4CAF50) else if (state.contains("Failed") || state.contains("Error")) Color.Red else Color(0xFFFFA500)
+fun ConnectionCard(state: String, isAoaMode: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit) {
+    val isDisconnected = state == "Idle" || state == "Searching..." || state.contains("Failed") || state.contains("Connection Lost")
+    val isConnected = !isDisconnected
+    
+    val statusColor = when {
+        !isConnected -> if (state == "Idle" || state == "Searching...") Color.Gray else Color.Red
+        state.contains("Error") || state.contains("Cancelled") -> Color(0xFFFFA500)
+        else -> Color(0xFF4CAF50)
+    }
 
     ElevatedCard(
         shape = RoundedCornerShape(16.dp),
@@ -139,6 +145,15 @@ fun ConnectionCard(state: String, onConnect: () -> Unit, onDisconnect: () -> Uni
                 Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(statusColor))
                 Spacer(Modifier.width(8.dp))
                 Text(if (isConnected) "System Online" else "Disconnected", fontWeight = FontWeight.Medium)
+            }
+            if (isConnected) {
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = if (isAoaMode) "Protocol: AOA (Accessory)" else "Protocol: MTP/ADB (Normal)",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(start = 18.dp)
+                )
             }
             Spacer(Modifier.height(12.dp))
             Text(state, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -155,20 +170,23 @@ fun ConnectionCard(state: String, onConnect: () -> Unit, onDisconnect: () -> Uni
                     Spacer(Modifier.width(8.dp))
                     Text("Disconnect")
                 }
-                Spacer(Modifier.height(8.dp))
-            }
-            
-            Button(
-                onClick = onConnect,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(8.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (isConnected) MaterialTheme.colorScheme.secondary else MaterialTheme.colorScheme.primary
+            } else {
+                Text(
+                    "Ensure the Android app is open on your device.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color.Gray
                 )
-            ) {
-                Icon(if (isConnected) Icons.Default.Refresh else Icons.Default.Link, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(if (isConnected) "Reconnect" else "Connect Device")
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = onConnect,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(8.dp),
+                    enabled = state != "Searching..."
+                ) {
+                    Icon(Icons.Default.Link, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Connect Device")
+                }
             }
         }
     }
@@ -398,7 +416,7 @@ fun TransferProgressDialog(
         Surface(
             shape = RoundedCornerShape(16.dp),
             tonalElevation = 8.dp,
-            modifier = Modifier.width(600.dp)
+            modifier = Modifier.fillMaxWidth(0.85f).widthIn(max = 1000.dp)
         ) {
             Column(modifier = Modifier.padding(24.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -457,6 +475,38 @@ fun TransferProgressDialog(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.secondary
                         )
+                    }
+                }
+                
+                if (progress.queue.isNotEmpty() && progress.totalFiles > 1) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("Queue", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                    Spacer(Modifier.height(4.dp))
+                    androidx.compose.foundation.lazy.LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 100.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.Gray.copy(alpha = 0.1f))
+                            .padding(8.dp)
+                    ) {
+                        items(progress.queue.size) { i ->
+                            val item = progress.queue[i]
+                            val isCurrent = (i + 1) == progress.currentFileIndex
+                            val isDone = (i + 1) < progress.currentFileIndex
+                            val color = when {
+                                isDone -> Color(0xFF4CAF50)
+                                isCurrent -> MaterialTheme.colorScheme.primary
+                                else -> Color.Gray
+                            }
+                            Text(
+                                text = "${i + 1}. $item",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = color,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
                 

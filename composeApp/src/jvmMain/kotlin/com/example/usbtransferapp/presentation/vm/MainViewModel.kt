@@ -25,7 +25,8 @@ class MainViewModel(
     private val fetchUseCase: FetchFileUseCase,
     private val fetchDirectoryUseCase: FetchDirectoryUseCase,
     private val listDirUseCase: ListDirectoryUseCase,
-    private val cancelTransferUseCase: CancelTransferUseCase
+    private val cancelTransferUseCase: CancelTransferUseCase,
+    private val usbRepository: com.example.usbtransferapp.domain.repo.UsbRepository
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val usbMutex = Mutex()
@@ -52,11 +53,15 @@ class MainViewModel(
         val totalFiles: Int = 0,
         val statusMessage: String = "",
         val isComplete: Boolean = false,
-        val batchElapsed: String = "0s"
+        val batchElapsed: String = "0s",
+        val queue: List<String> = emptyList()
     )
 
     private val _progressState = MutableStateFlow(TransferProgress())
     val progressState: StateFlow<TransferProgress> = _progressState
+
+    val isAoaMode: Boolean
+        get() = usbRepository.isAoaMode
 
     private var transferJob: kotlinx.coroutines.Job? = null
 
@@ -185,10 +190,13 @@ class MainViewModel(
 
     fun navigateUp() {
         val current = _currentRemotePath.value
-        if (current == "/") return
+        if (current == "/" || current == "/sdcard") return
         val parent = if (current.count { it == '/' } == 1) "/" else current.substringBeforeLast("/")
-        println("[ViewModel] Navigating up from $current to ${if (parent.isEmpty()) "/" else parent}")
-        _currentRemotePath.value = if (parent.isEmpty()) "/" else parent
+        // If parent is empty or somehow goes above sdcard when restricted, clamp it (though our root is / or /sdcard)
+        val nextPath = if (parent.isEmpty()) "/" else parent
+        
+        println("[ViewModel] Navigating up from $current to $nextPath")
+        _currentRemotePath.value = nextPath
         refreshRemoteFiles()
     }
 
@@ -197,7 +205,13 @@ class MainViewModel(
         transferJob = scope.launch {
             val total = files.size
             val batchStartTime = System.currentTimeMillis()
-            _progressState.value = _progressState.value.copy(isVisible = true, totalFiles = total, isComplete = false)
+            val queueNames = files.map { it.name }
+            _progressState.value = _progressState.value.copy(
+                isVisible = true, 
+                totalFiles = total, 
+                isComplete = false,
+                queue = queueNames
+            )
             for ((index, file) in files.withIndex()) {
                 if (!isActive) break
                 _progressState.value = _progressState.value.copy(currentFileIndex = index + 1)
@@ -277,7 +291,13 @@ class MainViewModel(
         transferJob = scope.launch {
             val total = remoteFiles.size
             val batchStartTime = System.currentTimeMillis()
-            _progressState.value = _progressState.value.copy(isVisible = true, totalFiles = total, isComplete = false)
+            val queueNames = remoteFiles.map { it.name }
+            _progressState.value = _progressState.value.copy(
+                isVisible = true, 
+                totalFiles = total, 
+                isComplete = false,
+                queue = queueNames
+            )
             for ((index, remoteFile) in remoteFiles.withIndex()) {
                 if (!isActive) break
                 _progressState.value = _progressState.value.copy(currentFileIndex = index + 1)
@@ -353,23 +373,25 @@ class MainViewModel(
         }
     }
 
-    private suspend fun sendDirectory(dir: File, destinationPath: String, batchStartTime: Long = System.currentTimeMillis()) {
+    private suspend fun sendDirectory(dir: File, destinationPath: String, batchStartTime: Long = System.currentTimeMillis(), currentFileIndex: Int = 1, totalFiles: Int = 1) {
         usbMutex.withLock {
             println("[ViewModel] Preparing to send directory: ${dir.name} to $destinationPath")
-            _state.value = "Zipping: ${dir.name}..."
             
-            _progressState.value = _progressState.value.copy(
-                isVisible = true,
-                filename = dir.name,
-                percentage = 0,
-                statusMessage = "Zipping ${dir.name}..."
-            )
-
             val tempZip = withContext(Dispatchers.IO) {
                 File.createTempFile(dir.name, ".zip")
             }
             try {
-                zipDirectory(dir, tempZip)
+                _progressState.value = _progressState.value.copy(
+                    isVisible = true,
+                    filename = "${dir.name}.zip",
+                    statusMessage = "Zipping ${dir.name}...",
+                    currentFileIndex = currentFileIndex,
+                    totalFiles = totalFiles
+                )
+                zipDirectory(dir, tempZip) { currentItem ->
+                    _progressState.value = _progressState.value.copy(statusMessage = "Zipping: $currentItem")
+                }
+                
                 println("[ViewModel] Sending zipped directory: ${tempZip.name} to $destinationPath")
                 _state.value = "Sending: ${dir.name}.zip..."
                 
@@ -416,7 +438,7 @@ class MainViewModel(
         }
     }
 
-    private suspend fun zipDirectory(dir: File, zipFile: File) = withContext(Dispatchers.IO) {
+    private suspend fun zipDirectory(dir: File, zipFile: File, onProgress: (String) -> Unit) = withContext(Dispatchers.IO) {
         java.util.zip.ZipOutputStream(java.io.FileOutputStream(zipFile)).use { zout ->
             dir.walkTopDown().forEach { file ->
                 ensureActive()
@@ -425,6 +447,7 @@ class MainViewModel(
                     val entry = java.util.zip.ZipEntry(if (file.isDirectory) "$entryName/" else entryName)
                     zout.putNextEntry(entry)
                     if (!file.isDirectory) {
+                        onProgress(entryName)
                         file.inputStream().use { input ->
                             val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
                             var bytes = input.read(buffer)

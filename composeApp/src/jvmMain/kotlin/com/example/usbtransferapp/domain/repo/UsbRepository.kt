@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.Flow
 import java.io.File
 
 interface UsbRepository {
+    val isAoaMode: Boolean
     fun connect(): Boolean
     fun disconnect()
     fun receiveStream(): Flow<ByteArray>

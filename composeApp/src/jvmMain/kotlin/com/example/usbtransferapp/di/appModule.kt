@@ -25,5 +25,5 @@ val appModule = module {
     factory { ListDirectoryUseCase(get()) }
     factory { CancelTransferUseCase(get()) }
 
-    single { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }

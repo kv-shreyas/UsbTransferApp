@@ -20,6 +20,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 @HiltViewModel
@@ -61,6 +62,14 @@ class UsbTransferViewModel @Inject constructor(
         } else {
             Log.w(TAG, "detectDevice: No USB devices or accessories detected.")
             _uiState.value = UsbUiState.NoDevice
+        }
+    }
+
+    fun detectAndConnect() {
+        detectDevice()
+        if (currentDevice != null || currentAccessory != null) {
+            Log.i(TAG, "detectAndConnect: Device found, auto-connecting...")
+            requestPermissionAndConnect()
         }
     }
 
@@ -163,16 +172,31 @@ class UsbTransferViewModel @Inject constructor(
 
     fun disconnect() {
         Log.d(TAG, "disconnect: Resetting connection and state")
-        commandJob?.cancel()
-        commandJob = null
         
-        delegatingConnection.disconnect()
-        aoaManager.disconnect()
-        hostManager.disconnect()
-        
-        currentDevice = null
-        currentAccessory = null
-        _uiState.value = UsbUiState.Idle
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                // Send CMD_DISCONNECT (4) to the Desktop so it knows we are closing
+                dataSource.sendSecure(byteArrayOf(4.toByte()))
+                kotlinx.coroutines.delay(100) // Give it a moment to flush
+            } catch (e: Exception) {
+                Log.w(TAG, "disconnect: Failed to send disconnect command to desktop", e)
+            }
+            
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                commandJob?.cancel()
+                commandJob = null
+                
+                delegatingConnection.disconnect()
+                aoaManager.disconnect()
+                hostManager.disconnect()
+                
+                currentDevice = null
+                currentAccessory = null
+                
+                // Instead of going to Idle, re-detect so we can reconnect if cable is still plugged in
+                detectDevice()
+            }
+        }
     }
 
     override fun onCleared() {

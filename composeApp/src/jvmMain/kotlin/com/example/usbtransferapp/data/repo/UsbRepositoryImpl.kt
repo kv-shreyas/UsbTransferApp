@@ -31,7 +31,11 @@ class UsbRepositoryImpl(
     private val CMD_FETCH = 2.toByte()
     private val CMD_FETCH_DIR = 3.toByte()
 
+    override var isAoaMode: Boolean = false
+        private set
+
     override fun connect(): Boolean {
+        isAoaMode = false
         println("[UsbRepo] Attempting to find Android device...")
         val device = deviceManager.findAndroidDevice() ?: run {
             println("[UsbRepo] Error: No device found on USB bus.")
@@ -40,6 +44,11 @@ class UsbRepositoryImpl(
         
         try {
             println("[UsbRepo] Attempting to open device: $device")
+            val desc = org.usb4java.DeviceDescriptor()
+            org.usb4java.LibUsb.getDeviceDescriptor(device, desc)
+            if (desc.idProduct().toInt() and 0xFFFF == 0x2D00 || desc.idProduct().toInt() and 0xFFFF == 0x2D01) {
+                isAoaMode = true
+            }
             if (!connection.open(device)) {
                 println("[UsbRepo] Initial open failed, attempting switch to AOA mode...")
                 if (connection.switchToAoa(device)) {
@@ -58,6 +67,7 @@ class UsbRepositoryImpl(
                         println("[UsbRepo] Error: Accessory not found after timeout.")
                         return false
                     }
+                    isAoaMode = true
 
                     try {
                         Thread.sleep(500) // Extra time for OS to settle

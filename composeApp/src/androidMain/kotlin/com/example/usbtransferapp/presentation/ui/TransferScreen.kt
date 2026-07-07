@@ -28,7 +28,7 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
 
     LaunchedEffect(Unit) {
-        viewModel.detectDevice()
+        viewModel.detectAndConnect()
     }
 
     Scaffold(
@@ -66,9 +66,7 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
                 ) { targetState ->
                     StateContent(
                         targetState, 
-                        onConnect = { viewModel.requestPermissionAndConnect() },
-                        onDisconnect = { viewModel.disconnect() },
-                        onScan = { viewModel.detectDevice() }
+                        onConnect = { viewModel.requestPermissionAndConnect() }
                     )
                 }
             }
@@ -117,9 +115,7 @@ fun StatusHeader(state: UsbUiState) {
 @Composable
 fun StateContent(
     state: UsbUiState, 
-    onConnect: () -> Unit,
-    onDisconnect: () -> Unit,
-    onScan: () -> Unit
+    onConnect: () -> Unit
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -129,56 +125,58 @@ fun StateContent(
         when (state) {
             is UsbUiState.NoDevice -> {
                 BigIcon(Icons.Default.UsbOff, Color.LightGray)
-                Text("No USB Device Found", style = MaterialTheme.typography.headlineSmall)
-                Text("Please connect your desktop via USB cable.", textAlign = TextAlign.Center)
-                Spacer(Modifier.height(16.dp))
-                OutlinedButton(onClick = onScan) {
-                    Icon(Icons.Default.Refresh, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Scan Again")
-                }
+                Text("Waiting for USB Connection", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Connect your desktop to this device using a USB cable. The app will detect it automatically.",
+                    textAlign = TextAlign.Center,
+                    color = Color.Gray,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
             is UsbUiState.DeviceDetected -> {
                 BigIcon(Icons.Default.Devices, MaterialTheme.colorScheme.primary)
-                Text("Desktop Found", style = MaterialTheme.typography.headlineSmall)
+                Text("Desktop Detected", style = MaterialTheme.typography.headlineSmall)
                 Text(state.name, color = MaterialTheme.colorScheme.secondary)
                 Spacer(Modifier.height(24.dp))
                 Button(
                     onClick = onConnect,
-                    contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp)
+                    contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(Icons.Default.Link, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Initialize Secure Link")
+                    Text("Initialize Connection")
                 }
             }
             is UsbUiState.Success -> {
                 BigIcon(Icons.Default.CheckCircle, Color(0xFF4CAF50))
-                Text("Channel Encrypted", style = MaterialTheme.typography.headlineSmall)
-                Text("Waiting for desktop commands...", color = MaterialTheme.colorScheme.secondary)
-                Spacer(Modifier.height(24.dp))
-                TextButton(onClick = onDisconnect, colors = ButtonDefaults.textButtonColors(contentColor = Color.Red)) {
-                    Icon(Icons.Default.LinkOff, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Terminate Session")
+                Text("Ready & Secure", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(12.dp))
+                
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("✅ Android is ready", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                        Spacer(Modifier.height(4.dp))
+                        Text("Click \"Connect Device\" on the Desktop app to start transferring files.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    }
                 }
+                
+                Spacer(Modifier.height(16.dp))
             }
             is UsbUiState.Error -> {
                 BigIcon(Icons.Default.Error, Color.Red)
                 Text("Connection Failed", style = MaterialTheme.typography.headlineSmall)
                 Text(state.error, color = Color.Red, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Button(onClick = onConnect) {
-                        Icon(Icons.Default.Refresh, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Try Reconnect")
-                    }
-                    OutlinedButton(onClick = onScan) {
-                        Icon(Icons.Default.Search, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Scan Again")
-                    }
+                Button(onClick = onConnect) {
+                    Icon(Icons.Default.Refresh, null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Retry")
                 }
             }
             is UsbUiState.RequestingPermission -> {
@@ -199,7 +197,15 @@ fun StateContent(
                 Text("Handshaking...", fontWeight = FontWeight.Medium)
             }
             else -> {
-                Text("Ready to scan")
+                BigIcon(Icons.Default.Usb, Color.Gray)
+                Text("USB Transfer", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Plug in the USB cable to get started.\nThe device will be detected automatically.",
+                    color = Color.Gray,
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.bodyMedium
+                )
             }
         }
     }
