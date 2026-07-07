@@ -25,7 +25,13 @@ class UsbCommandProcessor @Inject constructor(
 
     private var transferJob: kotlinx.coroutines.Job? = null
 
-    suspend fun startListening() = withContext(Dispatchers.IO) {
+    suspend fun startListening(
+        onReceiveStarted: (String) -> Unit = {},
+        onReceiveProgress: (Float) -> Unit = {},
+        onReceiveFinished: () -> Unit = {},
+        onReceiveCancelled: () -> Unit = {},
+        onReceiveError: (String) -> Unit = {}
+    ) = withContext(Dispatchers.IO) {
         Log.d(TAG, "Command loop started - Sending READY signal")
         try {
             kotlinx.coroutines.delay(100)
@@ -34,7 +40,7 @@ class UsbCommandProcessor @Inject constructor(
             while (isActive) {
                 try {
                     val raw = dataSource.receiveSecure() ?: break
-                    if (!processCommand(raw)) break
+                    if (!processCommand(raw, onReceiveStarted, onReceiveProgress, onReceiveFinished, onReceiveCancelled, onReceiveError)) break
                 } catch (e: UsbDataSource.TransferCancelledException) {
                     Log.w(TAG, "Transfer cancelled by remote. Aborting current transfer job.")
                     transferJob?.cancel()
@@ -48,7 +54,14 @@ class UsbCommandProcessor @Inject constructor(
         Log.d(TAG, "Command loop stopped")
     }
 
-    private suspend fun processCommand(data: ByteArray): Boolean {
+    private suspend fun processCommand(
+        data: ByteArray,
+        onReceiveStarted: (String) -> Unit,
+        onReceiveProgress: (Float) -> Unit,
+        onReceiveFinished: () -> Unit,
+        onReceiveCancelled: () -> Unit,
+        onReceiveError: (String) -> Unit
+    ): Boolean {
         if (data.isEmpty()) return true
         val buffer = ByteBuffer.wrap(data)
         
@@ -58,11 +71,13 @@ class UsbCommandProcessor @Inject constructor(
             0.toByte() -> handleList(buffer)
             1.toByte() -> {
                 try {
-                    handleReceive(buffer)
+                    handleReceive(buffer, onReceiveStarted, onReceiveProgress, onReceiveFinished)
                 } catch (e: UsbDataSource.TransferCancelledException) {
                     Log.w(TAG, "Receive was cancelled by remote.")
+                    withContext(Dispatchers.Main) { onReceiveCancelled() }
                 } catch (e: Exception) {
                     Log.e(TAG, "Receive error", e)
+                    withContext(Dispatchers.Main) { onReceiveError(e.message ?: "Unknown error") }
                 }
             }
             2.toByte() -> {
@@ -81,11 +96,13 @@ class UsbCommandProcessor @Inject constructor(
             }
             5.toByte() -> { // CMD_SEND_DIR
                 try {
-                    handleReceiveDir(buffer)
+                    handleReceiveDir(buffer, onReceiveStarted, onReceiveProgress, onReceiveFinished)
                 } catch (e: UsbDataSource.TransferCancelledException) {
                     Log.w(TAG, "ReceiveDir was cancelled by remote.")
+                    withContext(Dispatchers.Main) { onReceiveCancelled() }
                 } catch (e: Exception) {
                     Log.e(TAG, "ReceiveDir error", e)
+                    withContext(Dispatchers.Main) { onReceiveError(e.message ?: "Unknown error") }
                 }
             }
             6.toByte() -> {
@@ -303,7 +320,12 @@ class UsbCommandProcessor @Inject constructor(
         }
     }
 
-    private suspend fun handleReceive(buffer: ByteBuffer) = kotlinx.coroutines.coroutineScope {
+    private suspend fun handleReceive(
+        buffer: ByteBuffer,
+        onReceiveStarted: (String) -> Unit,
+        onReceiveProgress: (Float) -> Unit,
+        onReceiveFinished: () -> Unit
+    ) = kotlinx.coroutines.coroutineScope {
         val nameLen = buffer.getInt()
         val nameBytes = ByteArray(nameLen)
         buffer.get(nameBytes)
@@ -311,10 +333,12 @@ class UsbCommandProcessor @Inject constructor(
         val fileSize = buffer.getLong()
         
         Log.d(TAG, "handleReceive: File = $fileName ($fileSize bytes)")
+        withContext(Dispatchers.Main) { onReceiveStarted(fileName) }
         
         var fos: FileOutputStream? = null
+        var file: File? = null
         try {
-            val file = resolveFile(fileName)
+            file = resolveFile(fileName)
             file.parentFile?.mkdirs()
             fos = FileOutputStream(file)
         } catch (e: Exception) {
@@ -356,20 +380,35 @@ class UsbCommandProcessor @Inject constructor(
             for (chunk in decryptedChannel) {
                 fos?.write(chunk)
                 received += chunk.size
+                if (fileSize > 0) {
+                    val progress = received.toFloat() / fileSize.toFloat()
+                    withContext(Dispatchers.Main) { onReceiveProgress(progress) }
+                }
                 if (received >= fileSize) break
             }
+        } catch (e: Exception) {
+            fos?.close()
+            fos = null
+            file?.delete()
+            throw e
         } finally {
             fos?.close()
         }
         
         if (fos != null) {
             Log.d(TAG, "handleReceive: Successfully received $fileName")
+            withContext(Dispatchers.Main) { onReceiveFinished() }
         } else {
             Log.w(TAG, "handleReceive: Finished sinking $fileName (failed to save)")
         }
     }
 
-    private suspend fun handleReceiveDir(buffer: ByteBuffer) = coroutineScope {
+    private suspend fun handleReceiveDir(
+        buffer: ByteBuffer,
+        onReceiveStarted: (String) -> Unit,
+        onReceiveProgress: (Float) -> Unit,
+        onReceiveFinished: () -> Unit
+    ) = coroutineScope {
         val nameLen = buffer.getInt()
         val nameBytes = ByteArray(nameLen)
         buffer.get(nameBytes)
@@ -378,6 +417,7 @@ class UsbCommandProcessor @Inject constructor(
         val fileSize = buffer.getLong()
         
         Log.d(TAG, "handleReceiveDir: Folder = $folderName ($fileSize bytes)")
+        withContext(Dispatchers.Main) { onReceiveStarted(folderName) }
         
         val targetDirectory = resolveFile(folderName)
         targetDirectory.mkdirs()
@@ -423,8 +463,17 @@ class UsbCommandProcessor @Inject constructor(
             for (chunk in decryptedChannel) {
                 fos?.write(chunk)
                 received += chunk.size
+                if (fileSize > 0) {
+                    val progress = received.toFloat() / fileSize.toFloat()
+                    withContext(Dispatchers.Main) { onReceiveProgress(progress) }
+                }
                 if (received >= fileSize) break
             }
+        } catch (e: Exception) {
+            fos?.close()
+            fos = null
+            tempZip.delete()
+            throw e
         } finally {
             fos?.close()
         }
@@ -432,10 +481,12 @@ class UsbCommandProcessor @Inject constructor(
         if (fos != null) {
             Log.d(TAG, "handleReceiveDir: Received temp zip, starting extraction...")
             try {
+                withContext(Dispatchers.Main) { onReceiveStarted("Extracting $folderName...") }
                 withContext(Dispatchers.IO) {
                     unzipFile(tempZip, targetDirectory)
                 }
                 Log.d(TAG, "handleReceiveDir: Extracted successfully to ${targetDirectory.absolutePath}")
+                withContext(Dispatchers.Main) { onReceiveFinished() }
             } catch (e: Exception) {
                 Log.e(TAG, "handleReceiveDir: Extraction failed", e)
             } finally {

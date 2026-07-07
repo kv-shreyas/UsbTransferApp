@@ -60,6 +60,7 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
             ) {
                 AnimatedContent(
                     targetState = state,
+                    contentKey = { it::class },
                     transitionSpec = {
                         fadeIn() + scaleIn() togetherWith fadeOut() + scaleOut()
                     }
@@ -85,6 +86,7 @@ fun StatusHeader(state: UsbUiState) {
         is UsbUiState.RequestingPermission -> Triple(Color(0xFFFFA500), "Authenticating", Icons.Default.Lock)
         is UsbUiState.Connecting -> Triple(MaterialTheme.colorScheme.primary, "Connecting", Icons.Default.SettingsEthernet)
         is UsbUiState.Transferring -> Triple(MaterialTheme.colorScheme.primary, "Secure Link Active", Icons.Default.Sync)
+        is UsbUiState.Receiving -> Triple(MaterialTheme.colorScheme.primary, "Receiving File", Icons.Default.Download)
         is UsbUiState.Success -> Triple(Color(0xFF4CAF50), "Connected & Secure", Icons.Default.VerifiedUser)
         is UsbUiState.Error -> Triple(Color.Red, "Error", Icons.Default.Error)
     }
@@ -195,6 +197,21 @@ fun StateContent(
                 CircularProgressIndicator(modifier = Modifier.size(64.dp))
                 Spacer(Modifier.height(16.dp))
                 Text("Handshaking...", fontWeight = FontWeight.Medium)
+            }
+            is UsbUiState.Receiving -> {
+                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(24.dp))
+                Text("Receiving...", fontWeight = FontWeight.Medium)
+                Text(state.fileName, color = MaterialTheme.colorScheme.secondary, textAlign = TextAlign.Center)
+                Spacer(Modifier.height(16.dp))
+                LinearProgressIndicator(
+                    progress = { if (state.progress >= 0) state.progress else 0f },
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                )
+                if (state.progress >= 0f) {
+                    Spacer(Modifier.height(8.dp))
+                    Text("${(state.progress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
             }
             else -> {
                 BigIcon(Icons.Default.Usb, Color.Gray)

@@ -156,11 +156,31 @@ class UsbTransferViewModel @Inject constructor(
             Log.i(TAG, "startHandshakeAndListen: Handshake SUCCESS. Secure channel established.")
             _uiState.value = UsbUiState.Success("Secure Channel Established")
             
-            commandJob?.cancel()
             commandJob = viewModelScope.launch {
                 Log.d(TAG, "startHandshakeAndListen: Starting command listener...")
                 delegatingConnection.clearBuffer()
-                commandProcessor.startListening()
+                commandProcessor.startListening(
+                    onReceiveStarted = { fileName ->
+                        _uiState.value = UsbUiState.Receiving(fileName, 0f)
+                    },
+                    onReceiveProgress = { progress ->
+                        val currentState = _uiState.value
+                        if (currentState is UsbUiState.Receiving) {
+                            _uiState.value = currentState.copy(progress = progress)
+                        } else {
+                            _uiState.value = UsbUiState.Receiving("File", progress)
+                        }
+                    },
+                    onReceiveFinished = {
+                        _uiState.value = UsbUiState.Success("Secure Channel Established")
+                    },
+                    onReceiveCancelled = {
+                        _uiState.value = UsbUiState.Success("Transfer Cancelled")
+                    },
+                    onReceiveError = { errorMsg ->
+                        _uiState.value = UsbUiState.Error("Transfer Error: $errorMsg")
+                    }
+                )
                 _uiState.value = UsbUiState.Idle
                 Log.i(TAG, "startHandshakeAndListen: Command listener terminated. Resetting connection.")
                 disconnect()
