@@ -29,7 +29,7 @@ class UsbCommandProcessor @Inject constructor(
         Log.d(TAG, "Command loop started - Sending READY signal")
         try {
             kotlinx.coroutines.delay(100)
-            dataSource.sendSecure(byteArrayOf(Packet.TYPE_ACK))
+            dataSource.sendRawPacket(Packet.TYPE_ACK, ByteArray(0))
             
             while (isActive) {
                 try {

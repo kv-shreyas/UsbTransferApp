@@ -130,8 +130,9 @@ class UsbTransferViewModel @Inject constructor(
             delegatingConnection.setDelegate(hostManager)
             startHandshakeAndListen()
         } else {
-            Log.e(TAG, "proceedWithDevice: Host connection failed.")
-            _uiState.value = UsbUiState.Error("Host connection failed")
+            Log.w(TAG, "proceedWithDevice: Host connection failed. This is expected if the Desktop is currently negotiating AOA mode switch.")
+            // Don't show a scary red error. The desktop will force a reconnect in AOA mode momentarily.
+            _uiState.value = UsbUiState.DeviceDetected("Desktop Detected")
         }
     }
 
