@@ -66,6 +66,14 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     fun detectAndConnect() {
+        val state = _uiState.value
+        if (state is UsbUiState.Connecting || state is UsbUiState.Transferring || 
+            state is UsbUiState.Receiving || state is UsbUiState.Success || 
+            state is UsbUiState.RequestingPermission) {
+            Log.d(TAG, "detectAndConnect: Already connecting or connected. Ignoring intent.")
+            return
+        }
+
         detectDevice()
         if (currentDevice != null || currentAccessory != null) {
             Log.i(TAG, "detectAndConnect: Device found, auto-connecting...")
@@ -74,8 +82,19 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     fun requestPermissionAndConnect() {
+        val state = _uiState.value
+        if (state is UsbUiState.Connecting || state is UsbUiState.Transferring || 
+            state is UsbUiState.Receiving || state is UsbUiState.Success || 
+            state is UsbUiState.RequestingPermission) {
+            Log.d(TAG, "requestPermissionAndConnect: Already connecting or connected (state: $state). Ignoring redundant request.")
+            return
+        }
+
         viewModelScope.launch {
-            // Ensure any previous stale connection is closed before retrying
+            // Ensure any previous stale connection and background jobs are completely closed before retrying
+            commandJob?.cancel()
+            commandJob = null
+            
             delegatingConnection.disconnect()
             aoaManager.disconnect()
             hostManager.disconnect()
@@ -179,28 +198,47 @@ class UsbTransferViewModel @Inject constructor(
                     },
                     onReceiveError = { errorMsg ->
                         _uiState.value = UsbUiState.Error("Transfer Error: $errorMsg")
+                    },
+                    onDisconnectReceived = {
+                        _uiState.value = UsbUiState.Success("Disconnected by Remote")
+                        disconnect(sendSignal = false)
                     }
                 )
-                _uiState.value = UsbUiState.Idle
-                Log.i(TAG, "startHandshakeAndListen: Command listener terminated. Resetting connection.")
-                disconnect()
+                
+                // If the loop terminated but onDisconnectReceived wasn't called (e.g., error), we still want to clean up.
+                // We shouldn't send a disconnect if the pipe is already dead, but we'll try just in case.
+                if (_uiState.value !is UsbUiState.Success && _uiState.value !is UsbUiState.Error) {
+                    _uiState.value = UsbUiState.Idle
+                    Log.i(TAG, "startHandshakeAndListen: Command listener terminated unexpectedly. Resetting connection.")
+                    disconnect()
+                }
             }
         } else {
             Log.e(TAG, "startHandshakeAndListen: Handshake FAILED.")
-            _uiState.value = UsbUiState.Error("Handshake failed")
+            if (currentDevice != null) {
+                // If we were in Host Mode, the Desktop likely just switched us to AOA mode.
+                // The connection dies during this switch. We revert to a waiting state 
+                // to gracefully wait for the incoming AOA intent instead of flashing an error.
+                Log.i(TAG, "startHandshakeAndListen: Handshake failed in Host Mode. Waiting for AOA reconnection...")
+                _uiState.value = UsbUiState.DeviceDetected("Waiting for AOA mode...")
+            } else {
+                _uiState.value = UsbUiState.Error("Handshake failed")
+            }
         }
     }
 
-    fun disconnect() {
-        Log.d(TAG, "disconnect: Resetting connection and state")
+    fun disconnect(sendSignal: Boolean = true) {
+        Log.d(TAG, "disconnect: Resetting connection and state (sendSignal=$sendSignal)")
         
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                // Send CMD_DISCONNECT (4) to the Desktop so it knows we are closing
-                dataSource.sendSecure(byteArrayOf(4.toByte()))
-                kotlinx.coroutines.delay(100) // Give it a moment to flush
-            } catch (e: Exception) {
-                Log.w(TAG, "disconnect: Failed to send disconnect command to desktop", e)
+            if (sendSignal) {
+                try {
+                    // Send CMD_DISCONNECT (4) to the Desktop so it knows we are closing
+                    dataSource.sendSecure(byteArrayOf(4.toByte()))
+                    kotlinx.coroutines.delay(100) // Give it a moment to flush
+                } catch (e: Exception) {
+                    Log.w(TAG, "disconnect: Failed to send disconnect command to desktop", e)
+                }
             }
             
             withContext(kotlinx.coroutines.Dispatchers.Main) {

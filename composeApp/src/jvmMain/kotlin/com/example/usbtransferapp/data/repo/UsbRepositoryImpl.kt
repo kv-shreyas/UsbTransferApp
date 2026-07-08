@@ -39,20 +39,36 @@ class UsbRepositoryImpl(
     override fun connect(): Boolean {
         isAoaMode = false
         println("[UsbRepo] Attempting to find Android device...")
-        val device = deviceManager.findAndroidDevice() ?: run {
+        
+        var device: org.usb4java.Device? = null
+        for (i in 0 until 5) {
+            device = deviceManager.findAndroidDevice()
+            if (device != null) break
+            println("[UsbRepo] Device not found, waiting for potential re-enumeration... (${i+1}/5)")
+            Thread.sleep(1000)
+        }
+        
+        if (device == null) {
             println("[UsbRepo] Error: No device found on USB bus.")
             return false
         }
         
         try {
-            println("[UsbRepo] Attempting to open device: $device")
+            println("[UsbRepo] Inspecting device descriptor for: $device")
             val desc = org.usb4java.DeviceDescriptor()
             org.usb4java.LibUsb.getDeviceDescriptor(device, desc)
-            if (desc.idProduct().toInt() and 0xFFFF == 0x2D00 || desc.idProduct().toInt() and 0xFFFF == 0x2D01) {
+            val pid = desc.idProduct().toInt() and 0xFFFF
+            val isAlreadyAoa = pid == 0x2D00 || pid == 0x2D01
+            
+            if (isAlreadyAoa) {
+                println("[UsbRepo] Device is already in ACCESSORY mode (PID=${String.format("0x%04X", pid)}). Opening directly...")
                 isAoaMode = true
-            }
-            if (!connection.open(device)) {
-                println("[UsbRepo] Initial open failed, attempting switch to AOA mode...")
+                if (!connection.open(device)) {
+                    println("[UsbRepo] Error: Failed to open accessory device.")
+                    return false
+                }
+            } else {
+                println("[UsbRepo] Device is in NORMAL mode (PID=${String.format("0x%04X", pid)}). Initiating switch to AOA mode...")
                 if (connection.switchToAoa(device)) {
                     println("[UsbRepo] AOA switch triggered. Waiting for re-enumeration...")
                     

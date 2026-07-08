@@ -92,6 +92,16 @@ class AoaConnectionManager @Inject constructor(
 
     override fun disconnect() {
         try {
+            inputStream?.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing input stream", e)
+        }
+        try {
+            outputStream?.close()
+        } catch (e: Exception) {
+            Log.e(TAG, "Error closing output stream", e)
+        }
+        try {
             fileDescriptor?.close()
         } catch (e: Exception) {
             Log.e(TAG, "Error closing file descriptor", e)

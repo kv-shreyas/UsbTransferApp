@@ -104,23 +104,31 @@ class UsbDataSource @Inject constructor(
 
         // 1. Wait for Desktop Public Key
         Log.d(TAG, "Handshake: Step 1 - Waiting for Desktop Public Key...")
-        val packet = receivePacket() ?: run {
-            Log.e(TAG, "Handshake: Failed to receive Desktop Public Key")
-            return@withContext false
+        var packet: Packet.PacketData? = null
+        for (i in 0 until 10) { // Try up to 10 times to clear out stale packets
+            packet = receivePacket()
+            if (packet == null) {
+                Log.e(TAG, "Handshake: Failed to receive packet")
+                return@withContext false
+            }
+            if (packet.type == Packet.TYPE_PUBLIC_KEY) {
+                break
+            }
+            Log.w(TAG, "Handshake: Ignoring stale packet type: ${packet.type}")
         }
         
-        if (packet.type != Packet.TYPE_PUBLIC_KEY) {
-            Log.e(TAG, "Handshake: Expected TYPE_PUBLIC_KEY (0x01), got ${packet.type}")
+        if (packet?.type != Packet.TYPE_PUBLIC_KEY) {
+            Log.e(TAG, "Handshake: Expected TYPE_PUBLIC_KEY (0x01), got ${packet?.type}")
             return@withContext false
         }
         
         val remotePub = try {
-            keyExchange.bytesToPublicKey(packet.payload)
+            keyExchange.bytesToPublicKey(packet!!.payload)
         } catch (e: Exception) {
             Log.e(TAG, "Handshake: Failed to parse remote public key", e)
             return@withContext false
         }
-        Log.d(TAG, "Handshake: Desktop Public Key received (${packet.payload.size} bytes)")
+        Log.d(TAG, "Handshake: Desktop Public Key received (${packet!!.payload.size} bytes)")
 
         // 2. Send our Public Key
         Log.d(TAG, "Handshake: Step 2 - Sending Android Public Key...")

@@ -102,7 +102,20 @@ class MainViewModel(
 
     fun connect() {
         scope.launch {
+            // Ensure any previous background jobs are cleanly cancelled
+            transferJob?.cancel()
+            connectionMonitorJob?.cancel()
+            transferJob = null
+            connectionMonitorJob = null
+
             usbMutex.withLock {
+                // Ensure the USB pipe is closed before we try to open it again
+                try {
+                    disconnectUseCase()
+                } catch (e: Exception) {
+                    println("[ViewModel] Cleanup before connect error: ${e.message}")
+                }
+                
                 println("[ViewModel] Attempting to connect to USB device...")
                 _state.value = "Searching..."
                 val success = connectUseCase()

@@ -30,7 +30,8 @@ class UsbCommandProcessor @Inject constructor(
         onReceiveProgress: (Float) -> Unit = {},
         onReceiveFinished: () -> Unit = {},
         onReceiveCancelled: () -> Unit = {},
-        onReceiveError: (String) -> Unit = {}
+        onReceiveError: (String) -> Unit = {},
+        onDisconnectReceived: () -> Unit = {}
     ) = withContext(Dispatchers.IO) {
         Log.d(TAG, "Command loop started - Sending READY signal")
         try {
@@ -40,7 +41,7 @@ class UsbCommandProcessor @Inject constructor(
             while (isActive) {
                 try {
                     val raw = dataSource.receiveSecure() ?: break
-                    if (!processCommand(raw, onReceiveStarted, onReceiveProgress, onReceiveFinished, onReceiveCancelled, onReceiveError)) break
+                    if (!processCommand(raw, onReceiveStarted, onReceiveProgress, onReceiveFinished, onReceiveCancelled, onReceiveError, onDisconnectReceived)) break
                 } catch (e: UsbDataSource.TransferCancelledException) {
                     Log.w(TAG, "Transfer cancelled by remote. Aborting current transfer job.")
                     transferJob?.cancel()
@@ -60,7 +61,8 @@ class UsbCommandProcessor @Inject constructor(
         onReceiveProgress: (Float) -> Unit,
         onReceiveFinished: () -> Unit,
         onReceiveCancelled: () -> Unit,
-        onReceiveError: (String) -> Unit
+        onReceiveError: (String) -> Unit,
+        onDisconnectReceived: () -> Unit
     ): Boolean {
         if (data.isEmpty()) return true
         val buffer = ByteBuffer.wrap(data)
@@ -92,6 +94,7 @@ class UsbCommandProcessor @Inject constructor(
             }
             4.toByte() -> {
                 Log.d(TAG, "Received DISCONNECT command.")
+                withContext(Dispatchers.Main) { onDisconnectReceived() }
                 return false
             }
             5.toByte() -> { // CMD_SEND_DIR
