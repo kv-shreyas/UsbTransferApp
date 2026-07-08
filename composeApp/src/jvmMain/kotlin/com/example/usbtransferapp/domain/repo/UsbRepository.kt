@@ -16,4 +16,5 @@ interface UsbRepository {
     suspend fun deleteFile(remotePath: String): Boolean
     suspend fun renameFile(remotePath: String, newName: String): Boolean
     fun cancelTransfer()
+    fun checkPhysicalConnection(): Pair<Boolean, String?>
 }

@@ -36,10 +36,41 @@ class UsbTransferViewModel @Inject constructor(
     private val _uiState = MutableStateFlow<UsbUiState>(UsbUiState.Idle)
     val uiState: StateFlow<UsbUiState> = _uiState
 
+    private val _isCablePhysicallyConnected = MutableStateFlow(false)
+    val isCablePhysicallyConnected: StateFlow<Boolean> = _isCablePhysicallyConnected
+
+    init {
+        startCableMonitor()
+    }
+
     private var currentDevice: UsbDevice? = null
     private var currentAccessory: UsbAccessory? = null
     private var commandJob: Job? = null
+    private var cableMonitorJob: Job? = null
     private val TAG = "UsbTransferVM"
+
+    private fun startCableMonitor() {
+        cableMonitorJob?.cancel()
+        cableMonitorJob = viewModelScope.launch {
+            usbManagerWrapper.observeCableState().collect { isConnected ->
+                Log.i(TAG, "Physical cable connection state changed: $isConnected")
+                val wasConnected = _isCablePhysicallyConnected.value
+                _isCablePhysicallyConnected.value = isConnected
+
+                if (!isConnected) {
+                    if (wasConnected || currentDevice != null || currentAccessory != null || _uiState.value !is UsbUiState.NoDevice) {
+                        Log.i(TAG, "USB cable physically unplugged! Triggering disconnect and setting NoDevice state.")
+                        disconnect(sendSignal = false)
+                    } else {
+                        _uiState.value = UsbUiState.NoDevice
+                    }
+                } else if (isConnected && !wasConnected && _uiState.value is UsbUiState.NoDevice) {
+                    Log.i(TAG, "USB cable physically plugged in! Re-detecting device...")
+                    detectDevice()
+                }
+            }
+        }
+    }
 
     fun detectDevice() {
         Log.d(TAG, "detectDevice: Scanning for USB devices and accessories...")
@@ -205,12 +236,10 @@ class UsbTransferViewModel @Inject constructor(
                     }
                 )
                 
-                // If the loop terminated but onDisconnectReceived wasn't called (e.g., error), we still want to clean up.
-                // We shouldn't send a disconnect if the pipe is already dead, but we'll try just in case.
-                if (_uiState.value !is UsbUiState.Success && _uiState.value !is UsbUiState.Error) {
-                    _uiState.value = UsbUiState.Idle
+                // If the loop terminated (e.g., pipe closed when unplugged or remote disconnected), reset connection
+                if (_uiState.value !is UsbUiState.NoDevice && _uiState.value !is UsbUiState.Idle) {
                     Log.i(TAG, "startHandshakeAndListen: Command listener terminated unexpectedly. Resetting connection.")
-                    disconnect()
+                    disconnect(sendSignal = false)
                 }
             }
         } else {
@@ -252,8 +281,13 @@ class UsbTransferViewModel @Inject constructor(
                 currentDevice = null
                 currentAccessory = null
                 
-                // Instead of going to Idle, re-detect so we can reconnect if cable is still plugged in
-                detectDevice()
+                // If disconnected without signal or cable not connected, immediately transition to NoDevice
+                if (!sendSignal || !_isCablePhysicallyConnected.value || !usbManagerWrapper.isUsbCablePhysicallyConnected()) {
+                    Log.i(TAG, "disconnect: Cable unplugged or remote disconnect. Setting state to NoDevice.")
+                    _uiState.value = UsbUiState.NoDevice
+                } else {
+                    detectDevice()
+                }
             }
         }
     }

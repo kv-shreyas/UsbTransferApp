@@ -634,4 +634,8 @@ class UsbRepositoryImpl(
         println("[UsbRepo] --- RENAME RESULT: $success ---")
         return success
     }
+
+    override fun checkPhysicalConnection(): Pair<Boolean, String?> {
+        return deviceManager.isDevicePhysicallyConnected()
+    }
 }

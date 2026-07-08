@@ -26,6 +26,7 @@ import com.example.usbtransferapp.presentation.viewmodel.UsbTransferViewModel
 @Composable
 fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
+    val isCableConnected by viewModel.isCablePhysicallyConnected.collectAsState()
 
     LaunchedEffect(Unit) {
         viewModel.detectAndConnect()
@@ -51,6 +52,8 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             StatusHeader(state)
+
+            UsbPhysicalIndicator(isPhysicallyConnected = isCableConnected)
 
             Box(
                 modifier = Modifier
@@ -257,6 +260,49 @@ fun SecurityFooter() {
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
+        }
+    }
+}
+
+@Composable
+fun UsbPhysicalIndicator(isPhysicallyConnected: Boolean) {
+    val bgColor = if (isPhysicallyConnected) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
+    val borderColor = if (isPhysicallyConnected) Color(0xFF4CAF50) else Color(0xFFE57373)
+    val iconColor = if (isPhysicallyConnected) Color(0xFF2E7D32) else Color(0xFFC62828)
+    val icon = if (isPhysicallyConnected) Icons.Default.CheckCircle else Icons.Default.UsbOff
+    val title = if (isPhysicallyConnected) "USB Cable Physically Connected" else "USB Cable Unplugged / Not Detected"
+    val subtitle = if (isPhysicallyConnected) "Hardware link active. Ready to initialize secure connection." else "Plug in a USB or OTG cable between your devices to begin."
+
+    Surface(
+        color = bgColor,
+        shape = RoundedCornerShape(12.dp),
+        border = androidx.compose.foundation.BorderStroke(1.dp, borderColor),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = iconColor,
+                modifier = Modifier.size(28.dp)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 14.sp,
+                    color = iconColor
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 11.sp,
+                    color = iconColor.copy(alpha = 0.8f)
+                )
+            }
         }
     }
 }

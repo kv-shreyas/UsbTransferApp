@@ -60,6 +60,45 @@ class MainViewModel(
     private val _progressState = MutableStateFlow(TransferProgress())
     val progressState: StateFlow<TransferProgress> = _progressState
 
+    private val _isPhysicallyConnected = MutableStateFlow(false)
+    val isPhysicallyConnected: StateFlow<Boolean> = _isPhysicallyConnected
+
+    private val _physicallyConnectedDeviceName = MutableStateFlow<String?>("No Device")
+    val physicallyConnectedDeviceName: StateFlow<String?> = _physicallyConnectedDeviceName
+
+    init {
+        startPhysicalConnectionMonitor()
+    }
+
+    private var physicalMonitorJob: kotlinx.coroutines.Job? = null
+
+    private fun startPhysicalConnectionMonitor() {
+        physicalMonitorJob?.cancel()
+        physicalMonitorJob = scope.launch {
+            while (isActive) {
+                try {
+                    val (connected, name) = usbRepository.checkPhysicalConnection()
+                    val wasConnected = _isPhysicallyConnected.value
+                    _isPhysicallyConnected.value = connected
+                    _physicallyConnectedDeviceName.value = name ?: "No Device"
+
+                    if (!connected && wasConnected) {
+                        println("[ViewModel] USB cable physically unplugged from Desktop! Auto-disconnecting...")
+                        if (_state.value != "Idle" && _state.value != "Searching..." && !_state.value.contains("Disconnected")) {
+                            disconnect()
+                        }
+                    } else if (!connected && _state.value != "Idle" && _state.value != "Searching..." && !_state.value.contains("Disconnected") && !_state.value.contains("Failed") && !_state.value.contains("Connection Lost")) {
+                        println("[ViewModel] USB device no longer present on bus! Auto-disconnecting...")
+                        disconnect()
+                    }
+                } catch (e: Exception) {
+                    // Ignore
+                }
+                kotlinx.coroutines.delay(1000)
+            }
+        }
+    }
+
     val isAoaMode: Boolean
         get() = usbRepository.isAoaMode
 

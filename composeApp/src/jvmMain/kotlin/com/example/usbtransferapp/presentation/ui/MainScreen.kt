@@ -86,6 +86,9 @@ fun MainScreen(vm: MainViewModel) {
 
 @Composable
 fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, onNavigate: (String) -> Unit, onDisconnect: () -> Unit) {
+    val isPhysicallyConnected by vm.isPhysicallyConnected.collectAsState()
+    val physicalDeviceName by vm.physicallyConnectedDeviceName.collectAsState()
+
     Surface(
         modifier = Modifier.width(280.dp).fillMaxHeight(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -99,7 +102,7 @@ fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, onNavigate:
             NavigationItem("ANF Converter", Icons.Default.Transform, currentScreen == "converter") { onNavigate("converter") }
 
             Spacer(Modifier.height(32.dp))
-            ConnectionCard(state, vm.isAoaMode, onConnect = { vm.connect() }, onDisconnect = onDisconnect)
+            ConnectionCard(state, vm.isAoaMode, isPhysicallyConnected, physicalDeviceName, onConnect = { vm.connect() }, onDisconnect = onDisconnect)
 
             Spacer(Modifier.height(32.dp))
             Text("Recent Transfers", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
@@ -130,7 +133,7 @@ fun NavigationItem(label: String, icon: ImageVector, selected: Boolean, onClick:
 }
 
 @Composable
-fun ConnectionCard(state: String, isAoaMode: Boolean, onConnect: () -> Unit, onDisconnect: () -> Unit) {
+fun ConnectionCard(state: String, isAoaMode: Boolean, isPhysicallyConnected: Boolean, physicalDeviceName: String?, onConnect: () -> Unit, onDisconnect: () -> Unit) {
     val isDisconnected = state == "Idle" || state == "Searching..." || state.contains("Failed") || state.contains("Connection Lost")
     val isConnected = !isDisconnected
     
@@ -145,6 +148,40 @@ fun ConnectionCard(state: String, isAoaMode: Boolean, onConnect: () -> Unit, onD
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
+            Surface(
+                color = if (isPhysicallyConnected) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                shape = RoundedCornerShape(8.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, if (isPhysicallyConnected) Color(0xFF4CAF50) else Color(0xFFE57373)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(modifier = Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        if (isPhysicallyConnected) Icons.Default.CheckCircle else Icons.Default.UsbOff,
+                        null,
+                        tint = if (isPhysicallyConnected) Color(0xFF2E7D32) else Color(0xFFC62828),
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Column {
+                        Text(
+                            if (isPhysicallyConnected) "USB Cable Connected" else "USB Cable Unplugged",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isPhysicallyConnected) Color(0xFF2E7D32) else Color(0xFFC62828)
+                        )
+                        if (isPhysicallyConnected && !physicalDeviceName.isNullOrBlank()) {
+                            Text(
+                                physicalDeviceName,
+                                fontSize = 9.sp,
+                                color = Color(0xFF2E7D32).copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(modifier = Modifier.size(10.dp).clip(CircleShape).background(statusColor))
                 Spacer(Modifier.width(8.dp))
@@ -176,7 +213,7 @@ fun ConnectionCard(state: String, isAoaMode: Boolean, onConnect: () -> Unit, onD
                 }
             } else {
                 Text(
-                    "Ensure the Android app is open on your device.",
+                    if (isPhysicallyConnected) "Click Connect to initialize secure session." else "Plug in your Android device via USB.",
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
@@ -185,7 +222,7 @@ fun ConnectionCard(state: String, isAoaMode: Boolean, onConnect: () -> Unit, onD
                     onClick = onConnect,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(8.dp),
-                    enabled = state != "Searching..."
+                    enabled = state != "Searching..." && isPhysicallyConnected
                 ) {
                     Icon(Icons.Default.Link, null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
