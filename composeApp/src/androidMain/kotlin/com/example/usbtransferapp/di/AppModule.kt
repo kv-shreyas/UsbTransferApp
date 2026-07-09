@@ -17,4 +17,25 @@ object AppModule {
     fun provideIUsbConnection(
         delegating: DelegatingUsbConnection
     ): IUsbConnection = delegating
+
+    @Provides
+    @Singleton
+    fun provideUsbRepository(
+        sender: com.example.usbtransferapp.data.usb.HostCommandSender
+    ): com.example.usbtransferapp.domain.repo.UsbRepository = sender
+
+    @Provides
+    fun provideListDirectoryUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.ListDirectoryUseCase(repo)
+
+    @Provides
+    fun provideSendFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.SendFileUseCase(repo)
+
+    @Provides
+    fun provideFetchFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.FetchFileUseCase(repo)
+
+    @Provides
+    fun provideDeleteFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.DeleteFileUseCase(repo)
+
+    @Provides
+    fun provideRenameFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.RenameFileUseCase(repo)
 }

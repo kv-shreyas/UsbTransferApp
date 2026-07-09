@@ -8,6 +8,7 @@ import com.example.usbtransferapp.data.security.CryptoManager
 import com.example.usbtransferapp.data.Packet
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -270,7 +271,7 @@ class UsbRepositoryImpl(
         }
     }
 
-    override fun receiveStream(): Flow<ByteArray> = flow {
+    override fun receiveStream(): Flow<ByteArray> = channelFlow {
         println("[UsbRepo] Starting data stream reception...")
         kotlinx.coroutines.coroutineScope {
             val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
@@ -312,13 +313,13 @@ class UsbRepositoryImpl(
             // Worker 3: Emit (Main Coroutine)
             for (chunk in decryptedChannel) {
                 if (chunk.isEmpty()) break
-                emit(chunk)
+                send(chunk)
             }
         }
         println("[UsbRepo] Data stream ended.")
     }
 
-    override fun sendFile(file: File, destinationPath: String, isDirectory: Boolean, remoteFileName: String): Flow<Int> = flow {
+    override fun sendFile(file: File, destinationPath: String, isDirectory: Boolean, remoteFileName: String): Flow<Int> = channelFlow {
         println("[UsbRepo] --- UPLOAD START: $remoteFileName to $destinationPath ---")
         val fullRemotePath = if (destinationPath.endsWith("/")) destinationPath + remoteFileName else "$destinationPath/$remoteFileName"
         val fileNameBytes = fullRemotePath.toByteArray()
@@ -334,7 +335,7 @@ class UsbRepositoryImpl(
         
         if (!sendEncrypted(header)) {
             println("[UsbRepo] Error: Failed to send file header.")
-            return@flow
+            return@channelFlow
         }
         
         val fis = FileInputStream(file)
@@ -379,7 +380,7 @@ class UsbRepositoryImpl(
                     if (connection.bulkWrite(Packet.build(Packet.TYPE_DATA, securePayload))) {
                         val chunkSize = securePayload.size - 28 // Subtract IV (12) + Tag (16)
                         totalSent += chunkSize
-                        emit(((totalSent * 100) / fileSize).toInt())
+                        send(((totalSent * 100) / fileSize).toInt())
                     } else {
                         val errorMsg = "Failed to send chunk at $totalSent bytes."
                         println("[UsbRepo] Error: $errorMsg")
@@ -392,7 +393,7 @@ class UsbRepositoryImpl(
         println("[UsbRepo] --- UPLOAD COMPLETE: $totalSent bytes sent ---")
     }
 
-    override fun fetchFile(remotePath: String, localFile: File): Flow<Int> = flow {
+    override fun fetchFile(remotePath: String, localFile: File): Flow<Int> = channelFlow {
         println("[UsbRepo] --- DOWNLOAD START: $remotePath ---")
         val pathBytes = remotePath.toByteArray()
         
@@ -404,17 +405,17 @@ class UsbRepositoryImpl(
         
         if (!sendEncrypted(header)) {
             println("[UsbRepo] Error: Failed to send fetch request.")
-            return@flow
+            return@channelFlow
         }
         
         val sizeResponse = receiveEncrypted() ?: run {
             println("[UsbRepo] Error: Failed to receive file size response.")
-            return@flow
+            return@channelFlow
         }
         val fileSize = ByteBuffer.wrap(sizeResponse).getLong()
         if (fileSize == 0L) {
             println("[UsbRepo] Warning: Remote file not found or empty.")
-            return@flow
+            return@channelFlow
         }
         println("[UsbRepo] Downloading $fileSize bytes to ${localFile.name}")
 
@@ -462,7 +463,7 @@ class UsbRepositoryImpl(
                 for (chunk in decryptedChannel) {
                     fos.write(chunk)
                     totalReceived += chunk.size
-                    emit(((totalReceived * 100) / fileSize).toInt())
+                    send(((totalReceived * 100) / fileSize).toInt())
                     if (totalReceived >= fileSize) break
                 }
             } finally {
@@ -472,7 +473,7 @@ class UsbRepositoryImpl(
         println("[UsbRepo] --- DOWNLOAD COMPLETE: Saved to ${localFile.absolutePath} ---")
     }
 
-    override fun fetchDirectory(remotePath: String, localFile: File): Flow<Int> = flow {
+    override fun fetchDirectory(remotePath: String, localFile: File): Flow<Int> = channelFlow {
         println("[UsbRepo] --- DIR DOWNLOAD START: $remotePath ---")
         val pathBytes = remotePath.toByteArray()
         
@@ -484,17 +485,17 @@ class UsbRepositoryImpl(
         
         if (!sendEncrypted(header)) {
             println("[UsbRepo] Error: Failed to send fetch dir request.")
-            return@flow
+            return@channelFlow
         }
         
         val sizeResponse = receiveEncrypted() ?: run {
             println("[UsbRepo] Error: Failed to receive zip size response.")
-            return@flow
+            return@channelFlow
         }
         val fileSize = ByteBuffer.wrap(sizeResponse).getLong()
         if (fileSize == 0L) {
             println("[UsbRepo] Warning: Remote directory not found or empty.")
-            return@flow
+            return@channelFlow
         }
         println("[UsbRepo] Downloading ZIP of $fileSize bytes to ${localFile.name}")
 
@@ -542,7 +543,7 @@ class UsbRepositoryImpl(
                 for (chunk in decryptedChannel) {
                     fos.write(chunk)
                     totalReceived += chunk.size
-                    emit(((totalReceived * 100) / fileSize).toInt())
+                    send(((totalReceived * 100) / fileSize).toInt())
                     if (totalReceived >= fileSize) break
                 }
             } finally {

@@ -26,6 +26,23 @@ class UsbDeviceManager {
         }
     }*/
 
+    private val knownAndroidVids = setOf(
+        0x18D1, // Google / Android generic
+        0x04E8, // Samsung
+        0x2717, // Xiaomi
+        0x2A70, // OnePlus
+        0x22D9, // Oppo / Realme
+        0x2B4C, // Realme
+        0x1EBF, // Vivo
+        0x22B8, // Motorola
+        0x0FCE, // Sony
+        0x1004, // LG
+        0x0BB4, // HTC
+        0x19D2, // ZTE
+        0x05C6, // Qualcomm
+        0x0E8D  // MediaTek
+    )
+
     fun findAndroidDevice(requireAccessory: Boolean = false): Device? {
         val list = DeviceList()
         val result = LibUsb.getDeviceList(context, list)
@@ -40,14 +57,14 @@ class UsbDeviceManager {
                 val vid = desc.idVendor().toInt() and 0xFFFF
                 val pid = desc.idProduct().toInt() and 0xFFFF
                 
-                val isGoogle = vid == 0x18D1
+                val isAndroidVid = vid in knownAndroidVids
                 val isAoa = pid == 0x2D00 || pid == 0x2D01
                 
-                if (isGoogle) {
-                    println("[UsbDeviceManager] Found device: VID=${String.format("%04x", vid)}, PID=${String.format("%04x", pid)} ${if (isAoa) "[ACCESSORY MODE]" else "[NORMAL MODE]"}")
+                if (isAndroidVid || isAoa) {
+                    println("[UsbDeviceManager] Found device: VID=${String.format("%04X", vid)}, PID=${String.format("%04X", pid)} ${if (isAoa) "[ACCESSORY MODE]" else "[NORMAL MODE]"}")
                 }
 
-                if (requireAccessory) isGoogle && isAoa else isGoogle
+                if (requireAccessory) isAoa else (isAndroidVid || isAoa)
             }?.also { LibUsb.refDevice(it) }
         } finally {
             LibUsb.freeDeviceList(list, true)
@@ -60,22 +77,6 @@ class UsbDeviceManager {
         if (result < 0) return Pair(false, null)
 
         try {
-            val knownAndroidVids = setOf(
-                0x18D1, // Google / Android generic
-                0x04E8, // Samsung
-                0x2717, // Xiaomi
-                0x2A70, // OnePlus
-                0x22D9, // Oppo / Realme
-                0x2B4C, // Realme
-                0x1EBF, // Vivo
-                0x22B8, // Motorola
-                0x0FCE, // Sony
-                0x1004, // LG
-                0x0BB4, // HTC
-                0x19D2, // ZTE
-                0x05C6, // Qualcomm
-                0x0E8D  // MediaTek
-            )
 
             for (device in list) {
                 val desc = DeviceDescriptor()

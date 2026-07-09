@@ -19,8 +19,9 @@ import javax.inject.Inject
 private const val TAG = "UsbCommandProcessor"
 
 class UsbCommandProcessor @Inject constructor(
-    @ApplicationContext private val context: Context,
-    private val dataSource: UsbDataSource
+    @param:ApplicationContext private val context: Context,
+    private val dataSource: UsbDataSource,
+    private val usbLogger: com.example.usbtransferapp.data.logging.UsbLogger
 ) {
 
     private var transferJob: kotlinx.coroutines.Job? = null
@@ -33,7 +34,7 @@ class UsbCommandProcessor @Inject constructor(
         onReceiveError: (String) -> Unit = {},
         onDisconnectReceived: () -> Unit = {}
     ) = withContext(Dispatchers.IO) {
-        Log.d(TAG, "Command loop started - Sending READY signal")
+        usbLogger.d(TAG, "Command loop started - Sending READY signal")
         try {
             kotlinx.coroutines.delay(100)
             dataSource.sendRawPacket(Packet.TYPE_ACK, ByteArray(0))
@@ -43,16 +44,16 @@ class UsbCommandProcessor @Inject constructor(
                     val raw = dataSource.receiveSecure() ?: break
                     if (!processCommand(raw, onReceiveStarted, onReceiveProgress, onReceiveFinished, onReceiveCancelled, onReceiveError, onDisconnectReceived)) break
                 } catch (e: UsbDataSource.TransferCancelledException) {
-                    Log.w(TAG, "Transfer cancelled by remote. Aborting current transfer job.")
+                    usbLogger.w(TAG, "Transfer cancelled by remote. Aborting current transfer job.")
                     transferJob?.cancel()
                     transferJob?.join()
                     transferJob = null
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Command loop error", e)
+            usbLogger.e(TAG, "Command loop error", e)
         }
-        Log.d(TAG, "Command loop stopped")
+        usbLogger.d(TAG, "Command loop stopped")
     }
 
     private suspend fun processCommand(
@@ -75,25 +76,25 @@ class UsbCommandProcessor @Inject constructor(
                 try {
                     handleReceive(buffer, onReceiveStarted, onReceiveProgress, onReceiveFinished)
                 } catch (e: UsbDataSource.TransferCancelledException) {
-                    Log.w(TAG, "Receive was cancelled by remote.")
+                    usbLogger.w(TAG, "Receive was cancelled by remote.")
                     withContext(Dispatchers.Main) { onReceiveCancelled() }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Receive error", e)
+                    usbLogger.e(TAG, "Receive error", e)
                     withContext(Dispatchers.Main) { onReceiveError(e.message ?: "Unknown error") }
                 }
             }
             2.toByte() -> {
                 transferJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                    try { handleFetch(buffer) } catch(e: Exception) { Log.e(TAG, "Fetch error", e) }
+                    try { handleFetch(buffer) } catch(e: Exception) { usbLogger.e(TAG, "Fetch error", e) }
                 }
             }
             3.toByte() -> {
                 transferJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                    try { handleFetchDir(buffer) } catch(e: Exception) { Log.e(TAG, "FetchDir error", e) }
+                    try { handleFetchDir(buffer) } catch(e: Exception) { usbLogger.e(TAG, "FetchDir error", e) }
                 }
             }
             4.toByte() -> {
-                Log.d(TAG, "Received DISCONNECT command.")
+                usbLogger.d(TAG, "Received DISCONNECT command.")
                 withContext(Dispatchers.Main) { onDisconnectReceived() }
                 return false
             }
@@ -101,20 +102,20 @@ class UsbCommandProcessor @Inject constructor(
                 try {
                     handleReceiveDir(buffer, onReceiveStarted, onReceiveProgress, onReceiveFinished)
                 } catch (e: UsbDataSource.TransferCancelledException) {
-                    Log.w(TAG, "ReceiveDir was cancelled by remote.")
+                    usbLogger.w(TAG, "ReceiveDir was cancelled by remote.")
                     withContext(Dispatchers.Main) { onReceiveCancelled() }
                 } catch (e: Exception) {
-                    Log.e(TAG, "ReceiveDir error", e)
+                    usbLogger.e(TAG, "ReceiveDir error", e)
                     withContext(Dispatchers.Main) { onReceiveError(e.message ?: "Unknown error") }
                 }
             }
             6.toByte() -> {
-                try { handleDelete(buffer) } catch(e: Exception) { Log.e(TAG, "Delete error", e) }
+                try { handleDelete(buffer) } catch(e: Exception) { usbLogger.e(TAG, "Delete error", e) }
             }
             7.toByte() -> {
-                try { handleRename(buffer) } catch(e: Exception) { Log.e(TAG, "Rename error", e) }
+                try { handleRename(buffer) } catch(e: Exception) { usbLogger.e(TAG, "Rename error", e) }
             }
-            else -> Log.e(TAG, "Unknown command type: $commandType")
+            else -> usbLogger.e(TAG, "Unknown command type: $commandType")
         }
         return true
     }
@@ -125,7 +126,7 @@ class UsbCommandProcessor @Inject constructor(
         buffer.get(pathBytes)
         val path = String(pathBytes)
         
-        Log.d(TAG, "handleDelete: Path = $path")
+        usbLogger.d(TAG, "handleDelete: Path = $path")
         val file = resolveFile(path)
         
         val success = try {
@@ -135,11 +136,11 @@ class UsbCommandProcessor @Inject constructor(
                 false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "handleDelete: Error deleting file", e)
+            usbLogger.e(TAG, "handleDelete: Error deleting file", e)
             false
         }
         
-        Log.d(TAG, "handleDelete: Success = $success")
+        usbLogger.d(TAG, "handleDelete: Success = $success")
         dataSource.sendSecure(byteArrayOf(if (success) 1.toByte() else 0.toByte()))
     }
 
@@ -154,7 +155,7 @@ class UsbCommandProcessor @Inject constructor(
         buffer.get(newNameBytes)
         val newName = String(newNameBytes)
         
-        Log.d(TAG, "handleRename: $oldPath to $newName")
+        usbLogger.d(TAG, "handleRename: $oldPath to $newName")
         val file = resolveFile(oldPath)
         
         val success = try {
@@ -165,11 +166,11 @@ class UsbCommandProcessor @Inject constructor(
                 false
             }
         } catch (e: Exception) {
-            Log.e(TAG, "handleRename: Error renaming file", e)
+            usbLogger.e(TAG, "handleRename: Error renaming file", e)
             false
         }
         
-        Log.d(TAG, "handleRename: Success = $success")
+        usbLogger.d(TAG, "handleRename: Success = $success")
         dataSource.sendSecure(byteArrayOf(if (success) 1.toByte() else 0.toByte()))
     }
 
@@ -179,22 +180,22 @@ class UsbCommandProcessor @Inject constructor(
         buffer.get(pathBytes)
         val path = String(pathBytes)
         
-        Log.d(TAG, "handleFetchDir: Path = $path")
+        usbLogger.d(TAG, "handleFetchDir: Path = $path")
         
         val dir = resolveFile(path)
         if (!dir.exists() || !dir.isDirectory) {
-            Log.w(TAG, "handleFetchDir: Dir not found or is file: ${dir.absolutePath}")
+            usbLogger.w(TAG, "handleFetchDir: Dir not found or is file: ${dir.absolutePath}")
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
             return
         }
         
         val tempZip = File(context.cacheDir, "transfer_${dir.name}.zip")
         try {
-            Log.d(TAG, "handleFetchDir: Zipping ${dir.absolutePath} to ${tempZip.absolutePath}")
+            usbLogger.d(TAG, "handleFetchDir: Zipping ${dir.absolutePath} to ${tempZip.absolutePath}")
             zipDirectory(dir, tempZip)
             
             val zipSize = tempZip.length()
-            Log.d(TAG, "handleFetchDir: Sending ZIP of $zipSize bytes")
+            usbLogger.d(TAG, "handleFetchDir: Sending ZIP of $zipSize bytes")
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(zipSize).array())
             
             val fis = FileInputStream(tempZip)
@@ -237,12 +238,12 @@ class UsbCommandProcessor @Inject constructor(
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "handleFetchDir: Error zipping/sending directory", e)
+            usbLogger.e(TAG, "handleFetchDir: Error zipping/sending directory", e)
             // Error already sent or size 0
         } finally {
             tempZip.delete()
         }
-        Log.d(TAG, "handleFetchDir: Successfully sent ZIP of $path")
+        usbLogger.d(TAG, "handleFetchDir: Successfully sent ZIP of $path")
     }
 
     private fun zipDirectory(dir: File, zipFile: File) {
@@ -263,16 +264,20 @@ class UsbCommandProcessor @Inject constructor(
     }
 
     private fun resolveFile(path: String): File {
-        Log.d(TAG, "Resolving path: '$path'")
+        usbLogger.d(TAG, "Resolving path: '$path'")
+        val externalStorage = Environment.getExternalStorageDirectory()
+        val cleanPath = path.trim()
         return when {
-            path == "/" || path.isEmpty() -> context.filesDir
-            path == "/sdcard" -> Environment.getExternalStorageDirectory()
-            path.startsWith("/sdcard/") -> {
-                val relativePath = path.removePrefix("/sdcard/")
-                File(Environment.getExternalStorageDirectory(), relativePath)
+            cleanPath == "/" || cleanPath.isEmpty() || cleanPath == "/sdcard" -> externalStorage
+            cleanPath.startsWith("/sdcard/") -> {
+                val relativePath = cleanPath.removePrefix("/sdcard/").trimStart('/')
+                if (relativePath.isEmpty()) externalStorage else File(externalStorage, relativePath)
             }
-            path.startsWith("/") -> File(path)
-            else -> File(context.filesDir, path)
+            cleanPath.startsWith("/") -> {
+                val relativePath = cleanPath.removePrefix("/").trimStart('/')
+                if (relativePath.isEmpty()) externalStorage else File(externalStorage, relativePath)
+            }
+            else -> File(externalStorage, cleanPath)
         }
     }
 
@@ -282,30 +287,30 @@ class UsbCommandProcessor @Inject constructor(
         buffer.get(pathBytes)
         val path = String(pathBytes)
         
-        Log.d(TAG, "handleList: Requested Path = $path")
+        usbLogger.d(TAG, "handleList: Requested Path = $path")
         
         val dir = resolveFile(path)
-        Log.d(TAG, "handleList: Resolved Absolute Path = ${dir.absolutePath}")
-        Log.d(TAG, "handleList: Exists = ${dir.exists()}, IsDirectory = ${dir.isDirectory}, CanRead = ${dir.canRead()}")
+        usbLogger.d(TAG, "handleList: Resolved Absolute Path = ${dir.absolutePath}")
+        usbLogger.d(TAG, "handleList: Exists = ${dir.exists()}, IsDirectory = ${dir.isDirectory}, CanRead = ${dir.canRead()}")
         
         val files = try {
             if (dir.exists() && dir.isDirectory) {
                 dir.listFiles() ?: run {
-                    Log.e(TAG, "handleList: listFiles() returned null for ${dir.absolutePath}")
+                    usbLogger.e(TAG, "handleList: listFiles() returned null for ${dir.absolutePath}")
                     emptyArray()
                 }
             } else {
-                Log.w(TAG, "handleList: Path invalid or inaccessible: ${dir.absolutePath}")
+                usbLogger.w(TAG, "handleList: Path invalid or inaccessible: ${dir.absolutePath}")
                 emptyArray()
             }
         } catch (e: Exception) {
-            Log.e(TAG, "handleList: Exception during listFiles", e)
+            usbLogger.e(TAG, "handleList: Exception during listFiles", e)
             emptyArray()
         }
         
-        Log.i(TAG, "handleList: Returning ${files.size} items for ${dir.absolutePath}")
+        usbLogger.i(TAG, "handleList: Returning ${files.size} items for ${dir.absolutePath}")
         for (file in files) {
-            Log.d(TAG, "handleList: Entry: ${if (file.isDirectory) "[DIR]" else "[FILE]"} ${file.name}")
+            usbLogger.d(TAG, "handleList: Entry: ${if (file.isDirectory) "[DIR]" else "[FILE]"} ${file.name}")
         }
         
         val response = ByteBuffer.allocate(4)
@@ -335,7 +340,7 @@ class UsbCommandProcessor @Inject constructor(
         val fileName = String(nameBytes)
         val fileSize = buffer.getLong()
         
-        Log.d(TAG, "handleReceive: File = $fileName ($fileSize bytes)")
+        usbLogger.d(TAG, "handleReceive: File = $fileName ($fileSize bytes)")
         withContext(Dispatchers.Main) { onReceiveStarted(fileName) }
         
         var fos: FileOutputStream? = null
@@ -345,7 +350,7 @@ class UsbCommandProcessor @Inject constructor(
             file.parentFile?.mkdirs()
             fos = FileOutputStream(file)
         } catch (e: Exception) {
-            Log.e(TAG, "handleReceive: Failed to open FileOutputStream for $fileName. Sinking data to keep pipe clear.", e)
+            usbLogger.e(TAG, "handleReceive: Failed to open FileOutputStream for $fileName. Sinking data to keep pipe clear.", e)
         }
         
         try {
@@ -399,10 +404,10 @@ class UsbCommandProcessor @Inject constructor(
         }
         
         if (fos != null) {
-            Log.d(TAG, "handleReceive: Successfully received $fileName")
+            usbLogger.d(TAG, "handleReceive: Successfully received $fileName")
             withContext(Dispatchers.Main) { onReceiveFinished() }
         } else {
-            Log.w(TAG, "handleReceive: Finished sinking $fileName (failed to save)")
+            usbLogger.w(TAG, "handleReceive: Finished sinking $fileName (failed to save)")
         }
     }
 
@@ -419,7 +424,7 @@ class UsbCommandProcessor @Inject constructor(
         val folderName = fileName.removeSuffix(".zip")
         val fileSize = buffer.getLong()
         
-        Log.d(TAG, "handleReceiveDir: Folder = $folderName ($fileSize bytes)")
+        usbLogger.d(TAG, "handleReceiveDir: Folder = $folderName ($fileSize bytes)")
         withContext(Dispatchers.Main) { onReceiveStarted(folderName) }
         
         val targetDirectory = resolveFile(folderName)
@@ -431,7 +436,7 @@ class UsbCommandProcessor @Inject constructor(
         try {
             fos = FileOutputStream(tempZip)
         } catch (e: Exception) {
-            Log.e(TAG, "handleReceiveDir: Failed to open FileOutputStream for temp zip", e)
+            usbLogger.e(TAG, "handleReceiveDir: Failed to open FileOutputStream for temp zip", e)
         }
         
         try {
@@ -482,16 +487,16 @@ class UsbCommandProcessor @Inject constructor(
         }
         
         if (fos != null) {
-            Log.d(TAG, "handleReceiveDir: Received temp zip, starting extraction...")
+            usbLogger.d(TAG, "handleReceiveDir: Received temp zip, starting extraction...")
             try {
                 withContext(Dispatchers.Main) { onReceiveStarted("Extracting $folderName...") }
                 withContext(Dispatchers.IO) {
                     unzipFile(tempZip, targetDirectory)
                 }
-                Log.d(TAG, "handleReceiveDir: Extracted successfully to ${targetDirectory.absolutePath}")
+                usbLogger.d(TAG, "handleReceiveDir: Extracted successfully to ${targetDirectory.absolutePath}")
                 withContext(Dispatchers.Main) { onReceiveFinished() }
             } catch (e: Exception) {
-                Log.e(TAG, "handleReceiveDir: Extraction failed", e)
+                usbLogger.e(TAG, "handleReceiveDir: Extraction failed", e)
             } finally {
                 tempZip.delete()
             }
@@ -524,16 +529,16 @@ class UsbCommandProcessor @Inject constructor(
         buffer.get(pathBytes)
         val path = String(pathBytes)
         
-        Log.d(TAG, "handleFetch: Path = $path")
+        usbLogger.d(TAG, "handleFetch: Path = $path")
         
         val file = resolveFile(path)
         if (!file.exists() || file.isDirectory) {
-            Log.w(TAG, "handleFetch: File not found or is directory: ${file.absolutePath}")
+            usbLogger.w(TAG, "handleFetch: File not found or is directory: ${file.absolutePath}")
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
             return@coroutineScope
         }
         
-        Log.d(TAG, "handleFetch: Sending ${file.length()} bytes")
+        usbLogger.d(TAG, "handleFetch: Sending ${file.length()} bytes")
         dataSource.sendSecure(ByteBuffer.allocate(8).putLong(file.length()).array())
         
         val fis = FileInputStream(file)
@@ -575,6 +580,6 @@ class UsbCommandProcessor @Inject constructor(
         } finally {
             fis.close()
         }
-        Log.d(TAG, "handleFetch: Successfully sent $path")
+        usbLogger.d(TAG, "handleFetch: Successfully sent $path")
     }
 }

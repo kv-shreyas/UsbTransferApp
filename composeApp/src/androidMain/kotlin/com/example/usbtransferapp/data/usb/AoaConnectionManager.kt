@@ -8,20 +8,24 @@ import java.io.FileOutputStream
 import javax.inject.Inject
 
 class AoaConnectionManager @Inject constructor(
-    private val wrapper: UsbManagerWrapper
+    private val wrapper: UsbManagerWrapper,
+    private val usbLogger: com.example.usbtransferapp.data.logging.UsbLogger
 ) : IUsbConnection {
 
-    private val TAG = "AoaConnManager"
+    companion object {
+        private const val TAG = "AoaConnManager"
+    }
+
     private var fileDescriptor: ParcelFileDescriptor? = null
     private var inputStream: FileInputStream? = null
     private var outputStream: FileOutputStream? = null
 
     fun connect(accessory: UsbAccessory): Boolean {
-        Log.d(TAG, "Connecting to accessory: $accessory")
+        usbLogger.d(TAG, "Connecting to accessory: $accessory")
         fileDescriptor = wrapper.openAccessory(accessory)
         
         if (fileDescriptor == null) {
-            Log.e(TAG, "Failed to open accessory")
+            usbLogger.e(TAG, "Failed to open accessory")
             return false
         }
 
@@ -29,7 +33,7 @@ class AoaConnectionManager @Inject constructor(
         inputStream = FileInputStream(fd)
         outputStream = FileOutputStream(fd)
         
-        Log.d(TAG, "AOA Connection established")
+        usbLogger.d(TAG, "AOA Connection established")
         return true
     }
 
@@ -39,7 +43,7 @@ class AoaConnectionManager @Inject constructor(
             outputStream?.flush()
             data.size
         } catch (e: Exception) {
-            Log.e(TAG, "Error sending data", e)
+            usbLogger.e(TAG, "Error sending data", e)
             -1
         }
     }
@@ -54,7 +58,7 @@ class AoaConnectionManager @Inject constructor(
                 null
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error receiving data", e)
+            usbLogger.e(TAG, "Error receiving data", e)
             null
         }
     }

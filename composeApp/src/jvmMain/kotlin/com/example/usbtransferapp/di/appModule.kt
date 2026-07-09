@@ -24,6 +24,8 @@ val appModule = module {
     factory { FetchDirectoryUseCase(get()) }
     factory { ListDirectoryUseCase(get()) }
     factory { CancelTransferUseCase(get()) }
+    factory { DeleteFileUseCase(get()) }
+    factory { RenameFileUseCase(get()) }
 
     single { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }

@@ -62,12 +62,16 @@ class MainActivity : ComponentActivity() {
 
     private fun handleIntent(intent: Intent?) {
         when (intent?.action) {
-            UsbManager.ACTION_USB_ACCESSORY_ATTACHED -> {
-                Log.d("MainActivity", "Accessory attached via intent - auto-connecting")
+            UsbManager.ACTION_USB_ACCESSORY_ATTACHED,
+            UsbManager.ACTION_USB_DEVICE_ATTACHED -> {
+                Log.d("MainActivity", "USB attached via intent - auto-connecting")
+                viewModel.usbLogger.i("MainActivity", "USB attached via intent (${intent.action}) - auto-connecting")
                 viewModel.detectAndConnect()
             }
-            UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
-                Log.d("MainActivity", "Accessory detached via intent")
+            UsbManager.ACTION_USB_ACCESSORY_DETACHED,
+            UsbManager.ACTION_USB_DEVICE_DETACHED -> {
+                Log.d("MainActivity", "USB detached via intent")
+                viewModel.usbLogger.i("MainActivity", "USB detached via intent (${intent.action})")
                 viewModel.disconnect()
             }
         }

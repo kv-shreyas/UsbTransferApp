@@ -8,10 +8,14 @@ import javax.inject.Inject
 import android.util.Log
 
 class UsbConnectionManager @Inject constructor(
-    private val wrapper: UsbManagerWrapper
+    private val wrapper: UsbManagerWrapper,
+    private val usbLogger: com.example.usbtransferapp.data.logging.UsbLogger
 ) : IUsbConnection {
 
-    private  val TAG = "UsbConnManager"
+    companion object {
+        private const val TAG = "UsbConnManager"
+    }
+
     private var connection: UsbDeviceConnection? = null
     private var endpointIn: UsbEndpoint? = null
     private var endpointOut: UsbEndpoint? = null
@@ -19,41 +23,41 @@ class UsbConnectionManager @Inject constructor(
 
 
         fun connect(device: UsbDevice): Boolean {
-            Log.d(TAG, "Connecting to device: ${device.deviceName}")
+            usbLogger.d(TAG, "Connecting to device: ${device.deviceName}")
             val usbInterface = device.getInterface(0)
             connection = wrapper.usbManager.openDevice(device)
 
             if (connection == null) {
-                Log.e(TAG, "Failed to open device connection")
+                usbLogger.e(TAG, "Failed to open device connection")
                 return false
             }
 
             if (connection?.claimInterface(usbInterface, true) != true) {
-                Log.e(TAG, "Failed to claim interface 0")
+                usbLogger.e(TAG, "Failed to claim interface 0")
                 return false
             }
 
             currentInterface = usbInterface
-            Log.d(TAG, "Interface 0 claimed. Scanning endpoints...")
+            usbLogger.d(TAG, "Interface 0 claimed. Scanning endpoints...")
             for (i in 0 until usbInterface.endpointCount) {
                 val ep = usbInterface.getEndpoint(i)
                 if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK) {
                     if (ep.direction == UsbConstants.USB_DIR_IN) {
                         endpointIn = ep
-                        Log.d(TAG, "Found Bulk IN endpoint: ${ep.address}")
+                        usbLogger.d(TAG, "Found Bulk IN endpoint: ${ep.address}")
                     } else {
                         endpointOut = ep
-                        Log.d(TAG, "Found Bulk OUT endpoint: ${ep.address}")
+                        usbLogger.d(TAG, "Found Bulk OUT endpoint: ${ep.address}")
                     }
                 }
             }
 
             if (endpointIn == null || endpointOut == null) {
-                Log.e(TAG, "Missing bulk endpoints: IN=$endpointIn, OUT=$endpointOut")
+                usbLogger.e(TAG, "Missing bulk endpoints: IN=$endpointIn, OUT=$endpointOut")
                 return false
             }
 
-            Log.d(TAG, "Connection fully established")
+            usbLogger.d(TAG, "Connection fully established")
             return true
         }
 

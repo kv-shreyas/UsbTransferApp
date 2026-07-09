@@ -5,6 +5,7 @@ import com.example.usbtransferapp.data.Packet
 import com.example.usbtransferapp.data.crypto.CryptoManager
 import com.example.usbtransferapp.data.crypto.KeyExchangeManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import javax.crypto.SecretKey
@@ -105,11 +106,11 @@ class UsbDataSource @Inject constructor(
         // 1. Wait for Desktop Public Key
         Log.d(TAG, "Handshake: Step 1 - Waiting for Desktop Public Key...")
         var packet: Packet.PacketData? = null
-        for (i in 0 until 10) { // Try up to 10 times to clear out stale packets
+        for (i in 0 until 40) { // Try up to 40 times (10 seconds total) to clear out stale packets
             packet = receivePacket()
             if (packet == null) {
-                Log.e(TAG, "Handshake: Failed to receive packet")
-                return@withContext false
+                delay(250)
+                continue
             }
             if (packet.type == Packet.TYPE_PUBLIC_KEY) {
                 break
@@ -145,6 +146,58 @@ class UsbDataSource @Inject constructor(
         aesKey = crypto.generateAESKey(secret)
         
         Log.i(TAG, "Handshake: SUCCESS. Secure channel established.")
+        true
+    }
+
+    suspend fun performHandshakeAsInitiator(): Boolean = withContext(Dispatchers.IO) {
+        bufferHead = 0
+        bufferTail = 0
+        Log.i(TAG, "HandshakeAsInitiator: STARTING (Host Role)")
+        val keyPair = keyExchange.generateKeyPair()
+
+        // 1. Send our Public Key FIRST
+        Log.d(TAG, "HandshakeAsInitiator: Step 1 - Sending Initiator Public Key...")
+        val pubBytes = keyExchange.publicKeyToBytes(keyPair.public)
+        val sendResult = manager.send(Packet.build(Packet.TYPE_PUBLIC_KEY, pubBytes))
+        if (sendResult <= 0) {
+            Log.e(TAG, "HandshakeAsInitiator: Failed to send Initiator Public Key")
+            return@withContext false
+        }
+
+        // 2. Wait for Remote Responder Public Key
+        Log.d(TAG, "HandshakeAsInitiator: Step 2 - Waiting for Responder Public Key...")
+        var packet: Packet.PacketData? = null
+        for (i in 0 until 40) { // Try up to 40 times (10 seconds total) to clear out stale packets
+            packet = receivePacket()
+            if (packet == null) {
+                delay(250)
+                continue
+            }
+            if (packet.type == Packet.TYPE_PUBLIC_KEY) {
+                break
+            }
+            Log.w(TAG, "HandshakeAsInitiator: Ignoring stale packet type: ${packet.type}")
+        }
+
+        if (packet?.type != Packet.TYPE_PUBLIC_KEY) {
+            Log.e(TAG, "HandshakeAsInitiator: Expected TYPE_PUBLIC_KEY (0x01), got ${packet?.type}")
+            return@withContext false
+        }
+
+        val remotePub = try {
+            keyExchange.bytesToPublicKey(packet!!.payload)
+        } catch (e: Exception) {
+            Log.e(TAG, "HandshakeAsInitiator: Failed to parse responder public key", e)
+            return@withContext false
+        }
+        Log.d(TAG, "HandshakeAsInitiator: Responder Public Key received (${packet!!.payload.size} bytes)")
+
+        // 3. Derive Secret
+        Log.d(TAG, "HandshakeAsInitiator: Step 3 - Deriving shared secret...")
+        val secret = keyExchange.sharedSecret(keyPair.private, remotePub)
+        aesKey = crypto.generateAESKey(secret)
+
+        Log.i(TAG, "HandshakeAsInitiator: SUCCESS. Secure channel established as Initiator.")
         true
     }
 
@@ -193,5 +246,10 @@ class TransferCancelledException : Exception("Transfer cancelled by remote")
         if (packet.type != Packet.TYPE_DATA) return@withContext null
 
         decryptData(packet.payload)
+    }
+
+    fun disconnect() {
+        aesKey = null
+        manager.disconnect()
     }
 }

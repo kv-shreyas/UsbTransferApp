@@ -11,17 +11,16 @@ class ReceiveFileUseCase(
 ) {
 
     operator fun invoke(output: File): Flow<Long> = flow {
-
         val fos = FileOutputStream(output)
-
         var total = 0L
-
-        repo.receiveStream().collect { chunk ->
-            fos.write(chunk)
-            total += chunk.size
-            emit(total)
+        try {
+            repo.receiveStream().collect { chunk ->
+                fos.write(chunk)
+                total += chunk.size
+                emit(total)
+            }
+        } finally {
+            fos.close()
         }
-
-        fos.close()
     }
 }

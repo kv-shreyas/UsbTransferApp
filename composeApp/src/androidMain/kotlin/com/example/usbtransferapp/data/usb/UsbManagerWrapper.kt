@@ -24,7 +24,8 @@ import java.io.File
 import javax.inject.Inject
 
 class UsbManagerWrapper @Inject constructor(
-    @param:ApplicationContext private val context: Context
+    @param:ApplicationContext private val context: Context,
+    private val usbLogger: com.example.usbtransferapp.data.logging.UsbLogger
 ) {
 
     val usbManager =
@@ -43,38 +44,42 @@ class UsbManagerWrapper @Inject constructor(
     }
 
     fun requestPermission(device: UsbDevice) {
+        usbLogger.i("UsbManagerWrapper", "Requesting permission for device ${device.productName} (${device.deviceId})")
         val intent = Intent(context, UsbPermissionReceiver::class.java).apply {
             action = UsbPermissionReceiver.ACTION_USB_PERMISSION
             setPackage(context.packageName)
         }
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
+        }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
-            device.deviceId, // unique per device
+            device.deviceId,
             intent,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                PendingIntent.FLAG_MUTABLE
-            } else {
-                0
-            }
+            flags
         )
 
         usbManager.requestPermission(device, pendingIntent)
     }
 
     fun requestPermission(accessory: UsbAccessory) {
+        usbLogger.i("UsbManagerWrapper", "Requesting permission for accessory ${accessory.model}")
         val intent = Intent(context, UsbPermissionReceiver::class.java).apply {
             action = UsbPermissionReceiver.ACTION_USB_PERMISSION
             setPackage(context.packageName)
+        }
+        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        } else {
+            PendingIntent.FLAG_UPDATE_CURRENT
         }
         val pendingIntent = PendingIntent.getBroadcast(
             context,
             0,
             intent,
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                PendingIntent.FLAG_MUTABLE
-            } else {
-                0
-            }
+            flags
         )
         usbManager.requestPermission(accessory, pendingIntent)
     }
@@ -93,7 +98,7 @@ class UsbManagerWrapper @Inject constructor(
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 val action = intent?.action
-                Log.d("UsbManagerWrapper", "Cable state broadcast received: $action")
+                usbLogger.d("UsbManagerWrapper", "Cable state broadcast received: $action")
                 val isConnected = isUsbCablePhysicallyConnected(intent)
                 trySend(isConnected)
             }
@@ -118,7 +123,7 @@ class UsbManagerWrapper @Inject constructor(
                 context.registerReceiver(receiver, filter)
             }
         } catch (e: Exception) {
-            Log.e("UsbManagerWrapper", "Failed to register broadcast receiver: ${e.message}")
+            usbLogger.e("UsbManagerWrapper", "Failed to register broadcast receiver: ${e.message}")
         }
 
         val job = launch {
@@ -127,7 +132,7 @@ class UsbManagerWrapper @Inject constructor(
                     val connected = isUsbCablePhysicallyConnected()
                     trySend(connected)
                 } catch (e: Exception) {
-                    Log.e("UsbManagerWrapper", "Error in backup polling loop: ${e.message}")
+                    // Suppress excessive backup loop errors unless critical
                 }
                 kotlinx.coroutines.delay(500)
             }
@@ -138,7 +143,7 @@ class UsbManagerWrapper @Inject constructor(
             try {
                 context.unregisterReceiver(receiver)
             } catch (e: Exception) {
-                Log.e("UsbManagerWrapper", "Error unregistering receiver: ${e.message}")
+                usbLogger.e("UsbManagerWrapper", "Error unregistering receiver: ${e.message}")
             }
         }
     }.distinctUntilChanged()
