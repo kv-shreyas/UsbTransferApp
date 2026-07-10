@@ -7,4 +7,6 @@ interface IUsbConnection {
     fun receiveExact(size: Int): ByteArray?
     fun clearBuffer()
     fun disconnect()
+    fun isConnected(): Boolean = true
 }
+

@@ -248,26 +248,36 @@ class UsbRepositoryImpl(
     }
 
     private fun receiveEncrypted(): ByteArray? {
-        val packet = readNextPacket() ?: run {
-            println("[UsbRepo] Error: Failed to read incoming packet.")
-            return null
-        }
-        if (packet.type != Packet.TYPE_DATA) {
-            println("[UsbRepo] Warning: Received non-data packet during transfer: ${packet.type}")
-            return null
-        }
-        val payload = packet.payload
-        if (payload.size < 12) {
-            println("[UsbRepo] Error: Secure payload too small for IV.")
-            return null
-        }
-        val iv = payload.copyOfRange(0, 12)
-        val ciphertext = payload.copyOfRange(12, payload.size)
-        return try {
-            cryptoManager.decrypt(iv, ciphertext)
-        } catch (e: Exception) {
-            println("[UsbRepo] Error: Decryption failed - ${e.message}")
-            null
+        while (true) {
+            val packet = readNextPacket() ?: run {
+                println("[UsbRepo] Error: Failed to read incoming packet.")
+                return null
+            }
+            if (packet.type == Packet.TYPE_CANCEL) {
+                println("[UsbRepo] Transfer cancelled by remote.")
+                return null
+            }
+            if (packet.type == Packet.TYPE_ACK) {
+                // Silently skip heartbeat/READY ACK signals during data transfers
+                continue
+            }
+            if (packet.type != Packet.TYPE_DATA) {
+                println("[UsbRepo] Warning: Skipping unexpected non-data packet type: ${packet.type}")
+                continue
+            }
+            val payload = packet.payload
+            if (payload.size < 12) {
+                println("[UsbRepo] Error: Secure payload too small for IV.")
+                return null
+            }
+            val iv = payload.copyOfRange(0, 12)
+            val ciphertext = payload.copyOfRange(12, payload.size)
+            return try {
+                cryptoManager.decrypt(iv, ciphertext)
+            } catch (e: Exception) {
+                println("[UsbRepo] Error: Decryption failed - ${e.message}")
+                null
+            }
         }
     }
 
@@ -282,7 +292,8 @@ class UsbRepositoryImpl(
                 try {
                     while (isActive) {
                         val packet = readNextPacket() ?: break
-                        if (packet.type != Packet.TYPE_DATA) break
+                        if (packet.type == Packet.TYPE_CANCEL) break
+                        if (packet.type != Packet.TYPE_DATA) continue
                         rawPacketChannel.send(packet.payload)
                     }
                 } finally {

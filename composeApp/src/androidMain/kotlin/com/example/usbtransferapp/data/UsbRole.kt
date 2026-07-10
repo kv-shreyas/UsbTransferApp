@@ -6,8 +6,3 @@ sealed class UsbRole {
     // This device is the Client/Responder - it receives and processes commands
     data class Client(val connectedHostName: String = "Unknown Host") : UsbRole()
 }
-
-enum class UsbConnectionMode {
-    DESKTOP_TO_ANDROID,       // Desktop host -> Android client (existing)
-    ANDROID_TO_ANDROID        // Android host -> Android client (new)
-}

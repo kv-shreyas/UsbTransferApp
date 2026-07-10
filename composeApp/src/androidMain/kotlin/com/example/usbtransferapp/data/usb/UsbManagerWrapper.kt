@@ -155,7 +155,7 @@ class UsbManagerWrapper @Inject constructor(
             intent?.action == Intent.ACTION_POWER_DISCONNECTED) {
             val hasRemainingDevices = getDevices().isNotEmpty()
             val hasRemainingAccessories = !getAccessories().isNullOrEmpty()
-            if (!hasRemainingDevices && !hasRemainingAccessories) {
+            if (!hasRemainingDevices && !hasRemainingAccessories && !isUsbPowerConnected()) {
                 return false
             }
         }
@@ -163,6 +163,29 @@ class UsbManagerWrapper @Inject constructor(
         // Check active USB devices or accessories via UsbManager
         val hasDevices = getDevices().isNotEmpty()
         val hasAccessories = !getAccessories().isNullOrEmpty()
-        return hasDevices || hasAccessories
+        if (hasDevices || hasAccessories) return true
+
+        // Fallback: Check if USB data power is connected via BatteryManager.
+        // This detects the cable on the peripheral side BEFORE the remote host
+        // switches us to AOA Accessory mode (when no UsbDevice/UsbAccessory is visible yet).
+        return isUsbPowerConnected()
+    }
+
+    /**
+     * Checks if a USB data cable is providing power, even when no USB device or accessory
+     * is enumerated yet. This is useful for detecting cable presence on the peripheral side
+     * of the connection before AOA mode switching occurs.
+     *
+     * Note: BATTERY_PLUGGED_USB specifically means USB data port power, NOT AC charger
+     * (which would be BATTERY_PLUGGED_AC).
+     */
+    private fun isUsbPowerConnected(): Boolean {
+        return try {
+            val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val pluggedType = batteryIntent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+            pluggedType == BatteryManager.BATTERY_PLUGGED_USB
+        } catch (e: Exception) {
+            false
+        }
     }
 }

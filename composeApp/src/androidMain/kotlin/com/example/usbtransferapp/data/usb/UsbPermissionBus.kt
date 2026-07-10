@@ -8,6 +8,8 @@ import kotlinx.coroutines.flow.asSharedFlow
 sealed class UsbPermissionEvent {
     data class DeviceGranted(val device: UsbDevice) : UsbPermissionEvent()
     data class AccessoryGranted(val accessory: UsbAccessory) : UsbPermissionEvent()
+    data class DeviceDenied(val device: UsbDevice) : UsbPermissionEvent()
+    data class AccessoryDenied(val accessory: UsbAccessory) : UsbPermissionEvent()
 }
 
 object UsbPermissionBus {

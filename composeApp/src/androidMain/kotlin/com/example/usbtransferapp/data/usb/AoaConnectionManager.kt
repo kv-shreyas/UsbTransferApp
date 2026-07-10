@@ -115,4 +115,9 @@ class AoaConnectionManager @Inject constructor(
             outputStream = null
         }
     }
+
+    override fun isConnected(): Boolean {
+        return inputStream != null && outputStream != null
+    }
 }
+

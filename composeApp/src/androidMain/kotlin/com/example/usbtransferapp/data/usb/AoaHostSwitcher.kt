@@ -31,6 +31,43 @@ class AoaHostSwitcher @Inject constructor(
         private const val VERSION = "1.0"
         private const val URI = "http://example.com"
         private const val SERIAL = "12345678"
+
+        /**
+         * Returns true if the device is already in Android Open Accessory (AOA) mode.
+         * Google VID is 0x18D1, and AOA PIDs range from 0x2D00 to 0x2D05 (covering Accessory, ADB, Audio combinations).
+         */
+        fun isAoaDevice(device: UsbDevice?): Boolean {
+            if (device == null) return false
+            return device.vendorId == 0x18D1 && (device.productId in 0x2D00..0x2D05)
+        }
+    }
+
+    /**
+     * Checks if the connected UsbDevice supports Android Open Accessory (AOA) protocol without triggering a switch.
+     */
+    fun isAoaSupported(device: UsbDevice): Boolean {
+        if (isAoaDevice(device)) return true
+
+        val connection = usbManagerWrapper.openDevice(device) ?: return false
+        return try {
+            val protocolBuffer = ByteArray(2)
+            val protocolResult = connection.controlTransfer(
+                USB_DIR_IN or USB_TYPE_VENDOR,
+                ACCESSORY_GET_PROTOCOL,
+                0,
+                0,
+                protocolBuffer,
+                2,
+                3000
+            )
+            if (protocolResult < 0) return false
+            val protocol = (protocolBuffer[0].toInt() and 0xFF) or ((protocolBuffer[1].toInt() and 0xFF) shl 8)
+            protocol >= 1
+        } catch (e: Exception) {
+            false
+        } finally {
+            try { connection.close() } catch (e: Exception) {}
+        }
     }
 
     /**
@@ -38,6 +75,10 @@ class AoaHostSwitcher @Inject constructor(
      * After this call succeeds, the remote Android device will disconnect from USB and re-enumerate as an accessory.
      */
     fun switchToAoaMode(device: UsbDevice): Boolean {
+        if (isAoaDevice(device)) {
+            usbLogger.i(TAG, "switchToAoaMode: Device ${device.productName} is already in AOA mode.")
+            return true
+        }
         usbLogger.i(TAG, "switchToAoaMode: Initiating AOA mode switch for device ${device.productName} (VID: ${String.format("%04X", device.vendorId)}, PID: ${String.format("%04X", device.productId)})")
         val connection = usbManagerWrapper.openDevice(device)
         if (connection == null) {

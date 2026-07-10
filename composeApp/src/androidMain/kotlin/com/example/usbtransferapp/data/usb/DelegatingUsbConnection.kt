@@ -35,4 +35,9 @@ class DelegatingUsbConnection @Inject constructor() : IUsbConnection {
         delegate?.disconnect()
         delegate = null
     }
+
+    override fun isConnected(): Boolean {
+        return delegate?.isConnected() == true
+    }
 }
+

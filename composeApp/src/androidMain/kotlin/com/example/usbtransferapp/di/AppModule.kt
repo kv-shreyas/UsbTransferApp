@@ -34,6 +34,9 @@ object AppModule {
     fun provideFetchFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.FetchFileUseCase(repo)
 
     @Provides
+    fun provideFetchDirectoryUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.FetchDirectoryUseCase(repo)
+
+    @Provides
     fun provideDeleteFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.DeleteFileUseCase(repo)
 
     @Provides

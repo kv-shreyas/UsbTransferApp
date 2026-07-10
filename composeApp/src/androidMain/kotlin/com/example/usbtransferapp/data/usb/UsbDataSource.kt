@@ -5,7 +5,11 @@ import com.example.usbtransferapp.data.Packet
 import com.example.usbtransferapp.data.crypto.CryptoManager
 import com.example.usbtransferapp.data.crypto.KeyExchangeManager
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import javax.crypto.SecretKey
@@ -22,6 +26,15 @@ class UsbDataSource @Inject constructor(
 ) {
 
     private var aesKey: SecretKey? = null
+
+    private val sendMutex = Mutex()
+    private val pendingRawPackets = ArrayDeque<Packet.PacketData>()
+
+    fun pushBackRawPacket(packet: Packet.PacketData) {
+        synchronized(pendingRawPackets) {
+            pendingRawPackets.addFirst(packet)
+        }
+    }
 
     // Optimized circular/sliding buffer to prevent O(N^2) array copies and GC pressure
     private var leftoverBuffer = ByteArray(1024 * 1024 * 5) // 5MB buffer
@@ -47,8 +60,12 @@ class UsbDataSource @Inject constructor(
             // Read directly into our pre-allocated array to avoid creating 512KB of garbage per read
             val bytesRead = manager.receive(readBuffer)
             if (bytesRead <= 0) {
-                Log.e(TAG, "receivePacket: Failed to read from USB stream")
-                return@withContext null
+                if (!manager.isConnected() || !currentCoroutineContext().isActive) {
+                    Log.e(TAG, "receivePacket: USB stream disconnected or coroutine cancelled")
+                    return@withContext null
+                }
+                delay(50)
+                continue
             }
             if (bufferTail + bytesRead > leftoverBuffer.size) {
                 // Expand buffer if needed (should be rare with 5MB)
@@ -75,8 +92,12 @@ class UsbDataSource @Inject constructor(
             compactBuffer()
             val bytesRead = manager.receive(readBuffer)
             if (bytesRead <= 0) {
-                Log.e(TAG, "receivePacket: Failed to read full payload from USB stream")
-                return@withContext null
+                if (!manager.isConnected() || !currentCoroutineContext().isActive) {
+                    Log.e(TAG, "receivePacket: USB stream disconnected or coroutine cancelled during payload read")
+                    return@withContext null
+                }
+                delay(50)
+                continue
             }
             if (bufferTail + bytesRead > leftoverBuffer.size) {
                 val newBuffer = ByteArray(leftoverBuffer.size * 2)
@@ -98,15 +119,22 @@ class UsbDataSource @Inject constructor(
     }
 
     suspend fun performHandshake(): Boolean = withContext(Dispatchers.IO) {
+        synchronized(pendingRawPackets) {
+            pendingRawPackets.clear()
+        }
         bufferHead = 0
         bufferTail = 0
+        try {
+            manager.clearBuffer()
+            Log.d(TAG, "Handshake: Flushed stale hardware USB bulk FIFO")
+        } catch (_: Exception) {}
         Log.i(TAG, "Handshake: STARTING")
         val keyPair = keyExchange.generateKeyPair()
 
         // 1. Wait for Desktop Public Key
         Log.d(TAG, "Handshake: Step 1 - Waiting for Desktop Public Key...")
         var packet: Packet.PacketData? = null
-        for (i in 0 until 40) { // Try up to 40 times (10 seconds total) to clear out stale packets
+        for (i in 0 until 240) { // Try up to 240 times (60 seconds total) to clear out stale packets and wait for remote
             packet = receivePacket()
             if (packet == null) {
                 delay(250)
@@ -150,8 +178,15 @@ class UsbDataSource @Inject constructor(
     }
 
     suspend fun performHandshakeAsInitiator(): Boolean = withContext(Dispatchers.IO) {
+        synchronized(pendingRawPackets) {
+            pendingRawPackets.clear()
+        }
         bufferHead = 0
         bufferTail = 0
+        try {
+            manager.clearBuffer()
+            Log.d(TAG, "HandshakeAsInitiator: Flushed stale hardware USB bulk FIFO")
+        } catch (_: Exception) {}
         Log.i(TAG, "HandshakeAsInitiator: STARTING (Host Role)")
         val keyPair = keyExchange.generateKeyPair()
 
@@ -167,7 +202,7 @@ class UsbDataSource @Inject constructor(
         // 2. Wait for Remote Responder Public Key
         Log.d(TAG, "HandshakeAsInitiator: Step 2 - Waiting for Responder Public Key...")
         var packet: Packet.PacketData? = null
-        for (i in 0 until 40) { // Try up to 40 times (10 seconds total) to clear out stale packets
+        for (i in 0 until 240) { // Try up to 240 times (60 seconds total) to clear out stale packets and wait for remote responder
             packet = receivePacket()
             if (packet == null) {
                 delay(250)
@@ -209,10 +244,17 @@ class UsbDataSource @Inject constructor(
     }
 
     suspend fun sendRawPacket(type: Byte, payload: ByteArray): Boolean = withContext(Dispatchers.IO) {
-        manager.send(Packet.build(type, payload)) > 0
+        sendMutex.withLock {
+            manager.send(Packet.build(type, payload)) > 0
+        }
     }
 
     suspend fun receiveRawPacket(): Packet.PacketData? = withContext(Dispatchers.IO) {
+        synchronized(pendingRawPackets) {
+            if (pendingRawPackets.isNotEmpty()) {
+                return@withContext pendingRawPackets.removeFirst()
+            }
+        }
         receivePacket()
     }
 
@@ -243,13 +285,26 @@ class TransferCancelledException : Exception("Transfer cancelled by remote")
             throw TransferCancelledException()
         }
         
-        if (packet.type != Packet.TYPE_DATA) return@withContext null
+        if (packet.type == Packet.TYPE_ACK) {
+            // Silently skip heartbeat/READY ACK signals during data transfers without echoing
+            return@withContext receiveSecure()
+        }
+        
+        if (packet.type != Packet.TYPE_DATA) {
+            Log.w(TAG, "receiveSecure: Received non-DATA packet type (${packet.type}) during secure stream. Ignoring and waiting for next packet...")
+            return@withContext receiveSecure()
+        }
 
         decryptData(packet.payload)
     }
 
     fun disconnect() {
         aesKey = null
+        synchronized(pendingRawPackets) {
+            pendingRawPackets.clear()
+        }
+        bufferHead = 0
+        bufferTail = 0
         manager.disconnect()
     }
 }

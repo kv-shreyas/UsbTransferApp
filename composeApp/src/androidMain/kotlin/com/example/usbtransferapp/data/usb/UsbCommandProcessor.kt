@@ -34,14 +34,24 @@ class UsbCommandProcessor @Inject constructor(
         onReceiveError: (String) -> Unit = {},
         onDisconnectReceived: () -> Unit = {}
     ) = withContext(Dispatchers.IO) {
-        usbLogger.d(TAG, "Command loop started - Sending READY signal")
+        usbLogger.d(TAG, "Command loop started - Sending periodic READY signals")
         try {
-            kotlinx.coroutines.delay(100)
-            dataSource.sendRawPacket(Packet.TYPE_ACK, ByteArray(0))
+            // Send READY signal periodically during handshake confirmation, but cancel right away once commands start
+            val ackJob = launch {
+                for (i in 0 until 4) {
+                    try {
+                        dataSource.sendRawPacket(Packet.TYPE_ACK, ByteArray(0))
+                    } catch (e: Exception) {
+                        break
+                    }
+                    kotlinx.coroutines.delay(150)
+                }
+            }
             
             while (isActive) {
                 try {
                     val raw = dataSource.receiveSecure() ?: break
+                    ackJob.cancel()
                     if (!processCommand(raw, onReceiveStarted, onReceiveProgress, onReceiveFinished, onReceiveCancelled, onReceiveError, onDisconnectReceived)) break
                 } catch (e: UsbDataSource.TransferCancelledException) {
                     usbLogger.w(TAG, "Transfer cancelled by remote. Aborting current transfer job.")
@@ -293,10 +303,10 @@ class UsbCommandProcessor @Inject constructor(
         usbLogger.d(TAG, "handleList: Resolved Absolute Path = ${dir.absolutePath}")
         usbLogger.d(TAG, "handleList: Exists = ${dir.exists()}, IsDirectory = ${dir.isDirectory}, CanRead = ${dir.canRead()}")
         
-        val files = try {
+        val names = try {
             if (dir.exists() && dir.isDirectory) {
-                dir.listFiles() ?: run {
-                    usbLogger.e(TAG, "handleList: listFiles() returned null for ${dir.absolutePath}")
+                dir.list() ?: run {
+                    usbLogger.e(TAG, "handleList: list() returned null for ${dir.absolutePath}")
                     emptyArray()
                 }
             } else {
@@ -304,24 +314,32 @@ class UsbCommandProcessor @Inject constructor(
                 emptyArray()
             }
         } catch (e: Exception) {
-            usbLogger.e(TAG, "handleList: Exception during listFiles", e)
+            usbLogger.e(TAG, "handleList: Exception during list", e)
             emptyArray()
         }
         
-        usbLogger.i(TAG, "handleList: Returning ${files.size} items for ${dir.absolutePath}")
-        for (file in files) {
-            usbLogger.d(TAG, "handleList: Entry: ${if (file.isDirectory) "[DIR]" else "[FILE]"} ${file.name}")
+        // As requested by user: ONLY get names and directory flag. Do NOT query file.length() / actual size.
+        // This eliminates hundreds of slow FUSE stat/lstat system calls across Scoped Storage on Android.
+        val items = ArrayList<Triple<Boolean, Long, ByteArray>>(names.size)
+        for (name in names) {
+            if (name.startsWith(".")) continue // Skip hidden files
+            val child = File(dir, name)
+            val isDir = try { child.isDirectory } catch (_: Exception) { false }
+            items.add(Triple(isDir, 0L, name.toByteArray(Charsets.UTF_8)))
         }
         
-        val response = ByteBuffer.allocate(4)
-        response.putInt(files.size)
-        dataSource.sendSecure(response.array())
+        items.sortWith(compareBy<Triple<Boolean, Long, ByteArray>> { !it.first }.thenBy { String(it.third, Charsets.UTF_8).lowercase() })
         
-        for (file in files) {
-            val nameBytes = file.name.toByteArray()
+        val countBuffer = ByteBuffer.allocate(4)
+        countBuffer.putInt(items.size)
+        dataSource.sendSecure(countBuffer.array())
+        kotlinx.coroutines.delay(50)
+        
+        usbLogger.i(TAG, "handleList: Sending listing of ${items.size} items for ${dir.absolutePath}")
+        for ((isDir, size, nameBytes) in items) {
             val item = ByteBuffer.allocate(1 + 8 + 4 + nameBytes.size)
-            item.put(if (file.isDirectory) 1.toByte() else 0.toByte())
-            item.putLong(if (file.isDirectory) 0L else file.length())
+            item.put(if (isDir) 1.toByte() else 0.toByte())
+            item.putLong(size) // 0L fast size during list to prevent file.length() slowdowns
             item.putInt(nameBytes.size)
             item.put(nameBytes)
             dataSource.sendSecure(item.array())

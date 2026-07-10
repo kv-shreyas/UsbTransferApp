@@ -16,6 +16,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -46,19 +47,32 @@ class HostCommandSender @Inject constructor(
     private val commandMutex = Mutex()
 
     suspend fun waitForClientReady(): Boolean = withContext(Dispatchers.IO) {
-        usbLogger.i(TAG, "waitForClientReady: Waiting for TYPE_ACK (Ready signal) from remote client...")
-        for (i in 0 until 40) { // Try up to 40 times (10 seconds total) for remote command processor startup
+        usbLogger.i(TAG, "waitForClientReady: Checking if remote device is in Client mode (waiting for TYPE_ACK up to 60s)...")
+        for (i in 0 until 240) { // Try up to 240 times (60 seconds total) for remote device to enter Client mode and accept permission
+            if (i % 2 == 0) {
+                try {
+                    dataSource.sendRawPacket(Packet.TYPE_ACK, ByteArray(0))
+                } catch (e: Exception) {
+                    usbLogger.w(TAG, "waitForClientReady: Failed to send ACK ping: ${e.message}")
+                }
+            }
             val packet = dataSource.receiveRawPacket()
             if (packet != null && packet.type == Packet.TYPE_ACK) {
-                usbLogger.i(TAG, "waitForClientReady: Received TYPE_ACK from client after ${(i + 1) * 250}ms. Client is ready!")
+                usbLogger.i(TAG, "waitForClientReady: Received TYPE_ACK from client after ${(i + 1) * 250}ms. Remote device confirmed in Client mode & ready!")
                 return@withContext true
             }
-            if (packet != null) {
-                usbLogger.w(TAG, "waitForClientReady: Ignoring unexpected packet type ${packet.type} during startup")
+            if (packet != null && packet.type == Packet.TYPE_DATA) {
+                usbLogger.w(TAG, "waitForClientReady: Discarding stale TYPE_DATA packet (${packet.length} bytes) received before commands started")
+            }
+            if (packet != null && packet.type != Packet.TYPE_ACK && packet.type != Packet.TYPE_DATA) {
+                usbLogger.w(TAG, "waitForClientReady: Ignoring unexpected packet type ${packet.type} during client status check")
+            }
+            if (i > 0 && i % 8 == 0) {
+                usbLogger.i(TAG, "waitForClientReady: Checking remote status (${(i * 250) / 1000}s/60s)... Ensure 'Client' mode is selected and permission accepted on the other device.")
             }
             delay(250)
         }
-        usbLogger.w(TAG, "waitForClientReady: Timed out waiting for TYPE_ACK after 10s")
+        usbLogger.e(TAG, "waitForClientReady: Timed out after 60s waiting for remote device to enter Client mode.")
         false
     }
 
@@ -67,8 +81,8 @@ class HostCommandSender @Inject constructor(
     }
 
     suspend fun listRemoteFiles(path: String): List<RemoteFile> = commandMutex.withLock {
-        withContext(Dispatchers.IO + NonCancellable) {
-            usbLogger.d(TAG, "listRemoteFiles: Requesting directory listing for '$path'")
+        withContext(Dispatchers.IO) {
+            usbLogger.i(TAG, "listRemoteFiles: Requesting directory listing for '$path'")
             val pathBytes = path.toByteArray(Charsets.UTF_8)
             val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size)
                 .put(CMD_LIST)
@@ -81,38 +95,72 @@ class HostCommandSender @Inject constructor(
                 return@withContext emptyList()
             }
 
-            val countPayload = dataSource.receiveSecure()
-            if (countPayload == null || countPayload.size < 4) {
-                usbLogger.e(TAG, "listRemoteFiles: Failed to receive item count response for CMD_LIST")
+            val countData = withTimeoutOrNull(20000) { dataSource.receiveSecure() }
+            if (countData == null || countData.size < 4) {
+                usbLogger.e(TAG, "listRemoteFiles: Failed to receive directory count.")
                 return@withContext emptyList()
             }
-
-            val count = ByteBuffer.wrap(countPayload).int
-            usbLogger.i(TAG, "listRemoteFiles: Remote reported $count items inside '$path'")
-
+            val count = ByteBuffer.wrap(countData).int
             val result = mutableListOf<RemoteFile>()
-            for (i in 0 until count) {
-                val itemPayload = dataSource.receiveSecure() ?: run {
-                    usbLogger.e(TAG, "listRemoteFiles: Connection lost while reading item $i of $count")
-                    break
+
+            if (countData.size > 4 || count < 0 || count > 100000) {
+                usbLogger.w(TAG, "listRemoteFiles: Received directory item payload instead of count packet (${countData.size} bytes, count=$count). Reading items dynamically with timeout...")
+                val firstBuffer = ByteBuffer.wrap(countData)
+                if (firstBuffer.remaining() >= 1 + 8 + 4) {
+                    try {
+                        val isDir = firstBuffer.get().toInt() == 1
+                        val size = firstBuffer.long
+                        val nameLen = firstBuffer.int
+                        if (firstBuffer.remaining() >= nameLen) {
+                            val nameBytes = ByteArray(nameLen)
+                            firstBuffer.get(nameBytes)
+                            val name = String(nameBytes, Charsets.UTF_8)
+                            val fullPath = if (path.endsWith("/")) "$path$name" else "$path/$name"
+                            result.add(RemoteFile(name = name, isDirectory = isDir, size = size, path = fullPath))
+                        }
+                    } catch (e: Exception) {
+                        usbLogger.w(TAG, "listRemoteFiles: Could not parse first item: ${e.message}")
+                    }
                 }
-                val buffer = ByteBuffer.wrap(itemPayload)
-                if (buffer.remaining() < 1 + 8 + 4) {
-                    usbLogger.w(TAG, "listRemoteFiles: Item $i payload too short (${itemPayload.size} bytes)")
-                    continue
+                while (isActive) {
+                    val itemData = withTimeoutOrNull(2500) { dataSource.receiveSecure() } ?: break
+                    val buffer = ByteBuffer.wrap(itemData)
+                    if (buffer.remaining() < 1 + 8 + 4) break
+                    val isDir = buffer.get().toInt() == 1
+                    val size = buffer.long
+                    val nameLen = buffer.int
+                    if (buffer.remaining() < nameLen) break
+                    val nameBytes = ByteArray(nameLen)
+                    buffer.get(nameBytes)
+                    val name = String(nameBytes, Charsets.UTF_8)
+                    val fullPath = if (path.endsWith("/")) "$path$name" else "$path/$name"
+                    result.add(RemoteFile(name = name, isDirectory = isDir, size = size, path = fullPath))
                 }
-                val isDir = buffer.get().toInt() == 1
-                val size = buffer.long
-                val nameLen = buffer.int
-                if (buffer.remaining() < nameLen) {
-                    usbLogger.w(TAG, "listRemoteFiles: Item $i name payload truncated ($nameLen bytes requested, ${buffer.remaining()} remaining)")
-                    continue
+            } else {
+                usbLogger.i(TAG, "listRemoteFiles: Discovered $count items inside '$path'.")
+                for (i in 0 until count) {
+                    val itemData = withTimeoutOrNull(10000) { dataSource.receiveSecure() } ?: run {
+                        usbLogger.e(TAG, "listRemoteFiles: Connection lost while reading directory item $i of $count")
+                        break
+                    }
+                    val buffer = ByteBuffer.wrap(itemData)
+                    if (buffer.remaining() < 1 + 8 + 4) {
+                        usbLogger.w(TAG, "listRemoteFiles: Item $i payload too short (${buffer.remaining()} bytes)")
+                        break
+                    }
+                    val isDir = buffer.get().toInt() == 1
+                    val size = buffer.long
+                    val nameLen = buffer.int
+                    if (buffer.remaining() < nameLen) {
+                        usbLogger.w(TAG, "listRemoteFiles: Item $i name payload truncated ($nameLen requested, ${buffer.remaining()} remaining)")
+                        break
+                    }
+                    val nameBytes = ByteArray(nameLen)
+                    buffer.get(nameBytes)
+                    val name = String(nameBytes, Charsets.UTF_8)
+                    val fullPath = if (path.endsWith("/")) "$path$name" else "$path/$name"
+                    result.add(RemoteFile(name = name, isDirectory = isDir, size = size, path = fullPath))
                 }
-                val nameBytes = ByteArray(nameLen)
-                buffer.get(nameBytes)
-                val name = String(nameBytes, Charsets.UTF_8)
-                val fullPath = if (path.endsWith("/")) "$path$name" else "$path/$name"
-                result.add(RemoteFile(name = name, isDirectory = isDir, size = size, path = fullPath))
             }
 
             usbLogger.i(TAG, "listRemoteFiles: Successfully listed ${result.size} items in '$path'")
@@ -210,7 +258,7 @@ class HostCommandSender @Inject constructor(
                     return@coroutineScope false
                 }
 
-                val sizePayload = dataSource.receiveSecure()
+                val sizePayload = withTimeoutOrNull(20000) { dataSource.receiveSecure() }
                 if (sizePayload == null || sizePayload.size < 8) {
                     usbLogger.e(TAG, "fetchFile: Failed to receive file size response")
                     return@coroutineScope false
@@ -280,6 +328,99 @@ class HostCommandSender @Inject constructor(
         }
     }
 
+    suspend fun fetchRemoteDirectory(remotePath: String, localSaveDir: File, onProgress: suspend (Float) -> Unit = {}): Boolean = commandMutex.withLock {
+        withContext(Dispatchers.IO + NonCancellable) {
+            coroutineScope {
+                usbLogger.i(TAG, "fetchRemoteDirectory: Fetching directory '$remotePath' as ZIP to '${localSaveDir.absolutePath}'")
+                val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
+                val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
+                    .put(CMD_FETCH_DIR)
+                    .putInt(pathBytes.size)
+                    .put(pathBytes)
+                    .array()
+
+                if (!dataSource.sendSecure(header)) {
+                    usbLogger.e(TAG, "fetchRemoteDirectory: Failed to send CMD_FETCH_DIR header")
+                    return@coroutineScope false
+                }
+
+                val sizePayload = withTimeoutOrNull(30000) { dataSource.receiveSecure() }
+                if (sizePayload == null || sizePayload.size < 8) {
+                    usbLogger.e(TAG, "fetchRemoteDirectory: Failed to receive directory ZIP size response")
+                    return@coroutineScope false
+                }
+                val zipSize = ByteBuffer.wrap(sizePayload).long
+                if (zipSize <= 0L) {
+                    usbLogger.e(TAG, "fetchRemoteDirectory: Remote returned invalid ZIP size ($zipSize)")
+                    return@coroutineScope false
+                }
+
+                val dirName = remotePath.substringAfterLast('/')
+                val targetZip = if (localSaveDir.isDirectory || !localSaveDir.name.endsWith(".zip")) {
+                    File(localSaveDir, "$dirName.zip")
+                } else {
+                    localSaveDir
+                }
+
+                val encryptedChannel = Channel<ByteArray>(2)
+                val decryptedChannel = Channel<ByteArray>(2)
+                var receivedBytes = 0L
+                var success = true
+
+                val readJob = launch(Dispatchers.IO) {
+                    try {
+                        while (isActive) {
+                            val packet = dataSource.receiveRawPacket() ?: break
+                            if (packet.type == Packet.TYPE_EOF) break
+                            if (packet.type == Packet.TYPE_CANCEL) {
+                                success = false
+                                break
+                            }
+                            if (packet.type == Packet.TYPE_DATA) {
+                                encryptedChannel.send(packet.payload)
+                            }
+                        }
+                    } finally {
+                        encryptedChannel.close()
+                    }
+                }
+
+                val decryptJob = launch(Dispatchers.Default) {
+                    try {
+                        for (encryptedChunk in encryptedChannel) {
+                            val decrypted = dataSource.decryptData(encryptedChunk)
+                            if (decrypted != null) {
+                                decryptedChannel.send(decrypted)
+                            } else {
+                                success = false
+                                readJob.cancel()
+                                break
+                            }
+                        }
+                    } finally {
+                        decryptedChannel.close()
+                    }
+                }
+
+                if (!targetZip.parentFile?.exists()!!) targetZip.parentFile?.mkdirs()
+                FileOutputStream(targetZip).use { fos ->
+                    for (chunk in decryptedChannel) {
+                        fos.write(chunk)
+                        receivedBytes += chunk.size
+                        onProgress((receivedBytes.toFloat() / zipSize).coerceIn(0f, 1f))
+                    }
+                }
+
+                if (!success) {
+                    if (targetZip.exists()) targetZip.delete()
+                } else {
+                    usbLogger.i(TAG, "fetchRemoteDirectory: Successfully saved '$dirName.zip' (${targetZip.length()} bytes)")
+                }
+                success
+            }
+        }
+    }
+
     suspend fun deleteRemote(remotePath: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO + NonCancellable) {
             val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
@@ -290,25 +431,25 @@ class HostCommandSender @Inject constructor(
                 .array()
 
             if (!dataSource.sendSecure(payload)) return@withContext false
-            val resp = dataSource.receiveSecure()
+            val resp = withTimeoutOrNull(10000) { dataSource.receiveSecure() }
             resp != null && resp.isNotEmpty() && resp[0].toInt() == 1
         }
     }
 
-    suspend fun renameRemote(oldPath: String, newPath: String): Boolean = commandMutex.withLock {
+    suspend fun renameRemote(remotePath: String, newName: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO + NonCancellable) {
-            val oldBytes = oldPath.toByteArray(Charsets.UTF_8)
-            val newBytes = newPath.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + oldBytes.size + 4 + newBytes.size)
+            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
+            val nameBytes = newName.toByteArray(Charsets.UTF_8)
+            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size + 4 + nameBytes.size)
                 .put(CMD_RENAME)
-                .putInt(oldBytes.size)
-                .put(oldBytes)
-                .putInt(newBytes.size)
-                .put(newBytes)
+                .putInt(pathBytes.size)
+                .put(pathBytes)
+                .putInt(nameBytes.size)
+                .put(nameBytes)
                 .array()
 
             if (!dataSource.sendSecure(payload)) return@withContext false
-            val resp = dataSource.receiveSecure()
+            val resp = withTimeoutOrNull(10000) { dataSource.receiveSecure() }
             resp != null && resp.isNotEmpty() && resp[0].toInt() == 1
         }
     }
@@ -354,7 +495,9 @@ class HostCommandSender @Inject constructor(
     }
 
     override fun fetchDirectory(remotePath: String, localFile: File): kotlinx.coroutines.flow.Flow<Int> = kotlinx.coroutines.flow.channelFlow {
-        send(100)
+        fetchRemoteDirectory(remotePath, localFile) { prog ->
+            send((prog * 100).toInt())
+        }
     }
 
     override suspend fun listDirectory(path: String): List<RemoteFile> = listRemoteFiles(path)

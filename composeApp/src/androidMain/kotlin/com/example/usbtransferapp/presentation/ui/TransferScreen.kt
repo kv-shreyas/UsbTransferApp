@@ -28,7 +28,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.example.usbtransferapp.data.UsbConnectionMode
 import com.example.usbtransferapp.data.UsbRole
 import com.example.usbtransferapp.data.UsbUiState
 import com.example.usbtransferapp.domain.model.RemoteFile
@@ -40,10 +39,10 @@ import java.io.File
 fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
     val state by viewModel.uiState.collectAsState()
     val isCableConnected by viewModel.isCablePhysicallyConnected.collectAsState()
-    val mode by viewModel.connectionMode.collectAsState()
     val role by viewModel.usbRole.collectAsState()
     val remoteFiles by viewModel.remoteFiles.collectAsState()
     val currentRemotePath by viewModel.currentRemotePath.collectAsState()
+    val isRemoteLoading by viewModel.isRemoteLoading.collectAsState()
     val logLines by viewModel.logLines.collectAsState()
     val logFilePath = viewModel.getLogFilePath()
 
@@ -74,28 +73,6 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
 
             UsbPhysicalIndicator(isPhysicallyConnected = isCableConnected)
 
-            // Connection Mode Switcher
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = mode == UsbConnectionMode.DESKTOP_TO_ANDROID,
-                    onClick = { viewModel.selectConnectionMode(UsbConnectionMode.DESKTOP_TO_ANDROID) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2)
-                ) {
-                    Icon(Icons.Default.Computer, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Desktop ↔ Android")
-                }
-                SegmentedButton(
-                    selected = mode == UsbConnectionMode.ANDROID_TO_ANDROID,
-                    onClick = { viewModel.selectConnectionMode(UsbConnectionMode.ANDROID_TO_ANDROID) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2)
-                ) {
-                    Icon(Icons.Default.PhoneAndroid, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(8.dp))
-                    Text("Android ↔ Android (AOA)")
-                }
-            }
-
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -111,16 +88,22 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
                 ) { targetState ->
                     StateContent(
                         state = targetState,
-                        mode = mode,
                         role = role,
+                        isCableConnected = isCableConnected,
                         remoteFiles = remoteFiles,
                         currentRemotePath = currentRemotePath,
+                        isRemoteLoading = isRemoteLoading,
                         onConnect = { viewModel.requestPermissionAndConnect() },
                         onSelectRole = { viewModel.selectRoleAndConnect(it) },
                         onNavigateDir = { viewModel.fetchRemoteFiles(it) },
-                        onFetchFile = { remotePath ->
+                        onRefreshDir = { viewModel.fetchRemoteFiles(it, forceRefresh = true) },
+                        onFetchFile = { remotePath, isDir ->
                             val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                            viewModel.fetchRemoteFile(remotePath, downloadDir)
+                            if (isDir) {
+                                viewModel.fetchRemoteDirectory(remotePath, downloadDir)
+                            } else {
+                                viewModel.fetchRemoteFile(remotePath, downloadDir)
+                            }
                         },
                         onDeleteFile = { viewModel.deleteRemoteFile(it) }
                     )
@@ -179,14 +162,16 @@ fun StatusHeader(state: UsbUiState) {
 @Composable
 fun StateContent(
     state: UsbUiState,
-    mode: UsbConnectionMode,
     role: UsbRole?,
+    isCableConnected: Boolean,
     remoteFiles: List<RemoteFile>,
     currentRemotePath: String,
+    isRemoteLoading: Boolean,
     onConnect: () -> Unit,
     onSelectRole: (UsbRole) -> Unit,
     onNavigateDir: (String) -> Unit,
-    onFetchFile: (String) -> Unit,
+    onRefreshDir: (String) -> Unit,
+    onFetchFile: (String, Boolean) -> Unit,
     onDeleteFile: (String) -> Unit
 ) {
     Column(
@@ -194,48 +179,89 @@ fun StateContent(
         verticalArrangement = Arrangement.Center,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(8.dp)
+            .animateContentSize()
     ) {
         when (state) {
-            is UsbUiState.NoDevice -> {
-               /* BigIcon(Icons.Default.UsbOff, Color.LightGray)
-                Text("Waiting for USB Connection", style = MaterialTheme.typography.bodyMedium)
-                Spacer(Modifier.height(8.dp))*/
-                if (mode == UsbConnectionMode.DESKTOP_TO_ANDROID) {
-                    Text(
-                        "Connect your desktop to this device using a USB cable. The app will detect it automatically.",
-                        textAlign = TextAlign.Center,
-                        color = Color.Gray,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                } else {
-                    // Android-to-Android Guided Setup
-                    AndroidToAndroidGuideCard(
-                        currentRole = role,
-                        onSelectRole = onSelectRole
-                    )
+            is UsbUiState.Idle -> {
+                RoleSelectionCards(currentRole = role, onSelectRole = onSelectRole)
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = onConnect,
+                    enabled = role != null,
+                    modifier = Modifier
+                        .height(54.dp)
+                        .widthIn(min = 220.dp)
+                ) {
+                    Icon(Icons.Default.Usb, contentDescription = null)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Initialize Connection", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
+            }
+            is UsbUiState.NoDevice -> {
+                if (isCableConnected) {
+                    BigIcon(Icons.Default.Usb, MaterialTheme.colorScheme.primary)
+                    Text("USB Cable Connected", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(8.dp))
+                } else {
+                    BigIcon(Icons.Default.UsbOff, Color.Gray)
+                    Text("USB Connection Setup", style = MaterialTheme.typography.headlineSmall)
+                    Spacer(Modifier.height(8.dp))
+                }
+                ConnectionGuideCard(
+                    currentRole = role,
+                    isCableConnected = isCableConnected,
+                    onSelectRole = onSelectRole
+                )
             }
             is UsbUiState.DeviceDetected -> {
                 BigIcon(Icons.Default.Devices, MaterialTheme.colorScheme.primary)
                 Text("USB Device Detected", style = MaterialTheme.typography.headlineSmall)
-                Text(state.name, color = MaterialTheme.colorScheme.secondary)
-                Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(8.dp))
 
-                if (mode == UsbConnectionMode.ANDROID_TO_ANDROID && role == null) {
-                    Text("Select this device's role in the OTG connection:", fontWeight = FontWeight.SemiBold)
-                    Spacer(Modifier.height(12.dp))
-                    RoleSelectionCards(currentRole = null, onSelectRole = onSelectRole)
+                val isBusyCheck = state.name.contains("Waiting", ignoreCase = true) ||
+                                  state.name.contains("Checking", ignoreCase = true) ||
+                                  state.name.contains("Switching", ignoreCase = true) ||
+                                  state.name.contains("Establishing", ignoreCase = true)
+
+                if (isBusyCheck) {
+                    Surface(
+                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        shape = RoundedCornerShape(14.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(16.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(40.dp), color = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Text(
+                                "Negotiating & Verifying Connection...",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                state.name,
+                                textAlign = TextAlign.Center,
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.9f)
+                            )
+                        }
+                    }
                 } else {
-                    if (mode == UsbConnectionMode.ANDROID_TO_ANDROID) {
-                        val roleText = if (role is UsbRole.Host) "Act as Host (Initiating AOA Switch)" else "Act as Client (Storage / Receiver)"
+                    Text(state.name, color = MaterialTheme.colorScheme.secondary)
+                    Spacer(Modifier.height(16.dp))
+
+                    if (role != null) {
+                        val roleText = if (role is UsbRole.Host) "Host (Initiating Connection)" else "Client (Receiver)"
                         Surface(
                             color = MaterialTheme.colorScheme.primaryContainer,
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                         ) {
                             Text(
-                                "Selected Role: $roleText",
+                                "Role: $roleText",
                                 modifier = Modifier.padding(8.dp),
                                 textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Bold,
@@ -243,15 +269,19 @@ fun StateContent(
                                 color = MaterialTheme.colorScheme.onPrimaryContainer
                             )
                         }
-                    }
-                    Button(
-                        onClick = onConnect,
-                        contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Link, null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Initialize Connection")
+                        Button(
+                            onClick = onConnect,
+                            contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Link, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Initialize Connection")
+                        }
+                    } else {
+                        Text("Select this device's role to proceed:", fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(12.dp))
+                        RoleSelectionCards(currentRole = null, onSelectRole = onSelectRole)
                     }
                 }
             }
@@ -260,7 +290,9 @@ fun StateContent(
                     RemoteFileManager(
                         remoteFiles = remoteFiles,
                         currentRemotePath = currentRemotePath,
+                        isRemoteLoading = isRemoteLoading,
                         onNavigateDir = onNavigateDir,
+                        onRefreshDir = onRefreshDir,
                         onFetchFile = onFetchFile,
                         onDeleteFile = onDeleteFile
                     )
@@ -275,7 +307,7 @@ fun StateContent(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("✅ Android is ready (Client Mode)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                            Text("✅ Device is ready (Client Mode)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
                             Spacer(Modifier.height(4.dp))
                             Text("Waiting for commands from the connected Host device.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
                         }
@@ -341,8 +373,9 @@ fun StateContent(
 }
 
 @Composable
-fun AndroidToAndroidGuideCard(
+fun ConnectionGuideCard(
     currentRole: UsbRole?,
+    isCableConnected: Boolean,
     onSelectRole: (UsbRole) -> Unit
 ) {
     Card(
@@ -355,43 +388,107 @@ fun AndroidToAndroidGuideCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.PhoneAndroid, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                Icon(Icons.Default.Usb, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
-                    "Android-to-Android Connection Setup",
+                    if (isCableConnected) "USB Role Setup (Cable Connected)" else "USB Connection Setup",
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
                     color = MaterialTheme.colorScheme.primary
                 )
             }
 
-            Surface(
-                color = MaterialTheme.colorScheme.surface,
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "How it works (OTG / Type-C to Type-C):",
-                        fontWeight = FontWeight.SemiBold,
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text("Step 1: Select a Role below on THIS phone before connecting cable.", fontSize = 11.sp, color = Color.Gray)
-                    Text("Step 2: On the OTHER phone, select the opposite role (Host vs Client).", fontSize = 11.sp, color = Color.Gray)
-                    Text("Step 3: Connect both phones with a Type-C / OTG cable and accept any USB permission popup on screen.", fontSize = 11.sp, color = Color.Gray)
+            if (isCableConnected && currentRole is UsbRole.Host) {
+                Surface(
+                    color = Color(0xFFFFF3CD),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFFFFECB5)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Warning, null, tint = Color(0xFF856404), modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Hardware Role Notice", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF856404))
+                        }
+                        Text(
+                            "USB cable is plugged in, but this device's hardware port negotiated the Peripheral role (it cannot act as USB Host with this cable/port state).\n\n" +
+                            "👉 To act as Host from this phone: Flip the USB-C cable ends or use a USB OTG adapter.\n" +
+                            "👉 Or: Select Client role below to connect immediately!",
+                            fontSize = 11.sp,
+                            color = Color(0xFF664D03)
+                        )
+                    }
+                }
+            } else if (isCableConnected && currentRole is UsbRole.Client) {
+                Surface(
+                    color = Color(0xFFD1E7DD),
+                    shape = RoundedCornerShape(10.dp),
+                    border = BorderStroke(1.dp, Color(0xFFBADBCC)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF0F5132), modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Waiting for Host Device", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF0F5132))
+                        }
+                        Text(
+                            "USB cable detected in Peripheral mode. Select 'Initialize Connection' on the other Host device to establish secure link.",
+                            fontSize = 11.sp,
+                            color = Color(0xFF0F5132)
+                        )
+                    }
+                }
+            } else if (isCableConnected && currentRole == null) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(
+                            "USB Cable Detected (Peripheral Port)",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Text(
+                            "This phone connected as the Upstream/Peripheral USB port. Select the Client role below so the other Host device can connect.",
+                            fontSize = 11.sp,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f)
+                        )
+                    }
+                }
+            } else {
+                Surface(
+                    color = MaterialTheme.colorScheme.surface,
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "How it works:",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text("Step 1: Select a Role below for THIS device.", fontSize = 11.sp, color = Color.Gray)
+                        Text("Step 2: Connect to the other device (Desktop or Android) via USB / OTG cable.", fontSize = 11.sp, color = Color.Gray)
+                        Text("Step 3: Accept any USB permission popup that appears on screen.", fontSize = 11.sp, color = Color.Gray)
+                    }
                 }
             }
 
-            Text("Select Role for THIS Device:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+            Text("Select this device's role to proceed:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
             RoleSelectionCards(currentRole = currentRole, onSelectRole = onSelectRole)
 
             if (currentRole != null) {
-                val roleName = if (currentRole is UsbRole.Host) "Host (Initiator)" else "Client (Storage Receiver)"
+                val roleName = if (currentRole is UsbRole.Host) "Host (Initiator)" else "Client (Receiver)"
                 val nextAction = if (currentRole is UsbRole.Host) {
-                    "👉 Now plug the USB cable into both phones. When prompted, tap 'Allow / OK' to switch the other phone to AOA mode and connect."
+                    "👉 Now plug the USB cable into both devices. When prompted, tap 'Allow / OK' to initiate the connection and browse/manage files on the remote device."
                 } else {
-                    "👉 Now plug the USB cable into both phones. This phone will wait for the Host device to connect and access files."
+                    "👉 Now tap 'Initialize Connection' on the Host device. This device will automatically authenticate and connect."
                 }
                 Surface(
                     color = if (currentRole is UsbRole.Host) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
@@ -399,7 +496,7 @@ fun AndroidToAndroidGuideCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
-                        Text("Selected: $roleName", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (currentRole is UsbRole.Host) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text("Selected Role: $roleName", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (currentRole is UsbRole.Host) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer)
                         Spacer(Modifier.height(4.dp))
                         Text(nextAction, fontSize = 11.sp, color = if (currentRole is UsbRole.Host) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer)
                     }
@@ -420,7 +517,7 @@ fun RoleSelectionCards(
     ) {
         val isHostSelected = currentRole is UsbRole.Host
         Card(
-            onClick = { onSelectRole(UsbRole.Host("Android Client")) },
+            onClick = { onSelectRole(UsbRole.Host("Remote Device")) },
             modifier = Modifier.weight(1f),
             border = if (isHostSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
             colors = CardDefaults.cardColors(
@@ -430,7 +527,7 @@ fun RoleSelectionCards(
             Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.Upload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.height(6.dp))
-                Text("Act as Host", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isHostSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+                Text("Host", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isHostSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(2.dp))
                 Text("Initiate connection &\nbrowse/manage files", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isHostSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else Color.Gray)
             }
@@ -438,7 +535,7 @@ fun RoleSelectionCards(
 
         val isClientSelected = currentRole is UsbRole.Client
         Card(
-            onClick = { onSelectRole(UsbRole.Client("Android Host")) },
+            onClick = { onSelectRole(UsbRole.Client("Remote Host")) },
             modifier = Modifier.weight(1f),
             border = if (isClientSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.secondary) else null,
             colors = CardDefaults.cardColors(
@@ -448,7 +545,7 @@ fun RoleSelectionCards(
             Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                 Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.height(6.dp))
-                Text("Act as Client", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isClientSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface)
+                Text("Client", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isClientSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(2.dp))
                 Text("Receive connection &\nallow file transfers", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isClientSelected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f) else Color.Gray)
             }
@@ -557,8 +654,10 @@ fun DebugLogsViewer(
 fun RemoteFileManager(
     remoteFiles: List<RemoteFile>,
     currentRemotePath: String,
+    isRemoteLoading: Boolean = false,
     onNavigateDir: (String) -> Unit,
-    onFetchFile: (String) -> Unit,
+    onRefreshDir: (String) -> Unit = onNavigateDir,
+    onFetchFile: (String, Boolean) -> Unit,
     onDeleteFile: (String) -> Unit
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
@@ -584,12 +683,20 @@ fun RemoteFileManager(
                 modifier = Modifier.weight(1f),
                 maxLines = 1
             )
-            IconButton(onClick = { onNavigateDir(currentRemotePath) }) {
+            IconButton(onClick = { onRefreshDir(currentRemotePath) }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh")
             }
         }
 
-        if (remoteFiles.isEmpty()) {
+        if (isRemoteLoading) {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text("Loading folder contents...", color = Color.Gray, fontSize = 14.sp)
+                }
+            }
+        } else if (remoteFiles.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Text("Directory is empty", color = Color.Gray)
             }
@@ -617,13 +724,18 @@ fun RemoteFileManager(
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(file.name, fontWeight = FontWeight.SemiBold)
                                 if (!file.isDirectory) {
-                                    Text("${file.size / 1024} KB", fontSize = 12.sp, color = Color.Gray)
+                                    val sizeText = if (file.size > 0) "${file.size / 1024} KB" else "File"
+                                    Text(sizeText, fontSize = 12.sp, color = Color.Gray)
+                                } else {
+                                    Text("Directory", fontSize = 12.sp, color = Color.Gray)
                                 }
                             }
-                            if (!file.isDirectory) {
-                                IconButton(onClick = { onFetchFile(file.path) }) {
-                                    Icon(Icons.Default.Download, contentDescription = "Download", tint = MaterialTheme.colorScheme.primary)
-                                }
+                            IconButton(onClick = { onFetchFile(file.path, file.isDirectory) }) {
+                                Icon(
+                                    Icons.Default.Download,
+                                    contentDescription = if (file.isDirectory) "Download Directory (ZIP)" else "Download File",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
                             }
                             IconButton(onClick = { onDeleteFile(file.path) }) {
                                 Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)

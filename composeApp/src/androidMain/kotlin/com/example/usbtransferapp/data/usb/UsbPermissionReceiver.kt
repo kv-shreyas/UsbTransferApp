@@ -24,7 +24,16 @@ class UsbPermissionReceiver : BroadcastReceiver() {
             UsbManager.EXTRA_PERMISSION_GRANTED, false
         )
 
-        if (!granted) return
+        if (!granted) {
+            CoroutineScope(Dispatchers.IO).launch {
+                if (device != null) {
+                    UsbPermissionBus.emit(UsbPermissionEvent.DeviceDenied(device))
+                } else if (accessory != null) {
+                    UsbPermissionBus.emit(UsbPermissionEvent.AccessoryDenied(accessory))
+                }
+            }
+            return
+        }
 
         CoroutineScope(Dispatchers.IO).launch {
             if (device != null) {
