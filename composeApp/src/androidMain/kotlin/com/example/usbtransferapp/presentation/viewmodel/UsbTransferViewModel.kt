@@ -17,6 +17,7 @@ import com.example.usbtransferapp.data.usb.UsbManagerWrapper
 import com.example.usbtransferapp.data.usb.UsbPermissionBus
 import com.example.usbtransferapp.data.usb.UsbPermissionEvent
 import com.example.usbtransferapp.data.usb.UsbCommandProcessor
+import com.example.usbtransferapp.domain.constants.Constants
 import com.example.usbtransferapp.domain.model.RemoteFile
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -1008,6 +1009,61 @@ class UsbTransferViewModel @Inject constructor(
                 directoryCache.remove(_currentRemotePath.value)
                 fetchRemoteFiles(_currentRemotePath.value, forceRefresh = true)
             }
+        }
+    }
+
+    fun sendTextAsRemoteFile(context: android.content.Context, fileName: String, content: String, targetFolder: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val tempFile = File(context.cacheDir, fileName)
+            try {
+                tempFile.writeText(content)
+                sendSingleFileWithProgress(tempFile, targetFolder)
+                directoryCache.remove(targetFolder)
+                fetchRemoteFiles(targetFolder, forceRefresh = true)
+            } catch (e: Exception) {
+                usbLogger.e(TAG, "Failed to send text file $fileName", e)
+            } finally {
+                if (tempFile.exists()) tempFile.delete()
+            }
+        }
+    }
+
+    fun cloneSmartNavPackage(context: android.content.Context, basePath: String = Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH) {
+        viewModelScope.launch(Dispatchers.IO) {
+            usbLogger.i(TAG, "cloneSmartNavPackage: Initializing SmartNavRoot.kt package hierarchy under $basePath...")
+            val foldersAndFiles = listOf(
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_PASSWORD, Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE)),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, Constants.SmartnavRoot.DEFAULT_MAINTENANCE_PASSWORD_VALUE)),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_KMM_PASSWORD, Constants.SmartnavRoot.DEFAULT_KMM_PASSWORD_VALUE)),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_TRACKS}/${Constants.SmartnavRoot.DIR_TRACKS_META}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_TRACE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_IMEI}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair(Constants.SmartnavRoot.PATH_APP_UPDATE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_FIRMWARE_UPGRADE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_RASTER}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_VECTOR}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_ICONS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_DATABASE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_LOG_MANAGER}", Pair(Constants.SmartnavRoot.FILE_LOG_COUNTER, Constants.SmartnavRoot.DEFAULT_LOG_COUNTER_VALUE)),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("$basePath/${Constants.SmartnavRoot.DIR_DEV_LOGS}/${Constants.SmartnavRoot.DIR_CRASH_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
+            )
+            for ((folder, filePair) in foldersAndFiles) {
+                if (!isActive) break
+                val (fileName, content) = filePair
+                val tempFile = File(context.cacheDir, fileName)
+                try {
+                    tempFile.writeText(content)
+                    sendSingleFileWithProgress(tempFile, folder)
+                } catch (e: Exception) {
+                    usbLogger.e(TAG, "cloneSmartNavPackage: error sending $folder/$fileName", e)
+                } finally {
+                    if (tempFile.exists()) tempFile.delete()
+                }
+            }
+            usbLogger.i(TAG, "cloneSmartNavPackage: All folders and files initialized on remote device.")
+            directoryCache.clear()
+            fetchRemoteFiles(basePath, forceRefresh = true)
         }
     }
 

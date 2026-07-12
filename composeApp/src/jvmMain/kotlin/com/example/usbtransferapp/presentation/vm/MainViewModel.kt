@@ -1,6 +1,7 @@
 package com.example.usbtransferapp.presentation.vm
 
 import com.example.usbtransferapp.domain.usecases.*
+import com.example.usbtransferapp.domain.constants.Constants
 import com.example.usbtransferapp.domain.model.RemoteFile
 import com.example.usbtransferapp.presentation.ui.formatSize
 import kotlinx.coroutines.CoroutineScope
@@ -610,6 +611,80 @@ class MainViewModel(
                 } catch (e: Exception) {
                     _state.value = "Error: ${e.message}"
                 }
+            }
+        }
+    }
+
+    fun sendTextAsRemoteFile(fileName: String, content: String, targetFolder: String) {
+        scope.launch {
+            usbMutex.withLock {
+                try {
+                    val tempFile = File.createTempFile("smartnav_", "_$fileName")
+                    tempFile.writeText(content)
+                    val destinationPath = targetFolder.trimEnd('/')
+                    sendUseCase(tempFile, destinationPath, isDirectory = false, remoteFileName = fileName).collect { progress ->
+                        _progressState.value = _progressState.value.copy(
+                            isVisible = true,
+                            filename = fileName,
+                            percentage = progress,
+                            statusMessage = "Sending $fileName... ($progress%)"
+                        )
+                    }
+                    tempFile.delete()
+                    _progressState.value = TransferProgress(isComplete = true, statusMessage = "Sent $fileName")
+                    refreshRemoteFilesInternal()
+                } catch (e: Exception) {
+                    println("[ViewModel] Error sending text file $fileName: ${e.message}")
+                }
+            }
+        }
+    }
+
+    fun cloneSmartNavPackage(basePath: String = Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH) {
+        scope.launch {
+            usbMutex.withLock {
+                println("[ViewModel] cloneSmartNavPackage: Initializing SmartNavRoot hierarchy under $basePath...")
+                val foldersAndFiles = listOf(
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_PASSWORD, Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE)),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, Constants.SmartnavRoot.DEFAULT_MAINTENANCE_PASSWORD_VALUE)),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_KMM_PASSWORD, Constants.SmartnavRoot.DEFAULT_KMM_PASSWORD_VALUE)),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_TRACKS}/${Constants.SmartnavRoot.DIR_TRACKS_META}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_TRACE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_IMEI}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair(Constants.SmartnavRoot.PATH_APP_UPDATE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_FIRMWARE_UPGRADE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_RASTER}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_VECTOR}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_ICONS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_DATABASE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_LOG_MANAGER}", Pair(Constants.SmartnavRoot.FILE_LOG_COUNTER, Constants.SmartnavRoot.DEFAULT_LOG_COUNTER_VALUE)),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                    Pair("$basePath/${Constants.SmartnavRoot.DIR_DEV_LOGS}/${Constants.SmartnavRoot.DIR_CRASH_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
+                )
+                val total = foldersAndFiles.size
+                _progressState.value = _progressState.value.copy(
+                    isVisible = true,
+                    totalFiles = total,
+                    isComplete = false,
+                    statusMessage = "Initializing SmartNav Package..."
+                )
+                for ((index, item) in foldersAndFiles.withIndex()) {
+                    if (!isActive) break
+                    val (folder, filePair) = item
+                    val (fileName, content) = filePair
+                    _progressState.value = _progressState.value.copy(currentFileIndex = index + 1, statusMessage = "Creating $folder/$fileName...")
+                    try {
+                        val tempFile = File.createTempFile("smartnav_", "_$fileName")
+                        tempFile.writeText(content)
+                        val destinationPath = folder.trimEnd('/')
+                        sendUseCase(tempFile, destinationPath, isDirectory = false, remoteFileName = fileName).collect { }
+                        tempFile.delete()
+                    } catch (e: Exception) {
+                        println("[ViewModel] error creating $folder/$fileName: ${e.message}")
+                    }
+                }
+                _progressState.value = _progressState.value.copy(isComplete = true, statusMessage = "SmartNav Package Initialized Successfully")
+                refreshRemoteFilesInternal()
             }
         }
     }

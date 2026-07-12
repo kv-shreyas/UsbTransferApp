@@ -37,6 +37,16 @@ fun MainScreen(vm: MainViewModel) {
     val remoteFiles by vm.remoteFiles.collectAsState()
     val currentPath by vm.currentRemotePath.collectAsState()
     val progress by vm.progressState.collectAsState()
+    val isPhysicallyConnected by vm.isPhysicallyConnected.collectAsState()
+    val physicalDeviceName by vm.physicallyConnectedDeviceName.collectAsState()
+
+    val isConnected = state != "Idle" && state != "Searching..." && !state.contains("Failed") && !state.contains("Connection Lost") && !state.contains("Disconnect")
+
+    LaunchedEffect(isConnected) {
+        if (!isConnected) {
+            currentScreen = "explorer"
+        }
+    }
 
     if (progress.isVisible) {
         TransferProgressDialog(
@@ -48,39 +58,64 @@ fun MainScreen(vm: MainViewModel) {
 
     Row(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surface)) {
         // Sidebar
-        Sidebar(vm, state, currentScreen, onNavigate = { currentScreen = it }, onDisconnect = { vm.disconnect() })
+        Sidebar(
+            vm = vm,
+            state = state,
+            currentScreen = currentScreen,
+            isConnected = isConnected,
+            onNavigate = { currentScreen = it },
+            onDisconnect = { vm.disconnect() }
+        )
 
         // Main Content
         Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(24.dp)) {
-            Header("Remote File System", currentPath, onBack = { vm.navigateUp() }, onRefresh = { vm.refreshRemoteFiles() })
-            
-            Spacer(Modifier.height(24.dp))
+            if (!isConnected) {
+                DesktopNotConnectedView(
+                    state = state,
+                    isPhysicallyConnected = isPhysicallyConnected,
+                    physicalDeviceName = physicalDeviceName,
+                    onConnect = { vm.connect() }
+                )
+            } else if (currentScreen == "smartnav") {
+                SmartNavDesktopDashboard(
+                    vm = vm,
+                    onNavigateToExplorerPath = { targetPath ->
+                        currentScreen = "explorer"
+                        val dummyFolder = RemoteFile(name = targetPath.substringAfterLast('/'), isDirectory = true, size = 0, path = targetPath)
+                        vm.navigateTo(dummyFolder)
+                    }
+                )
+            } else {
+                Header("Remote File System", currentPath, onBack = { vm.navigateUp() }, onRefresh = { vm.refreshRemoteFiles() })
+                
+                Spacer(Modifier.height(24.dp))
 
-            FileList(
-                files = remoteFiles,
-                modifier = Modifier.weight(1f),
-                onFolderClick = { vm.navigateTo(it) },
-                onFilesFetch = { vm.fetchFiles(it) },
-                onFileDelete = { vm.deleteFile(it) },
-                onFileRename = { file, newName -> vm.renameFile(file, newName) }
-            )
+                FileList(
+                    files = remoteFiles,
+                    modifier = Modifier.weight(1f),
+                    onFolderClick = { vm.navigateTo(it) },
+                    onFilesFetch = { vm.fetchFiles(it) },
+                    onFileDelete = { vm.deleteFile(it) },
+                    onFileRename = { file, newName -> vm.renameFile(file, newName) }
+                )
 
-            Spacer(Modifier.height(16.dp))
-            
-            ActionBar(currentPath = currentPath, onSendFile = {
-                val fileChooser = JFileChooser()
-                fileChooser.fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
-                fileChooser.isMultiSelectionEnabled = true
-                if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                    vm.sendFiles(fileChooser.selectedFiles.toList())
-                }
-            })
+                Spacer(Modifier.height(16.dp))
+                
+                ActionBar(currentPath = currentPath, onSendFile = {
+                    val fileChooser = JFileChooser()
+                    fileChooser.fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
+                    fileChooser.isMultiSelectionEnabled = true
+                    if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                        vm.sendFiles(fileChooser.selectedFiles.toList())
+                    }
+                })
+            }
         }
     }
 }
 
 @Composable
-fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, onNavigate: (String) -> Unit, onDisconnect: () -> Unit) {
+fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, isConnected: Boolean, onNavigate: (String) -> Unit, onDisconnect: () -> Unit) {
     val isPhysicallyConnected by vm.isPhysicallyConnected.collectAsState()
     val physicalDeviceName by vm.physicallyConnectedDeviceName.collectAsState()
 
@@ -93,18 +128,37 @@ fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, onNavigate:
             Text("Control Panel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(32.dp))
 
-            NavigationItem("File Explorer", Icons.Default.Folder, currentScreen == "explorer") { onNavigate("explorer") }
+            if (isConnected) {
+                NavigationItem("File Explorer", Icons.Default.Folder, currentScreen == "explorer") { onNavigate("explorer") }
+                Spacer(Modifier.height(8.dp))
+                NavigationItem("SmartNav Option", Icons.Default.Explore, currentScreen == "smartnav") { onNavigate("smartnav") }
+                Spacer(Modifier.height(32.dp))
+            } else {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
+                ) {
+                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Lock, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Connect device to unlock File Explorer & SmartNav options.", fontSize = 11.sp, color = Color.Gray)
+                    }
+                }
+            }
 
-            Spacer(Modifier.height(32.dp))
             ConnectionCard(state, vm.isAoaMode, isPhysicallyConnected, physicalDeviceName, onConnect = { vm.connect() }, onDisconnect = onDisconnect)
 
-            Spacer(Modifier.height(32.dp))
-            Text("Recent Transfers", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-            Spacer(Modifier.height(8.dp))
-            
-            // Placeholder for transfer history
-            Box(modifier = Modifier.weight(1f)) {
-                Text("No active transfers", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+            if (isConnected) {
+                Spacer(Modifier.height(32.dp))
+                Text("Recent Transfers", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                Spacer(Modifier.height(8.dp))
+                
+                Box(modifier = Modifier.weight(1f)) {
+                    Text("No active transfers", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                }
+            } else {
+                Spacer(Modifier.weight(1f))
             }
 
             SecurityInfo()
@@ -701,3 +755,124 @@ fun FileRow(
             }
         }
     }
+
+@Composable
+fun DesktopNotConnectedView(
+    state: String,
+    isPhysicallyConnected: Boolean,
+    physicalDeviceName: String?,
+    onConnect: () -> Unit
+) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+            modifier = Modifier.widthIn(max = 520.dp).padding(24.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = if (isPhysicallyConnected) Color(0xFFE8F5E9) else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                modifier = Modifier.size(96.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isPhysicallyConnected) Icons.Default.Usb else Icons.Default.Devices,
+                        contentDescription = null,
+                        modifier = Modifier.size(48.dp),
+                        tint = if (isPhysicallyConnected) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(24.dp))
+
+            Text(
+                text = if (state == "Searching...") "Searching for USB Device..." else if (isPhysicallyConnected) "USB Device Detected" else "No USB Device Connected",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(Modifier.height(8.dp))
+
+            Text(
+                text = if (isPhysicallyConnected) {
+                    "Your device (${physicalDeviceName ?: "Android Device"}) is physically connected via USB cable. Click below to connect and unlock the File Manager & SmartNav Suite."
+                } else {
+                    "Please connect your Android device via USB cable to access remote file management and the SmartNav package tools."
+                },
+                style = MaterialTheme.typography.bodyMedium,
+                color = Color.Gray,
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+            )
+
+            Spacer(Modifier.height(32.dp))
+
+            Card(
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Quick Connection Guide", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                    StepRow(step = "1", text = "Connect your Android device using a data-capable USB cable.")
+                    StepRow(step = "2", text = "Open the UsbTransfer app on Android and select Client Mode.")
+                    StepRow(step = "3", text = "Click the Connect Device button below to initialize the USB session.")
+                    StepRow(step = "4", text = "Once verified, File Explorer and SmartNav tabs unlock automatically.")
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
+
+            Button(
+                onClick = onConnect,
+                enabled = state != "Searching...",
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (isPhysicallyConnected) Color(0xFF2E7D32) else MaterialTheme.colorScheme.primary
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier.fillMaxWidth().height(54.dp)
+            ) {
+                if (state == "Searching...") {
+                    CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text("Connecting...", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                } else {
+                    Icon(Icons.Default.Link, contentDescription = null, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(10.dp))
+                    Text(if (isPhysicallyConnected) "Connect to Device (${physicalDeviceName ?: "Android"})" else "Connect Device", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+
+            if (state.contains("Failed") || state.contains("Error")) {
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    text = "Previous attempt status: $state",
+                    color = MaterialTheme.colorScheme.error,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun StepRow(step: String, text: String) {
+    Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            shape = CircleShape,
+            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
+            modifier = Modifier.size(24.dp)
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(step, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+        }
+        Text(text, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+    }
+}

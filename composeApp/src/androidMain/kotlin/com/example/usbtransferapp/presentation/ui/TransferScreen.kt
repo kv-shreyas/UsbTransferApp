@@ -130,7 +130,8 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
                         },
                         onRenameFile = { oldPath, newName ->
                             viewModel.renameRemoteFile(oldPath, newName)
-                        }
+                        },
+                        viewModel = viewModel
                     )
                 }
             }
@@ -200,7 +201,8 @@ fun StateContent(
     onDeleteFile: (String) -> Unit,
     onUploadUris: (List<Uri>) -> Unit = {},
     onFetchBatch: (List<RemoteFile>) -> Unit = {},
-    onRenameFile: (String, String) -> Unit = { _, _ -> }
+    onRenameFile: (String, String) -> Unit = { _, _ -> },
+    viewModel: UsbTransferViewModel? = null
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -325,7 +327,8 @@ fun StateContent(
                         onFetchBatch = onFetchBatch,
                         onUploadUris = onUploadUris,
                         onDeleteFile = onDeleteFile,
-                        onRenameFile = onRenameFile
+                        onRenameFile = onRenameFile,
+                        viewModel = viewModel
                     )
                 } else {
                     BigIcon(Icons.Default.CheckCircle, Color(0xFF4CAF50))
@@ -692,20 +695,81 @@ fun HostModeDashboard(
     onFetchBatch: (List<RemoteFile>) -> Unit,
     onUploadUris: (List<Uri>) -> Unit,
     onDeleteFile: (String) -> Unit,
-    onRenameFile: (String, String) -> Unit
+    onRenameFile: (String, String) -> Unit,
+    viewModel: UsbTransferViewModel? = null
 ) {
-    RemoteFileManager(
-        remoteFiles = remoteFiles,
-        currentRemotePath = currentRemotePath,
-        isRemoteLoading = isRemoteLoading,
-        onNavigateDir = onNavigateDir,
-        onRefreshDir = onRefreshDir,
-        onFetchFile = onFetchFile,
-        onFetchBatch = onFetchBatch,
-        onUploadUris = onUploadUris,
-        onDeleteFile = onDeleteFile,
-        onRenameFile = onRenameFile
-    )
+    var selectedOption by remember { mutableStateOf("fileManager") }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        // Top Option Selector / Tab Bar
+        Surface(
+            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            shape = RoundedCornerShape(12.dp),
+            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(6.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                val isFileManager = selectedOption == "fileManager"
+                Button(
+                    onClick = { selectedOption = "fileManager" },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isFileManager) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        contentColor = if (isFileManager) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Icon(Icons.Default.Folder, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("File Manager", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+
+                val isSmartNav = selectedOption == "smartnav"
+                Button(
+                    onClick = { selectedOption = "smartnav" },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (isSmartNav) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        contentColor = if (isSmartNav) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.weight(1f).height(42.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp)
+                ) {
+                    Icon(Icons.Default.Explore, null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("SmartNav Option", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
+            }
+        }
+
+        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+            if (selectedOption == "smartnav" && viewModel != null) {
+                SmartNavAndroidDashboard(
+                    viewModel = viewModel,
+                    onSwitchToFileManagerAndNavigate = { targetPath ->
+                        selectedOption = "fileManager"
+                        onNavigateDir(targetPath)
+                    }
+                )
+            } else {
+                RemoteFileManager(
+                    remoteFiles = remoteFiles,
+                    currentRemotePath = currentRemotePath,
+                    isRemoteLoading = isRemoteLoading,
+                    onNavigateDir = onNavigateDir,
+                    onRefreshDir = onRefreshDir,
+                    onFetchFile = onFetchFile,
+                    onFetchBatch = onFetchBatch,
+                    onUploadUris = onUploadUris,
+                    onDeleteFile = onDeleteFile,
+                    onRenameFile = onRenameFile
+                )
+            }
+        }
+    }
 }
 
 @Composable
