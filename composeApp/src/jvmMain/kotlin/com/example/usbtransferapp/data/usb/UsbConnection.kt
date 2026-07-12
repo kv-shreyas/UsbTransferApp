@@ -110,7 +110,12 @@ class UsbConnection {
         }
     }
 
+    fun isOpen(): Boolean = handle != null
+
     fun open(device: Device): Boolean {
+        if (handle != null) {
+            close()
+        }
         handle = DeviceHandle()
 
         val result = LibUsb.open(device, handle)
@@ -305,19 +310,26 @@ class UsbConnection {
 
     fun close() {
         handle?.let {
-            LibUsb.releaseInterface(it, currentInterface)
-            // Attempt to re-attach kernel driver to leave device in proper state
-            if (LibUsb.kernelDriverActive(it, currentInterface) == 0) {
-                LibUsb.attachKernelDriver(it, currentInterface)
-            }
-            
-            // Force a USB port reset so the Android device drops out of Accessory mode.
-            // This ensures that on the next connection attempt, the AOA switch triggers again,
-            // which fires the necessary ATTACHED intents on the Android side to auto-connect.
-            LibUsb.resetDevice(it)
-            
-            LibUsb.close(it)
+            try {
+                LibUsb.releaseInterface(it, currentInterface)
+            } catch (e: Exception) {}
+            try {
+                if (LibUsb.kernelDriverActive(it, currentInterface) == 0) {
+                    LibUsb.attachKernelDriver(it, currentInterface)
+                }
+            } catch (e: Exception) {}
+            try {
+                LibUsb.close(it)
+            } catch (e: Exception) {}
         }
         handle = null
+    }
+
+    fun resetPort() {
+        handle?.let {
+            try {
+                LibUsb.resetDevice(it)
+            } catch (e: Exception) {}
+        }
     }
 }

@@ -6,7 +6,9 @@ import android.util.Log
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 class AoaConnectionManager @Inject constructor(
     private val wrapper: UsbManagerWrapper,
     private val usbLogger: com.example.usbtransferapp.data.logging.UsbLogger

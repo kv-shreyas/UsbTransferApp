@@ -83,10 +83,10 @@ class MainViewModel(
 
                     if (!connected && wasConnected) {
                         println("[ViewModel] USB cable physically unplugged from Desktop! Auto-disconnecting...")
-                        if (_state.value != "Idle" && _state.value != "Searching..." && !_state.value.contains("Disconnected")) {
+                        if (_state.value != "Idle" && _state.value != "Searching..." && !_state.value.contains("Disconnect")) {
                             disconnect()
                         }
-                    } else if (!connected && _state.value != "Idle" && _state.value != "Searching..." && !_state.value.contains("Disconnected") && !_state.value.contains("Failed") && !_state.value.contains("Connection Lost")) {
+                    } else if (!connected && _state.value != "Idle" && _state.value != "Searching..." && !_state.value.contains("Disconnect") && !_state.value.contains("Failed") && !_state.value.contains("Connection Lost")) {
                         println("[ViewModel] USB device no longer present on bus! Auto-disconnecting...")
                         disconnect()
                     }
@@ -118,27 +118,21 @@ class MainViewModel(
             // Pause monitor so it doesn't steal the lock while we abort
             connectionMonitorJob?.cancel()
             
-            transferJob?.cancel()
-            transferJob?.join() // Wait for it to release the mutex
-            
             usbMutex.withLock {
-                // Immediately notify Android to abort its read loop
                 try {
                     cancelTransferUseCase()
                 } catch (e: Exception) {
-                    println("[ViewModel] Error sending cancel signal: ${e.message}")
+                    println("[ViewModel] Cancel transfer error: ${e.message}")
                 }
-                println("[ViewModel] Transfer cancelled by user.")
             }
-            
-            // Resume monitoring
-            startConnectionMonitor()
+            println("[ViewModel] Transfer cancelled successfully.")
         }
     }
 
     private var connectionMonitorJob: kotlinx.coroutines.Job? = null
 
     fun connect() {
+        if (_state.value == "Searching..." || _state.value == "Connecting...") return
         scope.launch {
             // Ensure any previous background jobs are cleanly cancelled
             transferJob?.cancel()
@@ -147,13 +141,6 @@ class MainViewModel(
             connectionMonitorJob = null
 
             usbMutex.withLock {
-                // Ensure the USB pipe is closed before we try to open it again
-                try {
-                    disconnectUseCase()
-                } catch (e: Exception) {
-                    println("[ViewModel] Cleanup before connect error: ${e.message}")
-                }
-                
                 println("[ViewModel] Attempting to connect to USB device...")
                 _state.value = "Searching..."
                 val success = connectUseCase()
@@ -174,7 +161,9 @@ class MainViewModel(
     }
 
     fun disconnect() {
+        if (_state.value == "Idle" || _state.value == "Disconnecting..." || _state.value.contains("Disconnected")) return
         println("[ViewModel] Force disconnecting device...")
+        _state.value = "Disconnecting..."
         transferJob?.cancel()
         connectionMonitorJob?.cancel()
         

@@ -1107,33 +1107,62 @@ fun AndroidTransferProgressDialog(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
+                val isFetchOrReceive = progress.statusMessage.contains("Fetch", ignoreCase = true) ||
+                                       progress.statusMessage.contains("Download", ignoreCase = true) ||
+                                       progress.statusMessage.contains("Receiv", ignoreCase = true)
+                val isUpload = progress.statusMessage.contains("Upload", ignoreCase = true) ||
+                               progress.statusMessage.contains("Send", ignoreCase = true)
+
+                val titleText = when {
+                    progress.isComplete -> when {
+                        isFetchOrReceive -> "Receive Complete"
+                        isUpload -> "Upload Complete"
+                        else -> "Transfer Complete"
+                    }
+                    else -> when {
+                        isFetchOrReceive -> "Receiving Data"
+                        isUpload -> "Uploading Data"
+                        else -> "Transferring Data"
+                    }
+                }
+
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        Icons.Default.Download,
+                        if (progress.isComplete) Icons.Default.CheckCircle else if (isUpload) Icons.Default.Upload else Icons.Default.Download,
                         null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(32.dp)
+                        tint = if (progress.isComplete) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(36.dp)
                     )
                     Spacer(Modifier.width(16.dp))
-                    Column {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text(
-                            if (progress.isComplete) "Transfer Complete" else "Transferring Data",
+                            text = titleText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = if (progress.isComplete) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface
                         )
+                        Spacer(Modifier.height(4.dp))
+                        val fileLabel = when {
+                            progress.totalFiles > 1 && progress.isComplete -> "Files: "
+                            progress.totalFiles > 1 -> "File (${progress.currentFileIndex}/${progress.totalFiles}): "
+                            else -> "File: "
+                        }
                         Text(
-                            progress.statusMessage.ifEmpty { progress.filename },
+                            text = "$fileLabel${progress.filename.ifEmpty { "Unknown File" }}",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.Gray,
-                            maxLines = 1,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
-                        if (progress.totalFiles > 1) {
+                        if (progress.statusMessage.isNotEmpty() && progress.statusMessage != progress.filename && !progress.statusMessage.startsWith("Receiving ${progress.filename}") && !progress.statusMessage.startsWith("Sending ${progress.filename}") && !progress.statusMessage.startsWith("Fetching ${progress.filename}")) {
+                            Spacer(Modifier.height(2.dp))
                             Text(
-                                "File ${progress.currentFileIndex} of ${progress.totalFiles}",
+                                text = progress.statusMessage,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.secondary
+                                color = Color.Gray,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

@@ -15,9 +15,11 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.nio.ByteBuffer
 import javax.inject.Inject
+import javax.inject.Singleton
 
 private const val TAG = "UsbCommandProcessor"
 
+@Singleton
 class UsbCommandProcessor @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val dataSource: UsbDataSource,
@@ -27,7 +29,7 @@ class UsbCommandProcessor @Inject constructor(
     private var transferJob: kotlinx.coroutines.Job? = null
 
     suspend fun startListening(
-        onReceiveStarted: (String) -> Unit = {},
+        onReceiveStarted: (String, Long) -> Unit = { _, _ -> },
         onReceiveProgress: (Float) -> Unit = {},
         onReceiveFinished: () -> Unit = {},
         onReceiveCancelled: () -> Unit = {},
@@ -68,7 +70,7 @@ class UsbCommandProcessor @Inject constructor(
 
     private suspend fun processCommand(
         data: ByteArray,
-        onReceiveStarted: (String) -> Unit,
+        onReceiveStarted: (String, Long) -> Unit,
         onReceiveProgress: (Float) -> Unit,
         onReceiveFinished: () -> Unit,
         onReceiveCancelled: () -> Unit,
@@ -94,13 +96,25 @@ class UsbCommandProcessor @Inject constructor(
                 }
             }
             2.toByte() -> {
-                transferJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                    try { handleFetch(buffer) } catch(e: Exception) { usbLogger.e(TAG, "Fetch error", e) }
+                try {
+                    handleFetch(buffer)
+                } catch (e: UsbDataSource.TransferCancelledException) {
+                    usbLogger.w(TAG, "Fetch was cancelled by remote.")
+                    withContext(Dispatchers.Main) { onReceiveCancelled() }
+                } catch (e: Exception) {
+                    usbLogger.e(TAG, "Fetch error", e)
+                    withContext(Dispatchers.Main) { onReceiveError(e.message ?: "Unknown error") }
                 }
             }
             3.toByte() -> {
-                transferJob = kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch {
-                    try { handleFetchDir(buffer) } catch(e: Exception) { usbLogger.e(TAG, "FetchDir error", e) }
+                try {
+                    handleFetchDir(buffer)
+                } catch (e: UsbDataSource.TransferCancelledException) {
+                    usbLogger.w(TAG, "FetchDir was cancelled by remote.")
+                    withContext(Dispatchers.Main) { onReceiveCancelled() }
+                } catch (e: Exception) {
+                    usbLogger.e(TAG, "FetchDir error", e)
+                    withContext(Dispatchers.Main) { onReceiveError(e.message ?: "Unknown error") }
                 }
             }
             4.toByte() -> {
@@ -348,7 +362,7 @@ class UsbCommandProcessor @Inject constructor(
 
     private suspend fun handleReceive(
         buffer: ByteBuffer,
-        onReceiveStarted: (String) -> Unit,
+        onReceiveStarted: (String, Long) -> Unit,
         onReceiveProgress: (Float) -> Unit,
         onReceiveFinished: () -> Unit
     ) = kotlinx.coroutines.coroutineScope {
@@ -359,7 +373,7 @@ class UsbCommandProcessor @Inject constructor(
         val fileSize = buffer.getLong()
         
         usbLogger.d(TAG, "handleReceive: File = $fileName ($fileSize bytes)")
-        withContext(Dispatchers.Main) { onReceiveStarted(fileName) }
+        withContext(Dispatchers.Main) { onReceiveStarted(fileName, fileSize) }
         
         var fos: FileOutputStream? = null
         var file: File? = null
@@ -431,7 +445,7 @@ class UsbCommandProcessor @Inject constructor(
 
     private suspend fun handleReceiveDir(
         buffer: ByteBuffer,
-        onReceiveStarted: (String) -> Unit,
+        onReceiveStarted: (String, Long) -> Unit,
         onReceiveProgress: (Float) -> Unit,
         onReceiveFinished: () -> Unit
     ) = coroutineScope {
@@ -443,7 +457,7 @@ class UsbCommandProcessor @Inject constructor(
         val fileSize = buffer.getLong()
         
         usbLogger.d(TAG, "handleReceiveDir: Folder = $folderName ($fileSize bytes)")
-        withContext(Dispatchers.Main) { onReceiveStarted(folderName) }
+        withContext(Dispatchers.Main) { onReceiveStarted(folderName, fileSize) }
         
         val targetDirectory = resolveFile(folderName)
         targetDirectory.mkdirs()
@@ -507,7 +521,7 @@ class UsbCommandProcessor @Inject constructor(
         if (fos != null) {
             usbLogger.d(TAG, "handleReceiveDir: Received temp zip, starting extraction...")
             try {
-                withContext(Dispatchers.Main) { onReceiveStarted("Extracting $folderName...") }
+                withContext(Dispatchers.Main) { onReceiveStarted("Extracting $folderName...", fileSize) }
                 withContext(Dispatchers.IO) {
                     unzipFile(tempZip, targetDirectory)
                 }

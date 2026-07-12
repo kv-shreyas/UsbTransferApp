@@ -61,6 +61,13 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleIntent(intent: Intent?) {
+        if (intent?.getBooleanExtra("open_client_mode", false) == true) {
+            Log.d("MainActivity", "Opened from USB Client Service notification")
+            viewModel.usbLogger.i("MainActivity", "Opened directly from USB Client Service notification")
+            viewModel.detectAndConnect()
+            return
+        }
+
         when (intent?.action) {
             UsbManager.ACTION_USB_ACCESSORY_ATTACHED,
             UsbManager.ACTION_USB_DEVICE_ATTACHED -> {

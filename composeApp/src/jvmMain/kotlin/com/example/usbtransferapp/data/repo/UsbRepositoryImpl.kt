@@ -46,7 +46,7 @@ class UsbRepositoryImpl(
             device = deviceManager.findAndroidDevice()
             if (device != null) break
             println("[UsbRepo] Device not found, waiting for potential re-enumeration... (${i+1}/5)")
-            Thread.sleep(1000)
+            Thread.sleep(200)
         }
         
         if (device == null) {
@@ -74,11 +74,11 @@ class UsbRepositoryImpl(
                     println("[UsbRepo] AOA switch triggered. Waiting for re-enumeration...")
                     
                     var accessory: org.usb4java.Device? = null
-                    for (i in 0 until 10) {
-                        Thread.sleep(1000) // 1s wait is safer for re-enumeration
+                    for (i in 0 until 25) {
+                        Thread.sleep(120) // Tight polling for fast re-enumeration
                         accessory = deviceManager.findAndroidDevice(requireAccessory = true)
                         if (accessory != null) {
-                            println("[UsbRepo] Accessory found after ${ (i+1) * 1000 }ms")
+                            println("[UsbRepo] Accessory found after ${ (i+1) * 120 }ms")
                             break
                         }
                     }
@@ -89,7 +89,7 @@ class UsbRepositoryImpl(
                     isAoaMode = true
 
                     try {
-                        Thread.sleep(500) // Extra time for OS to settle
+                        Thread.sleep(120) // Short settle time
                         if (!connection.open(accessory)) {
                             println("[UsbRepo] Error: Failed to open device in accessory mode.")
                             return false
@@ -110,7 +110,18 @@ class UsbRepositoryImpl(
         bufferHead = 0
         bufferTail = 0
         connection.clearInputBuffer()
-        val handshakeSuccess = performHandshake()
+        var handshakeSuccess = performHandshake()
+        if (!handshakeSuccess) {
+            println("[UsbRepo] Handshake attempt 1 failed. Clearing buffer and retrying after 200ms...")
+            Thread.sleep(200)
+            connection.clearInputBuffer()
+            handshakeSuccess = performHandshake()
+            if (!handshakeSuccess) {
+                Thread.sleep(200)
+                connection.clearInputBuffer()
+                handshakeSuccess = performHandshake()
+            }
+        }
         if (handshakeSuccess) {
             println("[UsbRepo] Handshake successful. Waiting for remote READY signal...")
             val readyPacket = readNextPacket()
@@ -119,14 +130,22 @@ class UsbRepositoryImpl(
             } else {
                 println("[UsbRepo] Warning: Did not receive expected READY signal, continuing anyway...")
             }
+        } else {
+            println("[UsbRepo] Handshake failed completely. Closing USB connection...")
+            connection.close()
         }
         return handshakeSuccess
     }
 
     override fun disconnect() {
+        if (!connection.isOpen()) {
+            println("[UsbRepo] Already disconnected.")
+            return
+        }
         println("[UsbRepo] Sending disconnect signal...")
         try {
             sendEncrypted(byteArrayOf(4.toByte())) // CMD_DISCONNECT
+            Thread.sleep(60) // Give remote device 60ms to read CMD_DISCONNECT
         } catch (e: Exception) {
             println("[UsbRepo] Failed to send disconnect signal: ${e.message}")
         }
