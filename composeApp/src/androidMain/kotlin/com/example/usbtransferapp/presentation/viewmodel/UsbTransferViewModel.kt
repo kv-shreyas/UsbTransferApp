@@ -26,10 +26,12 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
+import java.io.FileOutputStream
 import javax.inject.Inject
 
 @HiltViewModel
@@ -48,6 +50,7 @@ class UsbTransferViewModel @Inject constructor(
     private val fetchDirectoryUseCase: com.example.usbtransferapp.domain.usecases.FetchDirectoryUseCase,
     private val deleteFileUseCase: com.example.usbtransferapp.domain.usecases.DeleteFileUseCase,
     private val renameFileUseCase: com.example.usbtransferapp.domain.usecases.RenameFileUseCase,
+    private val cancelTransferUseCase: com.example.usbtransferapp.domain.usecases.CancelTransferUseCase,
     private val preferencesManager: com.example.usbtransferapp.data.preferences.UsbPreferencesManager,
     val usbLogger: com.example.usbtransferapp.data.logging.UsbLogger
 ) : ViewModel() {
@@ -73,6 +76,26 @@ class UsbTransferViewModel @Inject constructor(
 
     private val _isRemoteLoading = MutableStateFlow(false)
     val isRemoteLoading: StateFlow<Boolean> = _isRemoteLoading
+
+    data class TransferProgress(
+        val isVisible: Boolean = false,
+        val filename: String = "",
+        val percentage: Int = 0,
+        val speed: String = "0 B/s",
+        val transferred: String = "0 B",
+        val total: String = "0 B",
+        val eta: String = "Unknown",
+        val elapsed: String = "0s",
+        val currentFileIndex: Int = 0,
+        val totalFiles: Int = 0,
+        val statusMessage: String = "",
+        val isComplete: Boolean = false,
+        val batchElapsed: String = "0s",
+        val queue: List<String> = emptyList()
+    )
+
+    private val _progressState = MutableStateFlow(TransferProgress())
+    val progressState: StateFlow<TransferProgress> = _progressState
 
     private val directoryCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<RemoteFile>>>()
 
@@ -494,56 +517,340 @@ class UsbTransferViewModel @Inject constructor(
         }
     }
 
+    fun cancelTransfer() {
+        _progressState.value = _progressState.value.copy(statusMessage = "Transfer Cancelled ❌", isComplete = true)
+        _uiState.value = UsbUiState.Success("Transfer Cancelled")
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                cancelTransferUseCase()
+            } catch (e: Exception) {
+                usbLogger.w(TAG, "cancelTransfer error: ${e.message}")
+            }
+        }
+    }
+
+    fun dismissProgress() {
+        _progressState.value = TransferProgress()
+    }
+
+    fun formatSize(bytes: Long): String {
+        if (bytes < 1024) return "$bytes B"
+        val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
+        val pre = "KMGTPE"[exp - 1]
+        return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
+    }
+
+    fun formatTime(seconds: Long): String {
+        return when {
+            seconds < 60 -> "${seconds}s"
+            seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
+            else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
+        }
+    }
+
+    fun navigateUp() {
+        val current = _currentRemotePath.value
+        if (current == "/" || current == "/sdcard") return
+        val parent = if (current.count { it == '/' } == 1) "/" else current.substringBeforeLast("/")
+        val nextPath = if (parent.isEmpty()) "/" else parent
+        fetchRemoteFiles(nextPath)
+    }
+
+    fun navigateTo(file: RemoteFile) {
+        if (file.isDirectory) {
+            fetchRemoteFiles(file.path)
+        }
+    }
+
+    fun sendRemoteUris(context: android.content.Context, uris: List<android.net.Uri>, remotePath: String) {
+        val total = uris.size
+        if (total == 0) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val batchStartTime = System.currentTimeMillis()
+            val queueNames = mutableListOf<String>()
+            val resolvedList = mutableListOf<Pair<android.net.Uri, String>>()
+            for (uri in uris) {
+                var fileName = "upload_${System.currentTimeMillis()}.dat"
+                context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                    val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                    if (cursor.moveToFirst() && nameIndex != -1) {
+                        val name = cursor.getString(nameIndex)
+                        if (!name.isNullOrBlank()) fileName = name
+                    }
+                }
+                queueNames.add(fileName)
+                resolvedList.add(Pair(uri, fileName))
+            }
+
+            _progressState.value = _progressState.value.copy(
+                isVisible = true,
+                totalFiles = total,
+                isComplete = false,
+                queue = queueNames
+            )
+
+            for ((index, item) in resolvedList.withIndex()) {
+                if (!coroutineContext.isActive || _progressState.value.statusMessage.contains("Cancelled")) break
+                val (uri, fileName) = item
+                _progressState.value = _progressState.value.copy(currentFileIndex = index + 1)
+                
+                val tempFile = File(context.cacheDir, fileName)
+                var copiedSuccessfully = false
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { input ->
+                        FileOutputStream(tempFile).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    copiedSuccessfully = tempFile.exists() && tempFile.length() >= 0
+                } catch (e: Exception) {
+                    usbLogger.e(TAG, "Failed to copy uri $uri to cache", e)
+                }
+
+                if (copiedSuccessfully) {
+                    sendSingleFileWithProgress(tempFile, remotePath, batchStartTime, index + 1, total)
+                }
+                if (tempFile.exists()) tempFile.delete()
+            }
+
+            if (coroutineContext.isActive && !_progressState.value.statusMessage.contains("Cancelled")) {
+                _progressState.value = _progressState.value.copy(isComplete = true, statusMessage = "Upload Complete")
+                _uiState.value = UsbUiState.Success("Upload Complete")
+                directoryCache.remove(remotePath)
+                fetchRemoteFiles(remotePath, forceRefresh = true)
+            }
+        }
+    }
+
+    private suspend fun sendSingleFileWithProgress(file: File, destinationPath: String, batchStartTime: Long = System.currentTimeMillis(), currentFileIndex: Int = 1, totalFiles: Int = 1) {
+        usbLogger.i(TAG, "Sending file: ${file.name} (size: ${file.length()} bytes) to $destinationPath")
+        _uiState.value = UsbUiState.Transferring
+
+        val startTime = System.currentTimeMillis()
+        val fileSize = file.length()
+        
+        _progressState.value = _progressState.value.copy(
+            isVisible = true,
+            filename = file.name,
+            total = formatSize(fileSize),
+            percentage = 0,
+            speed = "0 B/s",
+            transferred = "0 B",
+            eta = "Calculating...",
+            elapsed = "0s",
+            statusMessage = "Sending ${file.name}...",
+            currentFileIndex = currentFileIndex,
+            totalFiles = totalFiles
+        )
+
+        try {
+            sendFileUseCase(file, destinationPath).collect { progress ->
+                val currentTime = System.currentTimeMillis()
+                val elapsedSeconds = (currentTime - startTime) / 1000L
+                val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
+                val transferredBytes = (fileSize * progress) / 100
+
+                val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
+                val speed = formatSize(speedBytesPerSec) + "/s"
+
+                val eta = if (speedBytesPerSec > 0) {
+                    val remainingBytes = fileSize - transferredBytes
+                    val remainingSeconds = remainingBytes / speedBytesPerSec
+                    formatTime(remainingSeconds)
+                } else "Calculating..."
+
+                _progressState.value = _progressState.value.copy(
+                    percentage = progress,
+                    speed = speed,
+                    transferred = formatSize(transferredBytes),
+                    eta = eta,
+                    elapsed = formatTime(elapsedSeconds),
+                    batchElapsed = formatTime(batchElapsedSeconds)
+                )
+                _uiState.value = UsbUiState.Receiving(file.name, progress / 100f)
+            }
+            usbLogger.i(TAG, "File sent successfully: ${file.name}")
+        } catch (e: Exception) {
+            if (e !is kotlinx.coroutines.CancellationException) {
+                usbLogger.e(TAG, "Error sending file ${file.name}: ${e.message}")
+                _progressState.value = _progressState.value.copy(statusMessage = "Error: ${e.message}", isComplete = true)
+                _uiState.value = UsbUiState.Error("Failed to send ${file.name}: ${e.message}")
+            }
+        }
+    }
+
     fun sendRemoteFile(localFile: File, remotePath: String) {
         viewModelScope.launch {
-            _uiState.value = UsbUiState.Transferring
-            try {
-                sendFileUseCase(localFile, remotePath).collect { prog ->
-                    _uiState.value = UsbUiState.Receiving(localFile.name, prog / 100f)
-                }
+            sendSingleFileWithProgress(localFile, remotePath)
+            if (_uiState.value !is UsbUiState.Error) {
                 _uiState.value = UsbUiState.Success("File Sent Successfully")
                 directoryCache.remove(remotePath)
                 fetchRemoteFiles(remotePath, forceRefresh = true)
-            } catch (e: Exception) {
-                usbLogger.e(TAG, "Failed to send file", e)
-                _uiState.value = UsbUiState.Error("Failed to send file: ${e.message}")
+            }
+        }
+    }
+
+    fun fetchRemoteFilesBatch(remoteFiles: List<RemoteFile>, localSaveDir: File) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val total = remoteFiles.size
+            if (total == 0) return@launch
+            val batchStartTime = System.currentTimeMillis()
+            val queueNames = remoteFiles.map { it.name }
+            _progressState.value = _progressState.value.copy(
+                isVisible = true,
+                totalFiles = total,
+                isComplete = false,
+                queue = queueNames
+            )
+            for ((index, remoteFile) in remoteFiles.withIndex()) {
+                if (!coroutineContext.isActive || _progressState.value.statusMessage.contains("Cancelled")) break
+                _progressState.value = _progressState.value.copy(currentFileIndex = index + 1)
+                if (remoteFile.isDirectory) {
+                    fetchRemoteDirectoryWithProgress(remoteFile, localSaveDir, batchStartTime, index + 1, total)
+                } else {
+                    fetchRemoteFileWithProgress(remoteFile, localSaveDir, batchStartTime, index + 1, total)
+                }
+            }
+            if (coroutineContext.isActive && !_progressState.value.statusMessage.contains("Cancelled")) {
+                _progressState.value = _progressState.value.copy(isComplete = true, statusMessage = "Fetch Complete")
+                _uiState.value = UsbUiState.Success("Fetch Complete")
             }
         }
     }
 
     fun fetchRemoteFile(remotePath: String, localSaveDir: File) {
         viewModelScope.launch {
-            _uiState.value = UsbUiState.Transferring
             val fileName = remotePath.substringAfterLast('/')
-            val targetFile = File(localSaveDir, fileName)
-            try {
-                fetchFileUseCase(remotePath, targetFile).collect { prog ->
-                    _uiState.value = UsbUiState.Receiving(fileName, prog / 100f)
-                }
+            val dummyFile = RemoteFile(fileName, false, 0, remotePath)
+            fetchRemoteFileWithProgress(dummyFile, localSaveDir)
+            if (_uiState.value !is UsbUiState.Error) {
                 _uiState.value = UsbUiState.Success("File Received Successfully")
-            } catch (e: Exception) {
-                usbLogger.e(TAG, "Failed to fetch file", e)
-                _uiState.value = UsbUiState.Error("Failed to fetch file: ${e.message}")
             }
         }
     }
 
     fun fetchRemoteDirectory(remotePath: String, localSaveDir: File) {
         viewModelScope.launch {
-            _uiState.value = UsbUiState.Transferring
             val dirName = remotePath.substringAfterLast('/')
-            val targetFile = File(localSaveDir, "$dirName.zip")
-            try {
-                fetchDirectoryUseCase(remotePath, targetFile).collect { prog ->
-                    _uiState.value = UsbUiState.Receiving("$dirName.zip", prog / 100f)
-                }
+            val dummyDir = RemoteFile(dirName, true, 0, remotePath)
+            fetchRemoteDirectoryWithProgress(dummyDir, localSaveDir)
+            if (_uiState.value !is UsbUiState.Error) {
                 _uiState.value = UsbUiState.Success("Directory Received Successfully ($dirName.zip)")
-            } catch (e: Exception) {
-                usbLogger.e(TAG, "Failed to fetch directory", e)
-                _uiState.value = UsbUiState.Error("Failed to fetch directory: ${e.message}")
             }
         }
     }
+
+    private suspend fun fetchRemoteFileWithProgress(remoteFile: RemoteFile, localSaveDir: File, batchStartTime: Long = System.currentTimeMillis(), currentFileIndex: Int = 1, totalFiles: Int = 1) {
+        if (!localSaveDir.exists()) localSaveDir.mkdirs()
+        val targetFile = File(localSaveDir, remoteFile.name)
+        usbLogger.i(TAG, "Fetching file: ${remoteFile.name} (size: ${remoteFile.size} bytes)")
+        _uiState.value = UsbUiState.Transferring
+
+        val startTime = System.currentTimeMillis()
+        val fileSize = remoteFile.size
+
+        _progressState.value = _progressState.value.copy(
+            isVisible = true,
+            filename = remoteFile.name,
+            total = formatSize(fileSize),
+            percentage = 0,
+            speed = "0 B/s",
+            transferred = "0 B",
+            eta = "Calculating...",
+            elapsed = "0s",
+            statusMessage = "Fetching ${remoteFile.name}...",
+            currentFileIndex = currentFileIndex,
+            totalFiles = totalFiles
+        )
+
+        try {
+            fetchFileUseCase(remoteFile.path, targetFile).collect { progress ->
+                val currentTime = System.currentTimeMillis()
+                val elapsedSeconds = (currentTime - startTime) / 1000L
+                val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
+                val transferredBytes = (fileSize * progress) / 100
+
+                val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
+                val speed = formatSize(speedBytesPerSec) + "/s"
+
+                val eta = if (speedBytesPerSec > 0) {
+                    val remainingBytes = fileSize - transferredBytes
+                    val remainingSeconds = remainingBytes / speedBytesPerSec
+                    formatTime(remainingSeconds)
+                } else "Calculating..."
+
+                _progressState.value = _progressState.value.copy(
+                    percentage = progress,
+                    speed = speed,
+                    transferred = formatSize(transferredBytes),
+                    eta = eta,
+                    elapsed = formatTime(elapsedSeconds),
+                    batchElapsed = formatTime(batchElapsedSeconds)
+                )
+                _uiState.value = UsbUiState.Receiving(remoteFile.name, progress / 100f)
+            }
+            usbLogger.i(TAG, "Fetched to ${targetFile.absolutePath}")
+        } catch (e: Exception) {
+            if (e !is kotlinx.coroutines.CancellationException) {
+                usbLogger.e(TAG, "Error fetching ${remoteFile.name}: ${e.message}")
+                _progressState.value = _progressState.value.copy(statusMessage = "Error: ${e.message}", isComplete = true)
+                _uiState.value = UsbUiState.Error("Failed to fetch ${remoteFile.name}: ${e.message}")
+            }
+        }
+    }
+
+    private suspend fun fetchRemoteDirectoryWithProgress(remoteFile: RemoteFile, localSaveDir: File, batchStartTime: Long = System.currentTimeMillis(), currentFileIndex: Int = 1, totalFiles: Int = 1) {
+        if (!localSaveDir.exists()) localSaveDir.mkdirs()
+        val targetZip = File(localSaveDir, "${remoteFile.name}.zip")
+        usbLogger.i(TAG, "Fetching directory: ${remoteFile.name} as ZIP")
+        _uiState.value = UsbUiState.Transferring
+
+        val startTime = System.currentTimeMillis()
+
+        _progressState.value = _progressState.value.copy(
+            isVisible = true,
+            filename = "${remoteFile.name}.zip",
+            total = "ZIP Stream",
+            percentage = 0,
+            speed = "0 B/s",
+            transferred = "0 B",
+            eta = "Processing...",
+            elapsed = "0s",
+            statusMessage = "Downloading ${remoteFile.name}.zip...",
+            currentFileIndex = currentFileIndex,
+            totalFiles = totalFiles
+        )
+
+        try {
+            fetchDirectoryUseCase(remoteFile.path, targetZip).collect { progress ->
+                val currentTime = System.currentTimeMillis()
+                val elapsedSeconds = (currentTime - startTime) / 1000L
+                val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
+                val transferredBytes = targetZip.length()
+
+                val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
+                val speed = formatSize(speedBytesPerSec) + "/s"
+
+                _progressState.value = _progressState.value.copy(
+                    percentage = progress,
+                    speed = speed,
+                    transferred = formatSize(transferredBytes),
+                    elapsed = formatTime(elapsedSeconds),
+                    batchElapsed = formatTime(batchElapsedSeconds)
+                )
+                _uiState.value = UsbUiState.Receiving("${remoteFile.name}.zip", progress / 100f)
+            }
+            usbLogger.i(TAG, "Fetched directory to ${targetZip.absolutePath}")
+        } catch (e: Exception) {
+            if (e !is kotlinx.coroutines.CancellationException) {
+                usbLogger.e(TAG, "Error fetching directory ${remoteFile.name}: ${e.message}")
+                _progressState.value = _progressState.value.copy(statusMessage = "Error: ${e.message}", isComplete = true)
+                _uiState.value = UsbUiState.Error("Failed to fetch directory ${remoteFile.name}: ${e.message}")
+            }
+        }
+    }
+
+
 
     fun deleteRemoteFile(remotePath: String) {
         viewModelScope.launch {

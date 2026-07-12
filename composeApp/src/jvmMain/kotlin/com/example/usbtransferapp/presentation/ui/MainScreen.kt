@@ -52,34 +52,29 @@ fun MainScreen(vm: MainViewModel) {
 
         // Main Content
         Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(24.dp)) {
-            if (currentScreen == "explorer") {
-                Header("Remote File System", currentPath, onBack = { vm.navigateUp() }, onRefresh = { vm.refreshRemoteFiles() })
-                
-                Spacer(Modifier.height(24.dp))
+            Header("Remote File System", currentPath, onBack = { vm.navigateUp() }, onRefresh = { vm.refreshRemoteFiles() })
+            
+            Spacer(Modifier.height(24.dp))
 
-                FileList(
-                    files = remoteFiles,
-                    modifier = Modifier.weight(1f),
-                    onFolderClick = { vm.navigateTo(it) },
-                    onFilesFetch = { vm.fetchFiles(it) },
-                    onFileConvert = { vm.convertAnfFile(it) },
-                    onFileDelete = { vm.deleteFile(it) },
-                    onFileRename = { file, newName -> vm.renameFile(file, newName) }
-                )
+            FileList(
+                files = remoteFiles,
+                modifier = Modifier.weight(1f),
+                onFolderClick = { vm.navigateTo(it) },
+                onFilesFetch = { vm.fetchFiles(it) },
+                onFileDelete = { vm.deleteFile(it) },
+                onFileRename = { file, newName -> vm.renameFile(file, newName) }
+            )
 
-                Spacer(Modifier.height(16.dp))
-                
-                ActionBar(currentPath = currentPath, onSendFile = {
-                    val fileChooser = JFileChooser()
-                    fileChooser.fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
-                    fileChooser.isMultiSelectionEnabled = true
-                    if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                        vm.sendFiles(fileChooser.selectedFiles.toList())
-                    }
-                })
-            } else {
-                AnfConverterScreen(vm, remoteFiles, currentPath)
-            }
+            Spacer(Modifier.height(16.dp))
+            
+            ActionBar(currentPath = currentPath, onSendFile = {
+                val fileChooser = JFileChooser()
+                fileChooser.fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
+                fileChooser.isMultiSelectionEnabled = true
+                if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
+                    vm.sendFiles(fileChooser.selectedFiles.toList())
+                }
+            })
         }
     }
 }
@@ -99,7 +94,6 @@ fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, onNavigate:
             Spacer(Modifier.height(32.dp))
 
             NavigationItem("File Explorer", Icons.Default.Folder, currentScreen == "explorer") { onNavigate("explorer") }
-            NavigationItem("ANF Converter", Icons.Default.Transform, currentScreen == "converter") { onNavigate("converter") }
 
             Spacer(Modifier.height(32.dp))
             ConnectionCard(state, vm.isAoaMode, isPhysicallyConnected, physicalDeviceName, onConnect = { vm.connect() }, onDisconnect = onDisconnect)
@@ -233,51 +227,7 @@ fun ConnectionCard(state: String, isAoaMode: Boolean, isPhysicallyConnected: Boo
     }
 }
 
-@Composable
-fun AnfConverterScreen(vm: MainViewModel, files: List<RemoteFile>, path: String) {
-    Column(modifier = Modifier.fillMaxSize()) {
-        Header("ANF to CSV Converter", path, onBack = { vm.navigateUp() }, onRefresh = { vm.refreshRemoteFiles() })
-        
-        Spacer(Modifier.height(24.dp))
-        
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Remote Conversion", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                Text("Select an .anf file from the device to convert it to CSV format.", style = MaterialTheme.typography.bodyMedium)
-            }
-            
-            Button(
-                onClick = {
-                    val fileChooser = JFileChooser()
-                    fileChooser.fileFilter = object : javax.swing.filechooser.FileFilter() {
-                        override fun accept(f: File) = f.isDirectory || f.name.endsWith(".anf")
-                        override fun getDescription() = "ANF Log Files (*.anf)"
-                    }
-                    if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                        vm.convertLocalAnfFile(fileChooser.selectedFile)
-                    }
-                },
-                shape = RoundedCornerShape(8.dp)
-            ) {
-                Icon(Icons.Default.FileUpload, null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Choose Local .anf File")
-            }
-        }
-        
-        Spacer(Modifier.height(16.dp))
 
-        FileList(
-            files = files.filter { it.isDirectory || it.name.endsWith(".anf") },
-            modifier = Modifier.weight(1f),
-            onFolderClick = { vm.navigateTo(it) },
-            onFilesFetch = { vm.fetchFiles(it) },
-            onFileConvert = { vm.convertAnfFile(it) },
-            onFileDelete = { vm.deleteFile(it) },
-            onFileRename = { file, newName -> vm.renameFile(file, newName) }
-        )
-    }
-}
 
 @Composable
 fun Header(title: String, path: String, onBack: () -> Unit, onRefresh: () -> Unit) {
@@ -302,7 +252,6 @@ fun FileList(
     modifier: Modifier = Modifier,
     onFolderClick: (RemoteFile) -> Unit, 
     onFilesFetch: (List<RemoteFile>) -> Unit,
-    onFileConvert: (RemoteFile) -> Unit,
     onFileDelete: (RemoteFile) -> Unit,
     onFileRename: (RemoteFile, String) -> Unit
 ) {
@@ -350,7 +299,6 @@ fun FileList(
                             },
                             onFolderClick = onFolderClick, 
                             onFileFetch = { onFilesFetch(listOf(it)) }, 
-                            onFileConvert = onFileConvert,
                             onFileDelete = onFileDelete,
                             onFileRename = onFileRename
                         )
@@ -369,7 +317,6 @@ fun FileRow(
     onSelectionChange: (Boolean) -> Unit,
     onFolderClick: (RemoteFile) -> Unit, 
     onFileFetch: (RemoteFile) -> Unit,
-    onFileConvert: (RemoteFile) -> Unit,
     onFileDelete: (RemoteFile) -> Unit,
     onFileRename: (RemoteFile, String) -> Unit
 ) {
@@ -477,16 +424,6 @@ fun FileRow(
                     },
                     leadingIcon = { Icon(Icons.Default.Download, "Fetch") }
                 )
-                if (!file.isDirectory && file.name.endsWith(".anf")) {
-                    androidx.compose.material3.DropdownMenuItem(
-                        text = { Text("Convert to CSV") },
-                        onClick = {
-                            showContextMenu = false
-                            onFileConvert(file)
-                        },
-                        leadingIcon = { Icon(Icons.Default.Transform, "Convert") }
-                    )
-                }
                 androidx.compose.material3.DropdownMenuItem(
                     text = { Text("Rename") },
                     onClick = {

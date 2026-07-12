@@ -2,7 +2,6 @@ package com.example.usbtransferapp.presentation.vm
 
 import com.example.usbtransferapp.domain.usecases.*
 import com.example.usbtransferapp.domain.model.RemoteFile
-import com.example.usbtransferapp.data.converter.AnfToCsvConverter
 import com.example.usbtransferapp.presentation.ui.formatSize
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -562,66 +561,7 @@ class MainViewModel(
         }
     }
 
-    fun convertAnfFile(remoteFile: RemoteFile) {
-        scope.launch {
-            val tempAnf = File("temp_${remoteFile.name}")
-            val csvFile = File(remoteFile.name.substringBeforeLast(".") + ".csv")
-            
-            println("[ViewModel] Conversion requested for: ${remoteFile.name}")
-            println("[ViewModel] Step 1: Fetching remote ANF file to temporary location: ${tempAnf.absolutePath}")
-            _state.value = "Fetching: ${remoteFile.name}..."
-            
-            var fetchSuccess = false
-            usbMutex.withLock {
-                try {
-                    fetchUseCase(remoteFile.path, tempAnf).collect { progress -> 
-                        _state.value = "Fetching: $progress%" 
-                    }
-                    fetchSuccess = true
-                } catch (e: Exception) {
-                    println("[ViewModel] Fetch error: ${e.message}")
-                    _state.value = "Fetch Error: ${e.message}"
-                }
-            }
 
-            if (fetchSuccess) {
-                println("[ViewModel] Step 2: Converting ${tempAnf.name} to ${csvFile.name}...")
-                _state.value = "Converting to CSV..."
-                try {
-                    FileInputStream(tempAnf).use { input ->
-                        AnfToCsvConverter.convert(input, csvFile)
-                    }
-                    _state.value = "Converted to ${csvFile.absolutePath} ✅"
-                    println("[ViewModel] Conversion successful! CSV file created at: ${csvFile.absolutePath}")
-                } catch (e: Exception) {
-                    println("[ViewModel] Conversion error: ${e.message}")
-                    _state.value = "Conversion Error: ${e.message}"
-                }
-            }
-            
-            println("[ViewModel] Step 3: Cleaning up temporary file: ${tempAnf.absolutePath}")
-            tempAnf.delete()
-        }
-    }
-
-    fun convertLocalAnfFile(file: File) {
-        scope.launch {
-            val csvFile = File(file.parent, file.name.substringBeforeLast(".") + ".csv")
-            println("[ViewModel] Local conversion requested for: ${file.absolutePath}")
-            _state.value = "Converting ${file.name}..."
-            
-            try {
-                FileInputStream(file).use { input ->
-                    AnfToCsvConverter.convert(input, csvFile)
-                }
-                _state.value = "Converted to ${csvFile.absolutePath} ✅"
-                println("[ViewModel] Local conversion successful: ${csvFile.absolutePath}")
-            } catch (e: Exception) {
-                println("[ViewModel] Local conversion error: ${e.message}")
-                _state.value = "Conversion Error: ${e.message}"
-            }
-        }
-    }
 
     fun receiveFile() {
         scope.launch {

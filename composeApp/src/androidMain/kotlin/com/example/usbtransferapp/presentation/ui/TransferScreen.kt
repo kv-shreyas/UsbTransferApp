@@ -1,6 +1,9 @@
 package com.example.usbtransferapp.presentation.ui
 
+import android.net.Uri
 import android.os.Environment
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -22,9 +25,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
@@ -43,11 +48,21 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
     val remoteFiles by viewModel.remoteFiles.collectAsState()
     val currentRemotePath by viewModel.currentRemotePath.collectAsState()
     val isRemoteLoading by viewModel.isRemoteLoading.collectAsState()
+    val progressState by viewModel.progressState.collectAsState()
     val logLines by viewModel.logLines.collectAsState()
     val logFilePath = viewModel.getLogFilePath()
+    val context = LocalContext.current
 
     LaunchedEffect(Unit) {
         viewModel.detectAndConnect()
+    }
+
+    if (progressState.isVisible) {
+        AndroidTransferProgressDialog(
+            progress = progressState,
+            onCancel = { viewModel.cancelTransfer() },
+            onDismiss = { viewModel.dismissProgress() }
+        )
     }
 
     Scaffold(
@@ -105,7 +120,17 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
                                 viewModel.fetchRemoteFile(remotePath, downloadDir)
                             }
                         },
-                        onDeleteFile = { viewModel.deleteRemoteFile(it) }
+                        onDeleteFile = { viewModel.deleteRemoteFile(it) },
+                        onUploadUris = { uris ->
+                            viewModel.sendRemoteUris(context, uris, currentRemotePath)
+                        },
+                        onFetchBatch = { files ->
+                            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
+                            viewModel.fetchRemoteFilesBatch(files, downloadDir)
+                        },
+                        onRenameFile = { oldPath, newName ->
+                            viewModel.renameRemoteFile(oldPath, newName)
+                        }
                     )
                 }
             }
@@ -172,7 +197,10 @@ fun StateContent(
     onNavigateDir: (String) -> Unit,
     onRefreshDir: (String) -> Unit,
     onFetchFile: (String, Boolean) -> Unit,
-    onDeleteFile: (String) -> Unit
+    onDeleteFile: (String) -> Unit,
+    onUploadUris: (List<Uri>) -> Unit = {},
+    onFetchBatch: (List<RemoteFile>) -> Unit = {},
+    onRenameFile: (String, String) -> Unit = { _, _ -> }
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -287,14 +315,17 @@ fun StateContent(
             }
             is UsbUiState.Success -> {
                 if (role is UsbRole.Host) {
-                    RemoteFileManager(
+                    HostModeDashboard(
                         remoteFiles = remoteFiles,
                         currentRemotePath = currentRemotePath,
                         isRemoteLoading = isRemoteLoading,
                         onNavigateDir = onNavigateDir,
                         onRefreshDir = onRefreshDir,
                         onFetchFile = onFetchFile,
-                        onDeleteFile = onDeleteFile
+                        onFetchBatch = onFetchBatch,
+                        onUploadUris = onUploadUris,
+                        onDeleteFile = onDeleteFile,
+                        onRenameFile = onRenameFile
                     )
                 } else {
                     BigIcon(Icons.Default.CheckCircle, Color(0xFF4CAF50))
@@ -651,6 +682,33 @@ fun DebugLogsViewer(
 }
 
 @Composable
+fun HostModeDashboard(
+    remoteFiles: List<RemoteFile>,
+    currentRemotePath: String,
+    isRemoteLoading: Boolean = false,
+    onNavigateDir: (String) -> Unit,
+    onRefreshDir: (String) -> Unit,
+    onFetchFile: (String, Boolean) -> Unit,
+    onFetchBatch: (List<RemoteFile>) -> Unit,
+    onUploadUris: (List<Uri>) -> Unit,
+    onDeleteFile: (String) -> Unit,
+    onRenameFile: (String, String) -> Unit
+) {
+    RemoteFileManager(
+        remoteFiles = remoteFiles,
+        currentRemotePath = currentRemotePath,
+        isRemoteLoading = isRemoteLoading,
+        onNavigateDir = onNavigateDir,
+        onRefreshDir = onRefreshDir,
+        onFetchFile = onFetchFile,
+        onFetchBatch = onFetchBatch,
+        onUploadUris = onUploadUris,
+        onDeleteFile = onDeleteFile,
+        onRenameFile = onRenameFile
+    )
+}
+
+@Composable
 fun RemoteFileManager(
     remoteFiles: List<RemoteFile>,
     currentRemotePath: String,
@@ -658,8 +716,19 @@ fun RemoteFileManager(
     onNavigateDir: (String) -> Unit,
     onRefreshDir: (String) -> Unit = onNavigateDir,
     onFetchFile: (String, Boolean) -> Unit,
-    onDeleteFile: (String) -> Unit
+    onFetchBatch: (List<RemoteFile>) -> Unit,
+    onUploadUris: (List<Uri>) -> Unit,
+    onDeleteFile: (String) -> Unit,
+    onRenameFile: (String, String) -> Unit
 ) {
+    val filePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenMultipleDocuments()
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            onUploadUris(uris)
+        }
+    }
+
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
             modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -681,67 +750,509 @@ fun RemoteFileManager(
                 text = "Remote: $currentRemotePath",
                 fontWeight = FontWeight.Bold,
                 modifier = Modifier.weight(1f),
-                maxLines = 1
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
             IconButton(onClick = { onRefreshDir(currentRemotePath) }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh")
             }
         }
 
+        // Action Bar for uploading files to current directory
+        AndroidActionBar(
+            currentPath = currentRemotePath,
+            onSendFile = {
+                filePickerLauncher.launch(arrayOf("*/*"))
+            }
+        )
+
+        Spacer(Modifier.height(8.dp))
+
         if (isRemoteLoading) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(12.dp))
                     Text("Loading folder contents...", color = Color.Gray, fontSize = 14.sp)
                 }
             }
-        } else if (remoteFiles.isEmpty()) {
+        } else {
+            AndroidFileList(
+                files = remoteFiles,
+                modifier = Modifier.weight(1f),
+                onFolderClick = { onNavigateDir(it.path) },
+                onFilesFetch = { files ->
+                    if (files.size == 1) {
+                        onFetchFile(files.first().path, files.first().isDirectory)
+                    } else {
+                        onFetchBatch(files)
+                    }
+                },
+                onFileDelete = { onDeleteFile(it.path) },
+                onFileRename = { file, newName -> onRenameFile(file.path, newName) }
+            )
+        }
+    }
+}
+
+@Composable
+fun AndroidActionBar(currentPath: String, onSendFile: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(Icons.Default.CloudUpload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Upload to Android Client", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                Text(
+                    "Destination: $currentPath",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            Spacer(Modifier.width(8.dp))
+            Button(
+                onClick = onSendFile,
+                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
+            ) {
+                Icon(Icons.Default.Upload, null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Upload", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
+
+@Composable
+fun AndroidFileList(
+    files: List<RemoteFile>,
+    modifier: Modifier = Modifier,
+    onFolderClick: (RemoteFile) -> Unit,
+    onFilesFetch: (List<RemoteFile>) -> Unit,
+    onFileDelete: (RemoteFile) -> Unit,
+    onFileRename: (RemoteFile, String) -> Unit
+) {
+    var selectedFiles by remember { mutableStateOf(setOf<RemoteFile>()) }
+
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = MaterialTheme.colorScheme.surface
+    ) {
+        if (files.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Directory is empty", color = Color.Gray)
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(48.dp), tint = Color.LightGray)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Directory is empty", color = Color.Gray)
+                }
             }
         } else {
-            LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(remoteFiles) { file ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().clickable {
-                            if (file.isDirectory) {
-                                onNavigateDir(file.path)
-                            }
-                        },
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+            Column(modifier = Modifier.fillMaxSize()) {
+                if (selectedFiles.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer).padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically
+                        Text(
+                            "${selectedFiles.size} items selected",
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            fontSize = 13.sp
+                        )
+                        Button(
+                            onClick = {
+                                onFilesFetch(selectedFiles.toList())
+                                selectedFiles = emptySet()
+                            },
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
                         ) {
-                            Icon(
-                                if (file.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
-                                contentDescription = null,
-                                tint = if (file.isDirectory) Color(0xFFFFA500) else MaterialTheme.colorScheme.primary
-                            )
-                            Spacer(Modifier.width(12.dp))
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(file.name, fontWeight = FontWeight.SemiBold)
-                                if (!file.isDirectory) {
-                                    val sizeText = if (file.size > 0) "${file.size / 1024} KB" else "File"
-                                    Text(sizeText, fontSize = 12.sp, color = Color.Gray)
-                                } else {
-                                    Text("Directory", fontSize = 12.sp, color = Color.Gray)
-                                }
-                            }
-                            IconButton(onClick = { onFetchFile(file.path, file.isDirectory) }) {
-                                Icon(
-                                    Icons.Default.Download,
-                                    contentDescription = if (file.isDirectory) "Download Directory (ZIP)" else "Download File",
-                                    tint = MaterialTheme.colorScheme.primary
-                                )
-                            }
-                            IconButton(onClick = { onDeleteFile(file.path) }) {
-                                Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red)
-                            }
+                            Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Fetch Selected", fontSize = 12.sp)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        TextButton(onClick = { selectedFiles = emptySet() }) {
+                            Text("Clear", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
                         }
                     }
+                }
+                LazyColumn(modifier = Modifier.weight(1f)) {
+                    items(files) { file ->
+                        AndroidFileRow(
+                            file = file,
+                            isSelected = selectedFiles.contains(file),
+                            onSelectionChange = { selected ->
+                                if (selected) selectedFiles += file else selectedFiles -= file
+                            },
+                            onFolderClick = onFolderClick,
+                            onFileFetch = { onFilesFetch(listOf(it)) },
+                            onFileDelete = onFileDelete,
+                            onFileRename = onFileRename
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun AndroidFileRow(
+    file: RemoteFile,
+    isSelected: Boolean,
+    onSelectionChange: (Boolean) -> Unit,
+    onFolderClick: (RemoteFile) -> Unit,
+    onFileFetch: (RemoteFile) -> Unit,
+    onFileDelete: (RemoteFile) -> Unit,
+    onFileRename: (RemoteFile, String) -> Unit
+) {
+    var showRenameDialog by remember { mutableStateOf(false) }
+    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
+    var showContextMenu by remember { mutableStateOf(false) }
+
+    if (showRenameDialog) {
+        RenameDialog(
+            file = file,
+            onConfirm = { newName ->
+                onFileRename(file, newName)
+                showRenameDialog = false
+            },
+            onDismiss = { showRenameDialog = false }
+        )
+    }
+
+    if (showDeleteConfirmDialog) {
+        DeleteConfirmDialog(
+            file = file,
+            onConfirm = {
+                onFileDelete(file)
+                showDeleteConfirmDialog = false
+            },
+            onDismiss = { showDeleteConfirmDialog = false }
+        )
+    }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { if (file.isDirectory) onFolderClick(file) }
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Checkbox(
+            checked = isSelected,
+            onCheckedChange = onSelectionChange
+        )
+        Spacer(Modifier.width(8.dp))
+        Icon(
+            imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
+            contentDescription = null,
+            tint = if (file.isDirectory) Color(0xFFFFA500) else MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(28.dp)
+        )
+        Spacer(Modifier.width(12.dp))
+        Column(modifier = Modifier.weight(1f)) {
+            Text(file.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(
+                if (file.isDirectory) "Directory" else formatSize(file.size),
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray
+            )
+        }
+
+        IconButton(onClick = { onFileFetch(file) }) {
+            Icon(
+                Icons.Default.Download,
+                contentDescription = if (file.isDirectory) "Download Directory (ZIP)" else "Download File",
+                tint = MaterialTheme.colorScheme.primary
+            )
+        }
+
+        Box {
+            IconButton(onClick = { showContextMenu = true }) {
+                Icon(Icons.Default.MoreVert, contentDescription = "More Options")
+            }
+            DropdownMenu(
+                expanded = showContextMenu,
+                onDismissRequest = { showContextMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text(if (file.isDirectory) "Download as ZIP" else "Download") },
+                    onClick = {
+                        showContextMenu = false
+                        onFileFetch(file)
+                    },
+                    leadingIcon = { Icon(Icons.Default.Download, null) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Rename") },
+                    onClick = {
+                        showContextMenu = false
+                        showRenameDialog = true
+                    },
+                    leadingIcon = { Icon(Icons.Default.Edit, null) }
+                )
+                DropdownMenuItem(
+                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    onClick = {
+                        showContextMenu = false
+                        showDeleteConfirmDialog = true
+                    },
+                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun RenameDialog(
+    file: RemoteFile,
+    onConfirm: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var renameText by remember(file.name) { mutableStateOf(file.name) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename Item") },
+        text = {
+            OutlinedTextField(
+                value = renameText,
+                onValueChange = { renameText = it },
+                label = { Text("New Name") },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (renameText.isNotBlank() && renameText != file.name) {
+                    onConfirm(renameText)
+                } else {
+                    onDismiss()
+                }
+            }) {
+                Text("Rename")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun DeleteConfirmDialog(
+    file: RemoteFile,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Confirm Deletion") },
+        text = { Text("Are you sure you want to permanently delete '${file.name}' from the remote Android device?") },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+
+
+fun formatSize(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
+    val pre = "KMGTPE"[exp - 1]
+    return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
+}
+
+@Composable
+fun AndroidTransferProgressDialog(
+    progress: UsbTransferViewModel.TransferProgress,
+    onCancel: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    androidx.compose.ui.window.Dialog(
+        onDismissRequest = { if (progress.isComplete) onDismiss() }
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            tonalElevation = 8.dp,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(20.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        Icons.Default.Download,
+                        null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(32.dp)
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text(
+                            if (progress.isComplete) "Transfer Complete" else "Transferring Data",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (progress.isComplete) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            progress.statusMessage.ifEmpty { progress.filename },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.Gray,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        if (progress.totalFiles > 1) {
+                            Text(
+                                "File ${progress.currentFileIndex} of ${progress.totalFiles}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                LinearProgressIndicator(
+                    progress = { progress.percentage / 100f },
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                )
+
+                Spacer(Modifier.height(16.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(horizontalAlignment = Alignment.Start) {
+                        Text("Speed", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text(progress.speed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Elapsed", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text(progress.elapsed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Remaining", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text(progress.eta, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("Progress", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("${progress.percentage}%", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        "${progress.transferred} / ${progress.total}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    if (progress.totalFiles > 1) {
+                        Text(
+                            "Total Elapsed: ${progress.batchElapsed}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+
+                if (progress.queue.isNotEmpty() && progress.totalFiles > 1) {
+                    Spacer(Modifier.height(16.dp))
+                    Text("Queue", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(4.dp))
+                    LazyColumn(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .heightIn(max = 100.dp)
+                            .clip(RoundedCornerShape(4.dp))
+                            .background(Color.Gray.copy(alpha = 0.1f))
+                            .padding(8.dp)
+                    ) {
+                        items(progress.queue.size) { i ->
+                            val item = progress.queue[i]
+                            val isCurrent = (i + 1) == progress.currentFileIndex
+                            val isDone = (i + 1) < progress.currentFileIndex
+                            val color = when {
+                                isDone -> Color(0xFF4CAF50)
+                                isCurrent -> MaterialTheme.colorScheme.primary
+                                else -> Color.Gray
+                            }
+                            Text(
+                                text = "${i + 1}. $item",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = color,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    if (progress.isComplete) {
+                        Button(onClick = onDismiss) {
+                            Icon(Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Finish")
+                        }
+                    } else {
+                        TextButton(
+                            onClick = onCancel,
+                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Cancel Transfer")
+                        }
+                    }
+                }
+
+                if (!progress.isComplete) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Please do not disconnect the USB cable",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.Red.copy(alpha = 0.5f)
+                    )
                 }
             }
         }

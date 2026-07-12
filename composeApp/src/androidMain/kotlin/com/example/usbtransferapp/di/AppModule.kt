@@ -41,4 +41,7 @@ object AppModule {
 
     @Provides
     fun provideRenameFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.RenameFileUseCase(repo)
+
+    @Provides
+    fun provideCancelTransferUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.CancelTransferUseCase(repo)
 }
