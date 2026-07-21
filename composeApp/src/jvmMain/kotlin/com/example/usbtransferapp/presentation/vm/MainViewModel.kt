@@ -26,6 +26,9 @@ class MainViewModel(
     private val fetchDirectoryUseCase: FetchDirectoryUseCase,
     private val listDirUseCase: ListDirectoryUseCase,
     private val cancelTransferUseCase: CancelTransferUseCase,
+    private val createFolderUseCase: CreateFolderUseCase,
+    private val deleteFileUseCase: DeleteFileUseCase,
+    private val renameFileUseCase: RenameFileUseCase,
     private val usbRepository: com.example.usbtransferapp.domain.repo.UsbRepository
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
@@ -609,6 +612,27 @@ class MainViewModel(
                         refreshRemoteFilesInternal()
                     } else {
                         _state.value = "Failed to rename"
+                    }
+                } catch (e: Exception) {
+                    _state.value = "Error: ${e.message}"
+                }
+            }
+        }
+    }
+
+    fun createFolder(folderName: String) {
+        if (folderName.isBlank()) return
+        scope.launch {
+            usbMutex.withLock {
+                _state.value = "Creating folder: $folderName..."
+                try {
+                    val remotePath = "${_currentRemotePath.value}/$folderName".replace("//", "/")
+                    val success = createFolderUseCase(remotePath)
+                    if (success) {
+                        _state.value = "Folder created successfully"
+                        refreshRemoteFilesInternal()
+                    } else {
+                        _state.value = "Failed to create folder"
                     }
                 } catch (e: Exception) {
                     _state.value = "Error: ${e.message}"

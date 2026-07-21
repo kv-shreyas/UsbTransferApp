@@ -15,6 +15,7 @@ interface UsbRepository {
     suspend fun listDirectory(path: String): List<RemoteFile>
     suspend fun deleteFile(remotePath: String): Boolean
     suspend fun renameFile(remotePath: String, newName: String): Boolean
+    suspend fun createFolder(remotePath: String): Boolean
     fun cancelTransfer()
     fun checkPhysicalConnection(): Pair<Boolean, String?>
 }

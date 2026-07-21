@@ -33,6 +33,7 @@ class UsbRepositoryImpl(
     private val CMD_FETCH_DIR = 3.toByte()
     private val CMD_DELETE = 6.toByte()
     private val CMD_RENAME = 7.toByte()
+    private val CMD_CREATE_FOLDER = 8.toByte()
 
     override var isAoaMode: Boolean = false
         private set
@@ -676,6 +677,30 @@ class UsbRepositoryImpl(
         val success = response.isNotEmpty() && response[0] == 1.toByte()
         println("[UsbRepo] --- RENAME RESULT: $success ---")
         return success
+    }
+
+    override suspend fun createFolder(remotePath: String): Boolean {
+        println("[UsbRepo] --- CREATE FOLDER START: $remotePath ---")
+        val pathBytes = remotePath.toByteArray()
+        val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
+            .put(CMD_CREATE_FOLDER)
+            .putInt(pathBytes.size)
+            .put(pathBytes)
+            .array()
+            
+        if (!sendEncrypted(header)) {
+            println("[UsbRepo] Error: Failed to send create folder request.")
+            return false
+        }
+        
+        val ack = receiveEncrypted()
+        if (ack == null || ack.isEmpty() || ack[0] != 1.toByte()) {
+            println("[UsbRepo] Error: Create folder failed on remote device.")
+            return false
+        }
+        
+        println("[UsbRepo] Create folder completed successfully.")
+        return true
     }
 
     override fun checkPhysicalConnection(): Pair<Boolean, String?> {

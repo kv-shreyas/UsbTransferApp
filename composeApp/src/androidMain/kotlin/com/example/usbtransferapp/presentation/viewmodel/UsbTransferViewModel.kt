@@ -51,6 +51,7 @@ class UsbTransferViewModel @Inject constructor(
     private val fetchDirectoryUseCase: com.example.usbtransferapp.domain.usecases.FetchDirectoryUseCase,
     private val deleteFileUseCase: com.example.usbtransferapp.domain.usecases.DeleteFileUseCase,
     private val renameFileUseCase: com.example.usbtransferapp.domain.usecases.RenameFileUseCase,
+    private val createFolderUseCase: com.example.usbtransferapp.domain.usecases.CreateFolderUseCase,
     private val cancelTransferUseCase: com.example.usbtransferapp.domain.usecases.CancelTransferUseCase,
     private val preferencesManager: com.example.usbtransferapp.data.preferences.UsbPreferencesManager,
     private val clientServiceController: com.example.usbtransferapp.data.usb.ClientServiceController,
@@ -639,6 +640,28 @@ class UsbTransferViewModel @Inject constructor(
                 cancelTransferUseCase()
             } catch (e: Exception) {
                 usbLogger.w(TAG, "cancelTransfer error: ${e.message}")
+            }
+        }
+    }
+
+    fun createFolder(folderName: String) {
+        if (folderName.isBlank()) return
+        val currentPath = _currentRemotePath.value
+        viewModelScope.launch {
+            _isRemoteLoading.value = true
+            val remotePath = "$currentPath/$folderName".replace("//", "/")
+            try {
+                val success = createFolderUseCase(remotePath)
+                if (success) {
+                    usbLogger.i(TAG, "Successfully created remote folder: $folderName")
+                    fetchRemoteFiles(currentPath, forceRefresh = true)
+                } else {
+                    usbLogger.e(TAG, "Failed to create remote folder: $folderName")
+                }
+            } catch (e: Exception) {
+                usbLogger.e(TAG, "Error creating remote folder: ${e.message}")
+            } finally {
+                _isRemoteLoading.value = false
             }
         }
     }

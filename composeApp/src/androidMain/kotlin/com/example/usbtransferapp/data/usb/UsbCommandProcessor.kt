@@ -139,6 +139,9 @@ class UsbCommandProcessor @Inject constructor(
             7.toByte() -> {
                 try { handleRename(buffer) } catch(e: Exception) { usbLogger.e(TAG, "Rename error", e) }
             }
+            8.toByte() -> {
+                try { handleCreateFolder(buffer) } catch(e: Exception) { usbLogger.e(TAG, "Create Folder error", e) }
+            }
             else -> usbLogger.e(TAG, "Unknown command type: $commandType")
         }
         return true
@@ -197,6 +200,31 @@ class UsbCommandProcessor @Inject constructor(
         }
         
         usbLogger.d(TAG, "handleRename: Success = $success")
+        dataSource.sendSecure(byteArrayOf(if (success) 1.toByte() else 0.toByte()))
+    }
+
+    private suspend fun handleCreateFolder(buffer: ByteBuffer) {
+        val pathLen = buffer.getInt()
+        val pathBytes = ByteArray(pathLen)
+        buffer.get(pathBytes)
+        val folderPath = String(pathBytes)
+        
+        usbLogger.d(TAG, "handleCreateFolder: $folderPath")
+        val success = if (SmartNavStorageResolver.isSmartNavPath(folderPath)) {
+            SmartNavStorageResolver.createDirectory(context, folderPath)
+        } else {
+            val file = resolveFile(folderPath)
+            try {
+                if (!file.exists()) {
+                    file.mkdirs()
+                } else false
+            } catch (e: Exception) {
+                usbLogger.e(TAG, "handleCreateFolder: Error creating folder", e)
+                false
+            }
+        }
+        
+        usbLogger.d(TAG, "handleCreateFolder: Success = $success")
         dataSource.sendSecure(byteArrayOf(if (success) 1.toByte() else 0.toByte()))
     }
 

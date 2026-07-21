@@ -40,7 +40,12 @@ object AppModule {
     fun provideDeleteFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.DeleteFileUseCase(repo)
 
     @Provides
+    @Singleton
     fun provideRenameFileUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.RenameFileUseCase(repo)
+
+    @Provides
+    @Singleton
+    fun provideCreateFolderUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.CreateFolderUseCase(repo)
 
     @Provides
     fun provideCancelTransferUseCase(repo: com.example.usbtransferapp.domain.repo.UsbRepository) = com.example.usbtransferapp.domain.usecases.CancelTransferUseCase(repo)

@@ -26,6 +26,7 @@ val appModule = module {
     factory { CancelTransferUseCase(get()) }
     factory { DeleteFileUseCase(get()) }
     factory { RenameFileUseCase(get()) }
+    factory { CreateFolderUseCase(get()) }
 
-    single { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
 }

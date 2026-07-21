@@ -41,6 +41,7 @@ class HostCommandSender @Inject constructor(
         private const val CMD_SEND_DIR: Byte = 5
         private const val CMD_DELETE: Byte = 6
         private const val CMD_RENAME: Byte = 7
+        private const val CMD_CREATE_FOLDER: Byte = 8
         private const val CHUNK_SIZE = 256 * 1024
     }
 
@@ -490,6 +491,20 @@ class HostCommandSender @Inject constructor(
             resp != null && resp.isNotEmpty() && resp[0].toInt() == 1
         }
     }
+    suspend fun createFolderRemote(remotePath: String): Boolean = commandMutex.withLock {
+        withContext(Dispatchers.IO + NonCancellable) {
+            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
+            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size)
+                .put(CMD_CREATE_FOLDER)
+                .putInt(pathBytes.size)
+                .put(pathBytes)
+                .array()
+
+            if (!dataSource.sendSecure(payload)) return@withContext false
+            val resp = withTimeoutOrNull(10000) { dataSource.receiveSecure() }
+            resp != null && resp.isNotEmpty() && resp[0].toInt() == 1
+        }
+    }
 
     suspend fun sendDisconnect() = withContext(Dispatchers.IO) {
         try {
@@ -542,6 +557,8 @@ class HostCommandSender @Inject constructor(
     override suspend fun deleteFile(remotePath: String): Boolean = deleteRemote(remotePath)
 
     override suspend fun renameFile(remotePath: String, newName: String): Boolean = renameRemote(remotePath, newName)
+    
+    override suspend fun createFolder(remotePath: String): Boolean = createFolderRemote(remotePath)
 
     override fun cancelTransfer() {
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { dataSource.sendRawPacket(Packet.TYPE_CANCEL, ByteArray(0)) }

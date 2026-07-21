@@ -698,6 +698,7 @@ fun HostModeDashboard(
     onRenameFile: (String, String) -> Unit,
     viewModel: UsbTransferViewModel? = null
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var selectedOption by remember { mutableStateOf("fileManager") }
 
     Column(modifier = Modifier.fillMaxSize()) {
@@ -765,7 +766,13 @@ fun HostModeDashboard(
                     onFetchBatch = onFetchBatch,
                     onUploadUris = onUploadUris,
                     onDeleteFile = onDeleteFile,
-                    onRenameFile = onRenameFile
+                    onRenameFile = onRenameFile,
+                    onCreateFolder = { folderName -> viewModel?.createFolder(folderName) },
+                    onCreateTextFile = { fileName, content -> 
+                        if (viewModel != null && context != null) {
+                            viewModel.sendTextAsRemoteFile(context, fileName, content, currentRemotePath)
+                        }
+                    }
                 )
             }
         }
@@ -783,7 +790,9 @@ fun RemoteFileManager(
     onFetchBatch: (List<RemoteFile>) -> Unit,
     onUploadUris: (List<Uri>) -> Unit,
     onDeleteFile: (String) -> Unit,
-    onRenameFile: (String, String) -> Unit
+    onRenameFile: (String, String) -> Unit,
+    onCreateFolder: (String) -> Unit,
+    onCreateTextFile: (String, String) -> Unit
 ) {
     val filePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenMultipleDocuments()
@@ -792,6 +801,13 @@ fun RemoteFileManager(
             onUploadUris(uris)
         }
     }
+    
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+    
+    var showCreateTextFileDialog by remember { mutableStateOf(false) }
+    var newTextFileName by remember { mutableStateOf("") }
+    var newTextFileContent by remember { mutableStateOf("") }
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -817,9 +833,96 @@ fun RemoteFileManager(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            IconButton(onClick = { showCreateFolderDialog = true }) {
+                Icon(Icons.Default.Add, contentDescription = "Create Folder")
+            }
+            IconButton(onClick = { showCreateTextFileDialog = true }) {
+                Icon(Icons.Default.EditNote, contentDescription = "Create File")
+            }
             IconButton(onClick = { onRefreshDir(currentRemotePath) }) {
                 Icon(Icons.Default.Refresh, contentDescription = "Refresh")
             }
+        }
+        
+        if (showCreateFolderDialog) {
+            AlertDialog(
+                onDismissRequest = { showCreateFolderDialog = false },
+                title = { Text("Create Folder") },
+                text = {
+                    OutlinedTextField(
+                        value = newFolderName,
+                        onValueChange = { newFolderName = it },
+                        label = { Text("Folder Name") },
+                        singleLine = true
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (newFolderName.isNotBlank()) {
+                            onCreateFolder(newFolderName)
+                        }
+                        newFolderName = ""
+                        showCreateFolderDialog = false
+                    }) {
+                        Text("Create")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        newFolderName = ""
+                        showCreateFolderDialog = false
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            )
+        }
+
+        if (showCreateTextFileDialog) {
+            AlertDialog(
+                onDismissRequest = { showCreateTextFileDialog = false },
+                title = { Text("Create File") },
+                text = {
+                    Column {
+                        OutlinedTextField(
+                            value = newTextFileName,
+                            onValueChange = { newTextFileName = it },
+                            label = { Text("File Name with extension (e.g. note.txt, data.json)") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = newTextFileContent,
+                            onValueChange = { newTextFileContent = it },
+                            label = { Text("Content") },
+                            modifier = Modifier.fillMaxWidth().height(150.dp)
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (newTextFileName.isNotBlank()) {
+                            val name = newTextFileName
+                            onCreateTextFile(name, newTextFileContent)
+                        }
+                        newTextFileName = ""
+                        newTextFileContent = ""
+                        showCreateTextFileDialog = false
+                    }) {
+                        Text("Save & Upload")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        newTextFileName = ""
+                        newTextFileContent = ""
+                        showCreateTextFileDialog = false
+                    }) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
 
         // Action Bar for uploading files to current directory

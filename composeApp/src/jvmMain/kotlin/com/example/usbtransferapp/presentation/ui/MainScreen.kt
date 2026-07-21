@@ -39,6 +39,11 @@ fun MainScreen(vm: MainViewModel) {
     val progress by vm.progressState.collectAsState()
     val isPhysicallyConnected by vm.isPhysicallyConnected.collectAsState()
     val physicalDeviceName by vm.physicallyConnectedDeviceName.collectAsState()
+    var showCreateFolderDialog by remember { mutableStateOf(false) }
+    var newFolderName by remember { mutableStateOf("") }
+    var showCreateTextFileDialog by remember { mutableStateOf(false) }
+    var newTextFileName by remember { mutableStateOf("") }
+    var newTextFileContent by remember { mutableStateOf("") }
 
     val isConnected = state != "Idle" && state != "Searching..." && !state.contains("Failed") && !state.contains("Connection Lost") && !state.contains("Disconnect")
 
@@ -86,8 +91,96 @@ fun MainScreen(vm: MainViewModel) {
                     }
                 )
             } else {
-                Header("Remote File System", currentPath, onBack = { vm.navigateUp() }, onRefresh = { vm.refreshRemoteFiles() })
+                Header(
+                    "Remote File System", 
+                    currentPath, 
+                    onBack = { vm.navigateUp() }, 
+                    onRefresh = { vm.refreshRemoteFiles() },
+                    onCreateFolder = { showCreateFolderDialog = true },
+                    onCreateTextFile = { showCreateTextFileDialog = true }
+                )
                 
+                if (showCreateFolderDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showCreateFolderDialog = false },
+                        title = { Text("Create Folder") },
+                        text = {
+                            OutlinedTextField(
+                                value = newFolderName,
+                                onValueChange = { newFolderName = it },
+                                label = { Text("Folder Name") },
+                                singleLine = true
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (newFolderName.isNotBlank()) {
+                                    vm.createFolder(newFolderName)
+                                }
+                                newFolderName = ""
+                                showCreateFolderDialog = false
+                            }) {
+                                Text("Create")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                newFolderName = ""
+                                showCreateFolderDialog = false
+                            }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
+                if (showCreateTextFileDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showCreateTextFileDialog = false },
+                        title = { Text("Create File") },
+                        text = {
+                            Column {
+                                OutlinedTextField(
+                                    value = newTextFileName,
+                                    onValueChange = { newTextFileName = it },
+                                    label = { Text("File Name with extension (e.g. note.txt, data.json)") },
+                                    singleLine = true,
+                                    modifier = Modifier.fillMaxWidth()
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                OutlinedTextField(
+                                    value = newTextFileContent,
+                                    onValueChange = { newTextFileContent = it },
+                                    label = { Text("Content") },
+                                    modifier = Modifier.fillMaxWidth().height(150.dp)
+                                )
+                            }
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                if (newTextFileName.isNotBlank()) {
+                                    val name = newTextFileName
+                                    vm.sendTextAsRemoteFile(name, newTextFileContent, currentPath)
+                                }
+                                newTextFileName = ""
+                                newTextFileContent = ""
+                                showCreateTextFileDialog = false
+                            }) {
+                                Text("Save & Upload")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                newTextFileName = ""
+                                newTextFileContent = ""
+                                showCreateTextFileDialog = false
+                            }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
                 Spacer(Modifier.height(24.dp))
 
                 FileList(
@@ -284,7 +377,14 @@ fun ConnectionCard(state: String, isAoaMode: Boolean, isPhysicallyConnected: Boo
 
 
 @Composable
-fun Header(title: String, path: String, onBack: () -> Unit, onRefresh: () -> Unit) {
+fun Header(
+    title: String, 
+    path: String, 
+    onBack: () -> Unit, 
+    onRefresh: () -> Unit, 
+    onCreateFolder: (() -> Unit)? = null,
+    onCreateTextFile: (() -> Unit)? = null
+) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack, modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant, CircleShape)) {
             Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back")
@@ -293,6 +393,16 @@ fun Header(title: String, path: String, onBack: () -> Unit, onRefresh: () -> Uni
         Column(modifier = Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
             Text(path, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
+        }
+        if (onCreateFolder != null) {
+            IconButton(onClick = onCreateFolder) {
+                Icon(Icons.Default.Add, "Create Folder")
+            }
+        }
+        if (onCreateTextFile != null) {
+            IconButton(onClick = onCreateTextFile) {
+                Icon(Icons.Default.EditNote, "Create File")
+            }
         }
         IconButton(onClick = onRefresh) {
             Icon(Icons.Default.Refresh, "Refresh")

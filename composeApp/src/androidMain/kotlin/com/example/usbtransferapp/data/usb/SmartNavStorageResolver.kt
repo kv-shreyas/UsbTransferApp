@@ -138,6 +138,17 @@ object SmartNavStorageResolver {
             false
         }
     }
+    fun createDirectory(context: Context, path: String): Boolean {
+        val uri = getUriForPath(path)
+        Log.d(TAG, "createDirectory: Requesting create directory on '$uri'")
+        return try {
+            val values = ContentValues().apply { put("is_directory", true) }
+            context.contentResolver.insert(uri, values) != null
+        } catch (e: Exception) {
+            Log.e(TAG, "createDirectory: Error creating directory '$path' via provider", e)
+            false
+        }
+    }
 
     fun zipDirectory(context: Context, path: String): Pair<Long, String?> {
         Log.d(TAG, "zipDirectory: Requesting remote zip for '$path'")
