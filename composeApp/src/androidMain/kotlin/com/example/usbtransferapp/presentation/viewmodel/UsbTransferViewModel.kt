@@ -24,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.firstOrNull
@@ -1094,42 +1095,141 @@ class UsbTransferViewModel @Inject constructor(
         }
     }
 
-    fun cloneSmartNavPackage(context: android.content.Context, basePath: String = Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH) {
+    fun prepareLocalSmartNavStaging(stagingDir: File, onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
-            usbLogger.i(TAG, "cloneSmartNavPackage: Initializing SmartNavRoot.kt package hierarchy under $basePath...")
+            usbLogger.i(TAG, "prepareLocalSmartNavStaging: Initializing SmartNavRoot hierarchy under ${stagingDir.absolutePath}...")
             val foldersAndFiles = listOf(
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_PASSWORD, Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE)),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, Constants.SmartnavRoot.DEFAULT_MAINTENANCE_PASSWORD_VALUE)),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_PASSWORD}", Pair(Constants.SmartnavRoot.FILE_KMM_PASSWORD, Constants.SmartnavRoot.DEFAULT_KMM_PASSWORD_VALUE)),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_TRACKS}/${Constants.SmartnavRoot.DIR_TRACKS_META}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_TRACE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_IMEI}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair(Constants.SmartnavRoot.PATH_APP_UPDATE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_FIRMWARE_UPGRADE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_RASTER}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_VECTOR}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_ICONS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_DATABASE}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_LOG_MANAGER}", Pair(Constants.SmartnavRoot.FILE_LOG_COUNTER, Constants.SmartnavRoot.DEFAULT_LOG_COUNTER_VALUE)),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("$basePath/${Constants.SmartnavRoot.DIR_DEV_LOGS}/${Constants.SmartnavRoot.DIR_CRASH_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
+                Pair(Constants.SmartnavRoot.DIR_PASSWORD, Pair(Constants.SmartnavRoot.FILE_PASSWORD, Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE)),
+                Pair(Constants.SmartnavRoot.DIR_PASSWORD, Pair(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, Constants.SmartnavRoot.DEFAULT_MAINTENANCE_PASSWORD_VALUE)),
+                Pair(Constants.SmartnavRoot.DIR_PASSWORD, Pair(Constants.SmartnavRoot.FILE_KMM_PASSWORD, Constants.SmartnavRoot.DEFAULT_KMM_PASSWORD_VALUE)),
+                Pair("${Constants.SmartnavRoot.DIR_TRACKS}/${Constants.SmartnavRoot.DIR_TRACKS_META}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair(Constants.SmartnavRoot.DIR_TRACE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair(Constants.SmartnavRoot.DIR_IMEI, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("updateApp", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair(Constants.SmartnavRoot.DIR_FIRMWARE_UPGRADE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_RASTER}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_VECTOR}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_ICONS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair(Constants.SmartnavRoot.DIR_DATABASE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair(Constants.SmartnavRoot.DIR_LOG_MANAGER, Pair(Constants.SmartnavRoot.FILE_LOG_COUNTER, Constants.SmartnavRoot.DEFAULT_LOG_COUNTER_VALUE)),
+                Pair(Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
+                Pair("${Constants.SmartnavRoot.DIR_DEV_LOGS}/${Constants.SmartnavRoot.DIR_CRASH_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
             )
             for ((folder, filePair) in foldersAndFiles) {
                 if (!isActive) break
                 val (fileName, content) = filePair
-                val tempFile = File(context.cacheDir, fileName)
-                try {
-                    tempFile.writeText(content)
-                    sendSingleFileWithProgress(tempFile, folder)
-                } catch (e: Exception) {
-                    usbLogger.e(TAG, "cloneSmartNavPackage: error sending $folder/$fileName", e)
-                } finally {
-                    if (tempFile.exists()) tempFile.delete()
+                val dir = File(stagingDir, folder)
+                dir.mkdirs()
+                val file = File(dir, fileName)
+                if (!file.exists()) {
+                    file.writeText(content)
                 }
             }
-            usbLogger.i(TAG, "cloneSmartNavPackage: All folders and files initialized on remote device.")
+            usbLogger.i(TAG, "prepareLocalSmartNavStaging: Done.")
+            withContext(Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
+
+    fun sendMultipleFiles(files: List<File>, targetFolder: String) {
+        viewModelScope.launch {
+            usbLogger.i(TAG, "sendMultipleFiles: sending ${files.size} folders to $targetFolder")
+            _isRemoteLoading.value = true
+            for (file in files) {
+                if (!isActive) break
+                if (file.isDirectory) {
+                    sendDirectory(file, targetFolder)
+                } else {
+                    sendSingleFileWithProgress(file, targetFolder)
+                }
+            }
+            _isRemoteLoading.value = false
             directoryCache.clear()
-            fetchRemoteFiles(basePath, forceRefresh = true)
+            fetchRemoteFiles(targetFolder, forceRefresh = true)
+        }
+    }
+
+    private suspend fun sendDirectory(dir: File, destinationPath: String, batchStartTime: Long = System.currentTimeMillis(), currentFileIndex: Int = 1, totalFiles: Int = 1) {
+        usbLogger.i(TAG, "Preparing to send directory: ${dir.name} to $destinationPath")
+        val tempZip = withContext(Dispatchers.IO) { File.createTempFile(dir.name, ".zip") }
+        try {
+            _progressState.value = _progressState.value.copy(
+                isVisible = true,
+                filename = "${dir.name}.zip",
+                statusMessage = "Zipping ${dir.name}...",
+                currentFileIndex = currentFileIndex,
+                totalFiles = totalFiles
+            )
+            zipDirectory(dir, tempZip) { currentItem ->
+                _progressState.value = _progressState.value.copy(statusMessage = "Zipping: $currentItem")
+            }
+            usbLogger.i(TAG, "Sending zipped directory: ${tempZip.name} to $destinationPath")
+            
+            val startTime = System.currentTimeMillis()
+            val fileSize = tempZip.length()
+            
+            _progressState.value = _progressState.value.copy(
+                statusMessage = "Sending ${dir.name}.zip...",
+                total = formatSize(fileSize),
+                percentage = 0,
+                transferred = "0 B",
+                speed = "0 B/s"
+            )
+            
+            sendFileUseCase(tempZip, destinationPath, isDirectory = true, remoteFileName = dir.name).collect { progress ->
+                val currentTime = System.currentTimeMillis()
+                val elapsedSeconds = (currentTime - startTime) / 1000L
+                val transferredBytes = (fileSize * progress) / 100
+                val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
+                val eta = if (speedBytesPerSec > 0) ((fileSize - transferredBytes) / speedBytesPerSec).toString() + "s" else "Calculating..."
+                
+                _progressState.value = _progressState.value.copy(
+                    percentage = progress,
+                    transferred = formatSize(transferredBytes),
+                    speed = "${formatSize(speedBytesPerSec)}/s",
+                    eta = eta,
+                    elapsed = "${elapsedSeconds}s"
+                )
+            }
+            _progressState.value = _progressState.value.copy(
+                isComplete = true,
+                statusMessage = "Sent ${dir.name}.zip successfully",
+                percentage = 100
+            )
+        } catch (e: Exception) {
+            if (e !is kotlinx.coroutines.CancellationException) {
+                usbLogger.e(TAG, "Error sending directory ${dir.name}", e)
+                _progressState.value = _progressState.value.copy(statusMessage = "Error: ${e.message}", isComplete = true)
+            }
+        } finally {
+            withContext(Dispatchers.IO) { tempZip.delete() }
+        }
+    }
+
+    private suspend fun zipDirectory(dir: File, zipFile: File, onProgress: (String) -> Unit) = withContext(Dispatchers.IO) {
+        java.util.zip.ZipOutputStream(java.io.FileOutputStream(zipFile)).use { zout ->
+            dir.walkTopDown().forEach { file ->
+                ensureActive()
+                val entryName = file.toRelativeString(dir).replace('\\', '/')
+                if (entryName.isNotEmpty()) {
+                    val entry = java.util.zip.ZipEntry(if (file.isDirectory) "$entryName/" else entryName)
+                    zout.putNextEntry(entry)
+                    if (!file.isDirectory) {
+                        onProgress(entryName)
+                        file.inputStream().use { input ->
+                            val buffer = ByteArray(8192)
+                            var bytes = input.read(buffer)
+                            while (bytes >= 0) {
+                                ensureActive()
+                                zout.write(buffer, 0, bytes)
+                                bytes = input.read(buffer)
+                            }
+                        }
+                    }
+                    zout.closeEntry()
+                }
+            }
         }
     }
 

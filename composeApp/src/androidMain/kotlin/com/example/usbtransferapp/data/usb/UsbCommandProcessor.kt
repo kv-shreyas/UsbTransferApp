@@ -578,7 +578,8 @@ class UsbCommandProcessor @Inject constructor(
         targetDirectory.mkdirs()
         
         val baseName = java.io.File(fileName).name
-        val tempZip = File(context.cacheDir, baseName)
+        val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        val tempZip = File(downloadsDir, ".temp_receive_$baseName")
         var fos: FileOutputStream? = null
         try {
             fos = FileOutputStream(tempZip)

@@ -30,6 +30,16 @@ fun SmartNavAndroidDashboard(
     onSwitchToFileManagerAndNavigate: (String) -> Unit
 ) {
     val context = LocalContext.current
+    val stagingDir = remember { java.io.File("/sdcard/SmartNavStaging") }
+    var stagingDirectories by remember { mutableStateOf(stagingDir.listFiles()?.filter { it.isDirectory } ?: emptyList()) }
+    var selectedStagingDirs by remember { mutableStateOf(stagingDirectories.toSet()) }
+    
+    fun refreshStaging() {
+        val newDirs = stagingDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+        stagingDirectories = newDirs
+        selectedStagingDirs = newDirs.toSet()
+    }
+
     var selectedBasePath by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH) }
 
     var passwordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE) }
@@ -87,25 +97,73 @@ fun SmartNavAndroidDashboard(
 
         // Package Initialization & Clone Section
         SmartNavSectionCard(
-            title = "Clone & Initialize Package Hierarchy",
-            subtitle = "Materializes all folders & essential files defined in SmartNavRoot.kt",
+            title = "Dynamic SmartNav Package Clone",
+            subtitle = "Prepare staging folders locally, edit them, and select which to clone.",
             icon = Icons.Default.CreateNewFolder,
             iconColor = Color(0xFF4CAF50)
         ) {
             Text(
-                "Will create: password/, tracks/meta/, trace/, IMEI/, firmwareUpgrade/, maps/(raster, vector, icons)/, database/, logManager/logCounter.txt, gnssDataLogs/, devLogs/crashlogs/, and /sdcard/updateApp/.",
+                "Staging Location: ${stagingDir.absolutePath}",
                 fontSize = 11.sp,
                 color = Color.Gray
             )
             Spacer(Modifier.height(10.dp))
-            Button(
-                onClick = { viewModel.cloneSmartNavPackage(context, selectedBasePath) },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Clone Entire SmartNav Package to Device", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = { 
+                        viewModel.prepareLocalSmartNavStaging(stagingDir) { refreshStaging() }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Initialize Staging", fontSize = 11.sp)
+                }
+                Button(
+                    onClick = { refreshStaging() },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Refresh List", fontSize = 11.sp)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            if (stagingDirectories.isNotEmpty()) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Text("Select folders to clone:", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = selectedStagingDirs.size == stagingDirectories.size && stagingDirectories.isNotEmpty(),
+                            onCheckedChange = { checked ->
+                                selectedStagingDirs = if (checked) stagingDirectories.toSet() else emptySet()
+                            }
+                        )
+                        Text("Select All", fontSize = 12.sp)
+                    }
+                }
+                stagingDirectories.forEach { dir ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(
+                            checked = selectedStagingDirs.contains(dir),
+                            onCheckedChange = { checked ->
+                                selectedStagingDirs = if (checked) selectedStagingDirs + dir else selectedStagingDirs - dir
+                            }
+                        )
+                        Text(dir.name, fontSize = 12.sp)
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Button(
+                    onClick = { 
+                        if (selectedStagingDirs.isNotEmpty()) {
+                            viewModel.sendMultipleFiles(selectedStagingDirs.toList(), selectedBasePath)
+                        }
+                    },
+                    enabled = selectedStagingDirs.isNotEmpty(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2E7D32)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("Clone Selected to Device", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                }
             }
         }
 
