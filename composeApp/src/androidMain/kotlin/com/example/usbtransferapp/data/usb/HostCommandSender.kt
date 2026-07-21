@@ -188,19 +188,24 @@ class HostCommandSender @Inject constructor(
                     return@coroutineScope false
                 }
 
-                val rawChannel = Channel<ByteArray>(2)
-                val encryptedChannel = Channel<ByteArray>(2)
+                val rawChannel = Channel<ByteArray>(32)
+                val encryptedChannel = Channel<ByteArray>(32)
                 val totalSize = localFile.length()
                 var sentBytes = 0L
 
                 val readJob = launch(Dispatchers.IO) {
                     try {
-                        FileInputStream(localFile).use { fis ->
-                            val buffer = ByteArray(CHUNK_SIZE)
+                        val fis: java.io.InputStream = if (SmartNavStorageResolver.isSmartNavPath(localFile.absolutePath)) {
+                            SmartNavStorageResolver.openInputStream(context, localFile.absolutePath) ?: FileInputStream(localFile)
+                        } else {
+                            FileInputStream(localFile)
+                        }
+                        fis.use { stream ->
                             while (isActive) {
-                                val bytesRead = fis.read(buffer)
+                                val buffer = ByteArray(CHUNK_SIZE)
+                                val bytesRead = stream.read(buffer)
                                 if (bytesRead == -1) break
-                                rawChannel.send(if (bytesRead == CHUNK_SIZE) buffer.clone() else buffer.copyOf(bytesRead))
+                                rawChannel.send(if (bytesRead == CHUNK_SIZE) buffer else buffer.copyOf(bytesRead))
                             }
                         }
                     } finally {
@@ -211,7 +216,7 @@ class HostCommandSender @Inject constructor(
                 val encryptJob = launch(Dispatchers.Default) {
                     try {
                         for (rawChunk in rawChannel) {
-                            val encryptedChunk = dataSource.encryptData(rawChunk) ?: break
+                            val encryptedChunk = dataSource.encryptAndWrapData(rawChunk) ?: break
                             encryptedChannel.send(encryptedChunk)
                         }
                     } finally {
@@ -220,13 +225,22 @@ class HostCommandSender @Inject constructor(
                 }
 
                 var success = true
+                var lastSentPercent = -1
+                var lastSentTime = 0L
                 for (encryptedChunk in encryptedChannel) {
-                    if (!dataSource.sendRawPacket(Packet.TYPE_DATA, encryptedChunk)) {
+                    if (!dataSource.sendPrebuiltPacket(encryptedChunk)) {
                         success = false
                         break
                     }
                     sentBytes += CHUNK_SIZE
-                    onProgress(if (totalSize > 0) (sentBytes.toFloat() / totalSize).coerceIn(0f, 1f) else 1f)
+                    val progress = if (totalSize > 0) (sentBytes.toFloat() / totalSize).coerceIn(0f, 1f) else 1f
+                    val percent = (progress * 100).toInt()
+                    val now = System.currentTimeMillis()
+                    if (now - lastSentTime > 250L || sentBytes >= totalSize) {
+                        lastSentPercent = percent
+                        lastSentTime = now
+                        onProgress(progress)
+                    }
                 }
 
                 if (success) {
@@ -271,8 +285,8 @@ class HostCommandSender @Inject constructor(
                     localSaveDir
                 }
 
-                val encryptedChannel = Channel<ByteArray>(2)
-                val decryptedChannel = Channel<ByteArray>(2)
+                val encryptedChannel = Channel<ByteArray>(32)
+                val decryptedChannel = Channel<ByteArray>(32)
                 var receivedBytes = 0L
                 var success = true
 
@@ -312,11 +326,25 @@ class HostCommandSender @Inject constructor(
                 }
 
                 if (!targetFile.parentFile?.exists()!!) targetFile.parentFile?.mkdirs()
-                FileOutputStream(targetFile).use { fos ->
+                val fos: java.io.OutputStream = if (SmartNavStorageResolver.isSmartNavPath(targetFile.absolutePath)) {
+                    SmartNavStorageResolver.openOutputStream(context, targetFile.absolutePath) ?: FileOutputStream(targetFile)
+                } else {
+                    FileOutputStream(targetFile)
+                }
+                var lastRecvPercent = -1
+                var lastRecvTime = 0L
+                fos.use { stream ->
                     for (chunk in decryptedChannel) {
-                        fos.write(chunk)
+                        stream.write(chunk)
                         receivedBytes += chunk.size
-                        onProgress(if (fileSize > 0) (receivedBytes.toFloat() / fileSize).coerceIn(0f, 1f) else 1f)
+                        val progress = if (fileSize > 0) (receivedBytes.toFloat() / fileSize).coerceIn(0f, 1f) else 1f
+                        val percent = (progress * 100).toInt()
+                        val now = System.currentTimeMillis()
+                        if (now - lastRecvTime > 250L || receivedBytes >= fileSize) {
+                            lastRecvPercent = percent
+                            lastRecvTime = now
+                            onProgress(progress)
+                        }
                     }
                 }
 
@@ -362,8 +390,8 @@ class HostCommandSender @Inject constructor(
                     localSaveDir
                 }
 
-                val encryptedChannel = Channel<ByteArray>(2)
-                val decryptedChannel = Channel<ByteArray>(2)
+                val encryptedChannel = Channel<ByteArray>(32)
+                val decryptedChannel = Channel<ByteArray>(32)
                 var receivedBytes = 0L
                 var success = true
 
@@ -403,11 +431,20 @@ class HostCommandSender @Inject constructor(
                 }
 
                 if (!targetZip.parentFile?.exists()!!) targetZip.parentFile?.mkdirs()
+                var lastZipPercent = -1
+                var lastZipTime = 0L
                 FileOutputStream(targetZip).use { fos ->
                     for (chunk in decryptedChannel) {
                         fos.write(chunk)
                         receivedBytes += chunk.size
-                        onProgress((receivedBytes.toFloat() / zipSize).coerceIn(0f, 1f))
+                        val progress = (receivedBytes.toFloat() / zipSize).coerceIn(0f, 1f)
+                        val percent = (progress * 100).toInt()
+                        val now = System.currentTimeMillis()
+                        if (now - lastZipTime > 250L || receivedBytes >= zipSize) {
+                            lastZipPercent = percent
+                            lastZipTime = now
+                            onProgress(progress)
+                        }
                     }
                 }
 

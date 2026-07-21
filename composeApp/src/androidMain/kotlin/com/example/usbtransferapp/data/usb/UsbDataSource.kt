@@ -64,7 +64,7 @@ class UsbDataSource @Inject constructor(
                     Log.e(TAG, "receivePacket: USB stream disconnected or coroutine cancelled")
                     return@withContext null
                 }
-                delay(50)
+                if (bytesRead == 0) kotlinx.coroutines.yield() else delay(50)
                 continue
             }
             if (bufferTail + bytesRead > leftoverBuffer.size) {
@@ -96,7 +96,7 @@ class UsbDataSource @Inject constructor(
                     Log.e(TAG, "receivePacket: USB stream disconnected or coroutine cancelled during payload read")
                     return@withContext null
                 }
-                delay(50)
+                if (bytesRead == 0) kotlinx.coroutines.yield() else delay(50)
                 continue
             }
             if (bufferTail + bytesRead > leftoverBuffer.size) {
@@ -243,9 +243,21 @@ class UsbDataSource @Inject constructor(
         ByteBuffer.allocate(iv.size + encrypted.size).put(iv).put(encrypted).array()
     }
 
+    suspend fun encryptAndWrapData(data: ByteArray): ByteArray? = withContext(Dispatchers.Default) {
+        val key = aesKey ?: return@withContext null
+        val (iv, encrypted) = crypto.encrypt(data, key)
+        Packet.buildDataPacket(iv, encrypted)
+    }
+
     suspend fun sendRawPacket(type: Byte, payload: ByteArray): Boolean = withContext(Dispatchers.IO) {
         sendMutex.withLock {
             manager.send(Packet.build(type, payload)) > 0
+        }
+    }
+
+    suspend fun sendPrebuiltPacket(packet: ByteArray): Boolean = withContext(Dispatchers.IO) {
+        sendMutex.withLock {
+            manager.send(packet) > 0
         }
     }
 

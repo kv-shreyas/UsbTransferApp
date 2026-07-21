@@ -151,17 +151,18 @@ class UsbCommandProcessor @Inject constructor(
         val path = String(pathBytes)
         
         usbLogger.d(TAG, "handleDelete: Path = $path")
-        val file = resolveFile(path)
-        
-        val success = try {
-            if (file.exists()) {
-                if (file.isDirectory) file.deleteRecursively() else file.delete()
-            } else {
+        val success = if (SmartNavStorageResolver.isSmartNavPath(path)) {
+            SmartNavStorageResolver.delete(context, path)
+        } else {
+            val file = resolveFile(path)
+            try {
+                if (file.exists()) {
+                    if (file.isDirectory) file.deleteRecursively() else file.delete()
+                } else false
+            } catch (e: Exception) {
+                usbLogger.e(TAG, "handleDelete: Error deleting file", e)
                 false
             }
-        } catch (e: Exception) {
-            usbLogger.e(TAG, "handleDelete: Error deleting file", e)
-            false
         }
         
         usbLogger.d(TAG, "handleDelete: Success = $success")
@@ -180,18 +181,19 @@ class UsbCommandProcessor @Inject constructor(
         val newName = String(newNameBytes)
         
         usbLogger.d(TAG, "handleRename: $oldPath to $newName")
-        val file = resolveFile(oldPath)
-        
-        val success = try {
-            if (file.exists()) {
-                val newFile = java.io.File(file.parentFile, newName)
-                file.renameTo(newFile)
-            } else {
+        val success = if (SmartNavStorageResolver.isSmartNavPath(oldPath)) {
+            SmartNavStorageResolver.rename(context, oldPath, newName)
+        } else {
+            val file = resolveFile(oldPath)
+            try {
+                if (file.exists()) {
+                    val newFile = java.io.File(file.parentFile, newName)
+                    file.renameTo(newFile)
+                } else false
+            } catch (e: Exception) {
+                usbLogger.e(TAG, "handleRename: Error renaming file", e)
                 false
             }
-        } catch (e: Exception) {
-            usbLogger.e(TAG, "handleRename: Error renaming file", e)
-            false
         }
         
         usbLogger.d(TAG, "handleRename: Success = $success")
@@ -205,6 +207,66 @@ class UsbCommandProcessor @Inject constructor(
         val path = String(pathBytes)
         
         usbLogger.d(TAG, "handleFetchDir: Path = $path")
+        
+        if (SmartNavStorageResolver.isSmartNavPath(path)) {
+            val (zipSize, zipPath) = SmartNavStorageResolver.zipDirectory(context, path)
+            if (zipSize <= 0L || zipPath == null) {
+                usbLogger.w(TAG, "handleFetchDir: Remote zip failed or empty for $path")
+                dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
+                return
+            }
+            usbLogger.d(TAG, "handleFetchDir: Sending SmartNav ZIP of $zipSize bytes from $zipPath")
+            dataSource.sendSecure(ByteBuffer.allocate(8).putLong(zipSize).array())
+            
+            val input = SmartNavStorageResolver.openInputStream(context, zipPath) ?: FileInputStream(File(zipPath))
+            try {
+                coroutineScope {
+                    input.use { stream ->
+                        val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+                        val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+
+                        launch(Dispatchers.IO) {
+                            try {
+                                var read: Int
+                                while (isActive) {
+                                    val streamBuffer = ByteArray(256 * 1024)
+                                    read = stream.read(streamBuffer)
+                                    if (read == -1) break
+                                    val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)
+                                    chunkChannel.send(chunk)
+                                }
+                            } finally {
+                                chunkChannel.close()
+                            }
+                        }
+
+                        launch(Dispatchers.Default) {
+                            try {
+                                for (chunk in chunkChannel) {
+                                    val encrypted = dataSource.encryptAndWrapData(chunk) ?: break
+                                    encryptedChannel.send(encrypted)
+                                }
+                            } finally {
+                                encryptedChannel.close()
+                            }
+                        }
+
+                        // Worker 3: USB Send
+                        for (encrypted in encryptedChannel) {
+                            if (!dataSource.sendPrebuiltPacket(encrypted)) break
+                        }
+                        dataSource.sendRawPacket(Packet.TYPE_EOF, ByteArray(0))
+                    }
+                }
+            } catch (e: Exception) {
+                usbLogger.e(TAG, "handleFetchDir: Error sending SmartNav zip", e)
+            } finally {
+                SmartNavStorageResolver.cleanupTempFile(context, zipPath)
+                File(zipPath).delete()
+            }
+            usbLogger.d(TAG, "handleFetchDir: Successfully sent SmartNav ZIP of $path")
+            return
+        }
         
         val dir = resolveFile(path)
         if (!dir.exists() || !dir.isDirectory) {
@@ -225,15 +287,17 @@ class UsbCommandProcessor @Inject constructor(
             val fis = FileInputStream(tempZip)
             coroutineScope {
                 fis.use { input ->
-                    val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
-                    val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+                    val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+                    val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
 
                     // Worker 1: Disk Read
                     launch(Dispatchers.IO) {
                         try {
-                            val streamBuffer = ByteArray(256 * 1024)
                             var read: Int
-                            while (input.read(streamBuffer).also { read = it } != -1 && isActive) {
+                            while (isActive) {
+                                val streamBuffer = ByteArray(256 * 1024)
+                                read = input.read(streamBuffer)
+                                if (read == -1) break
                                 val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)
                                 chunkChannel.send(chunk)
                             }
@@ -246,7 +310,7 @@ class UsbCommandProcessor @Inject constructor(
                     launch(Dispatchers.Default) {
                         try {
                             for (chunk in chunkChannel) {
-                                val encrypted = dataSource.encryptData(chunk) ?: break
+                                val encrypted = dataSource.encryptAndWrapData(chunk) ?: break
                                 encryptedChannel.send(encrypted)
                             }
                         } finally {
@@ -254,9 +318,9 @@ class UsbCommandProcessor @Inject constructor(
                         }
                     }
 
-                    // Worker 3: USB Send (Main Coroutine)
+                    // Worker 3: USB Send
                     for (encrypted in encryptedChannel) {
-                        if (!dataSource.sendRawPacket(Packet.TYPE_DATA, encrypted)) break
+                        if (!dataSource.sendPrebuiltPacket(encrypted)) break
                     }
                     dataSource.sendRawPacket(Packet.TYPE_EOF, ByteArray(0))
                 }
@@ -313,43 +377,25 @@ class UsbCommandProcessor @Inject constructor(
         
         usbLogger.d(TAG, "handleList: Requested Path = $path")
         
-        val dir = resolveFile(path)
-        usbLogger.d(TAG, "handleList: Resolved Absolute Path = ${dir.absolutePath}")
-        usbLogger.d(TAG, "handleList: Exists = ${dir.exists()}, IsDirectory = ${dir.isDirectory}, CanRead = ${dir.canRead()}")
-        
-        val names = try {
-            if (dir.exists() && dir.isDirectory) {
-                dir.list() ?: run {
-                    usbLogger.e(TAG, "handleList: list() returned null for ${dir.absolutePath}")
-                    emptyArray()
-                }
+        val items = if (SmartNavStorageResolver.isSmartNavPath(path)) {
+            val providerItems = SmartNavStorageResolver.listDirectory(context, path)
+            if (providerItems.isNotEmpty()) {
+                usbLogger.d(TAG, "handleList: SmartNav provider returned ${providerItems.size} items")
+                providerItems
             } else {
-                usbLogger.w(TAG, "handleList: Path invalid or inaccessible: ${dir.absolutePath}")
-                emptyArray()
+                usbLogger.d(TAG, "handleList: SmartNav provider returned empty, checking direct filesystem")
+                listDirectFilesystem(resolveFile(path))
             }
-        } catch (e: Exception) {
-            usbLogger.e(TAG, "handleList: Exception during list", e)
-            emptyArray()
+        } else {
+            listDirectFilesystem(resolveFile(path))
         }
-        
-        // As requested by user: ONLY get names and directory flag. Do NOT query file.length() / actual size.
-        // This eliminates hundreds of slow FUSE stat/lstat system calls across Scoped Storage on Android.
-        val items = ArrayList<Triple<Boolean, Long, ByteArray>>(names.size)
-        for (name in names) {
-            if (name.startsWith(".")) continue // Skip hidden files
-            val child = File(dir, name)
-            val isDir = try { child.isDirectory } catch (_: Exception) { false }
-            items.add(Triple(isDir, 0L, name.toByteArray(Charsets.UTF_8)))
-        }
-        
-        items.sortWith(compareBy<Triple<Boolean, Long, ByteArray>> { !it.first }.thenBy { String(it.third, Charsets.UTF_8).lowercase() })
         
         val countBuffer = ByteBuffer.allocate(4)
         countBuffer.putInt(items.size)
         dataSource.sendSecure(countBuffer.array())
         kotlinx.coroutines.delay(50)
         
-        usbLogger.i(TAG, "handleList: Sending listing of ${items.size} items for ${dir.absolutePath}")
+        usbLogger.i(TAG, "handleList: Sending listing of ${items.size} items for $path")
         for ((isDir, size, nameBytes) in items) {
             val item = ByteBuffer.allocate(1 + 8 + 4 + nameBytes.size)
             item.put(if (isDir) 1.toByte() else 0.toByte())
@@ -358,6 +404,34 @@ class UsbCommandProcessor @Inject constructor(
             item.put(nameBytes)
             dataSource.sendSecure(item.array())
         }
+    }
+
+    private fun listDirectFilesystem(dir: File): ArrayList<Triple<Boolean, Long, ByteArray>> {
+        usbLogger.d(TAG, "listDirectFilesystem: Resolved Absolute Path = ${dir.absolutePath}")
+        usbLogger.d(TAG, "listDirectFilesystem: Exists = ${dir.exists()}, IsDirectory = ${dir.isDirectory}, CanRead = ${dir.canRead()}")
+        val names = try {
+            if (dir.exists() && dir.isDirectory) {
+                dir.list() ?: run {
+                    usbLogger.e(TAG, "listDirectFilesystem: list() returned null for ${dir.absolutePath}")
+                    emptyArray()
+                }
+            } else {
+                usbLogger.w(TAG, "listDirectFilesystem: Path invalid or inaccessible: ${dir.absolutePath}")
+                emptyArray()
+            }
+        } catch (e: Exception) {
+            usbLogger.e(TAG, "listDirectFilesystem: Exception during list", e)
+            emptyArray()
+        }
+        val items = ArrayList<Triple<Boolean, Long, ByteArray>>(names.size)
+        for (name in names) {
+            if (name.startsWith(".")) continue
+            val child = File(dir, name)
+            val isDir = try { child.isDirectory } catch (_: Exception) { false }
+            items.add(Triple(isDir, 0L, name.toByteArray(Charsets.UTF_8)))
+        }
+        items.sortWith(compareBy<Triple<Boolean, Long, ByteArray>> { !it.first }.thenBy { String(it.third, Charsets.UTF_8).lowercase() })
+        return items
     }
 
     private suspend fun handleReceive(
@@ -375,19 +449,24 @@ class UsbCommandProcessor @Inject constructor(
         usbLogger.d(TAG, "handleReceive: File = $fileName ($fileSize bytes)")
         withContext(Dispatchers.Main) { onReceiveStarted(fileName, fileSize) }
         
-        var fos: FileOutputStream? = null
+        var fos: java.io.OutputStream? = null
         var file: File? = null
         try {
-            file = resolveFile(fileName)
-            file.parentFile?.mkdirs()
-            fos = FileOutputStream(file)
+            if (SmartNavStorageResolver.isSmartNavPath(fileName)) {
+                fos = SmartNavStorageResolver.openOutputStream(context, fileName)
+            }
+            if (fos == null) {
+                file = resolveFile(fileName)
+                file.parentFile?.mkdirs()
+                fos = FileOutputStream(file)
+            }
         } catch (e: Exception) {
-            usbLogger.e(TAG, "handleReceive: Failed to open FileOutputStream for $fileName. Sinking data to keep pipe clear.", e)
+            usbLogger.e(TAG, "handleReceive: Failed to open OutputStream for $fileName. Sinking data to keep pipe clear.", e)
         }
         
         try {
-            val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
-            val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+            val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+            val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
 
             // Worker 1: USB Receive
             launch(Dispatchers.IO) {
@@ -417,12 +496,20 @@ class UsbCommandProcessor @Inject constructor(
 
             // Worker 3: Disk Write (Main Coroutine)
             var received = 0L
+            var lastReportedPercent = -1
+            var lastReportTime = 0L
             for (chunk in decryptedChannel) {
                 fos?.write(chunk)
                 received += chunk.size
                 if (fileSize > 0) {
                     val progress = received.toFloat() / fileSize.toFloat()
-                    withContext(Dispatchers.Main) { onReceiveProgress(progress) }
+                    val percent = (progress * 100).toInt()
+                    val now = System.currentTimeMillis()
+                    if (now - lastReportTime > 250L || received >= fileSize) {
+                        lastReportedPercent = percent
+                        lastReportTime = now
+                        launch(Dispatchers.Main) { onReceiveProgress(progress) }
+                    }
                 }
                 if (received >= fileSize) break
             }
@@ -472,8 +559,8 @@ class UsbCommandProcessor @Inject constructor(
         }
         
         try {
-            val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
-            val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+            val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+            val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
 
             launch(Dispatchers.IO) {
                 try {
@@ -500,12 +587,20 @@ class UsbCommandProcessor @Inject constructor(
             }
 
             var received = 0L
+            var lastReportedPercent = -1
+            var lastReportTime = 0L
             for (chunk in decryptedChannel) {
                 fos?.write(chunk)
                 received += chunk.size
                 if (fileSize > 0) {
                     val progress = received.toFloat() / fileSize.toFloat()
-                    withContext(Dispatchers.Main) { onReceiveProgress(progress) }
+                    val percent = (progress * 100).toInt()
+                    val now = System.currentTimeMillis()
+                    if (now - lastReportTime > 250L || received >= fileSize) {
+                        lastReportedPercent = percent
+                        lastReportTime = now
+                        launch(Dispatchers.Main) { onReceiveProgress(progress) }
+                    }
                 }
                 if (received >= fileSize) break
             }
@@ -523,9 +618,16 @@ class UsbCommandProcessor @Inject constructor(
             try {
                 withContext(Dispatchers.Main) { onReceiveStarted("Extracting $folderName...", fileSize) }
                 withContext(Dispatchers.IO) {
-                    unzipFile(tempZip, targetDirectory)
+                    if (SmartNavStorageResolver.isSmartNavPath(folderName)) {
+                        val unzipped = SmartNavStorageResolver.unzipDirectory(context, tempZip, folderName)
+                        if (!unzipped) {
+                            unzipFile(tempZip, targetDirectory)
+                        }
+                    } else {
+                        unzipFile(tempZip, targetDirectory)
+                    }
                 }
-                usbLogger.d(TAG, "handleReceiveDir: Extracted successfully to ${targetDirectory.absolutePath}")
+                usbLogger.d(TAG, "handleReceiveDir: Extracted successfully for $folderName")
                 withContext(Dispatchers.Main) { onReceiveFinished() }
             } catch (e: Exception) {
                 usbLogger.e(TAG, "handleReceiveDir: Extraction failed", e)
@@ -563,27 +665,55 @@ class UsbCommandProcessor @Inject constructor(
         
         usbLogger.d(TAG, "handleFetch: Path = $path")
         
-        val file = resolveFile(path)
-        if (!file.exists() || file.isDirectory) {
-            usbLogger.w(TAG, "handleFetch: File not found or is directory: ${file.absolutePath}")
+        val input: java.io.InputStream?
+        val length: Long
+        if (SmartNavStorageResolver.isSmartNavPath(path)) {
+            val info = SmartNavStorageResolver.getFileInfo(context, path)
+            if (!info.exists || info.isDirectory) {
+                val directFile = resolveFile(path)
+                if (!directFile.exists() || directFile.isDirectory) {
+                    usbLogger.w(TAG, "handleFetch: File not found or is directory: $path")
+                    dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
+                    return@coroutineScope
+                }
+                length = directFile.length()
+                input = FileInputStream(directFile)
+            } else {
+                length = info.size
+                input = SmartNavStorageResolver.openInputStream(context, path) ?: resolveFile(path).let { if (it.exists()) FileInputStream(it) else null }
+            }
+        } else {
+            val file = resolveFile(path)
+            if (!file.exists() || file.isDirectory) {
+                usbLogger.w(TAG, "handleFetch: File not found or is directory: ${file.absolutePath}")
+                dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
+                return@coroutineScope
+            }
+            length = file.length()
+            input = FileInputStream(file)
+        }
+
+        if (input == null) {
+            usbLogger.w(TAG, "handleFetch: Failed to open InputStream for $path")
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
             return@coroutineScope
         }
         
-        usbLogger.d(TAG, "handleFetch: Sending ${file.length()} bytes")
-        dataSource.sendSecure(ByteBuffer.allocate(8).putLong(file.length()).array())
+        usbLogger.d(TAG, "handleFetch: Sending $length bytes")
+        dataSource.sendSecure(ByteBuffer.allocate(8).putLong(length).array())
         
-        val fis = FileInputStream(file)
         try {
-            val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
-            val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+            val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+            val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
 
             // Worker 1: Disk Read
             launch(Dispatchers.IO) {
                 try {
-                    val streamBuffer = ByteArray(256 * 1024)
                     var read: Int
-                    while (fis.read(streamBuffer).also { read = it } != -1 && isActive) {
+                    while (isActive) {
+                        val streamBuffer = ByteArray(256 * 1024)
+                        read = input.read(streamBuffer)
+                        if (read == -1) break
                         val chunk = if (read == streamBuffer.size) streamBuffer else streamBuffer.copyOf(read)
                         chunkChannel.send(chunk)
                     }
@@ -596,7 +726,7 @@ class UsbCommandProcessor @Inject constructor(
             launch(Dispatchers.Default) {
                 try {
                     for (chunk in chunkChannel) {
-                        val encrypted = dataSource.encryptData(chunk) ?: break
+                        val encrypted = dataSource.encryptAndWrapData(chunk) ?: break
                         encryptedChannel.send(encrypted)
                     }
                 } finally {
@@ -606,11 +736,11 @@ class UsbCommandProcessor @Inject constructor(
 
             // Worker 3: USB Send (Main Coroutine)
             for (encrypted in encryptedChannel) {
-                if (!dataSource.sendRawPacket(Packet.TYPE_DATA, encrypted)) break
+                if (!dataSource.sendPrebuiltPacket(encrypted)) break
             }
             dataSource.sendRawPacket(Packet.TYPE_EOF, ByteArray(0))
         } finally {
-            fis.close()
+            input.close()
         }
         usbLogger.d(TAG, "handleFetch: Successfully sent $path")
     }

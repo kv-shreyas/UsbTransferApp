@@ -78,6 +78,10 @@ class ClientServiceController @Inject constructor(
     }
 
     suspend fun runClientLoop(accessory: UsbAccessory, onStatusUpdate: (String) -> Unit) = withContext(Dispatchers.IO) {
+        if (clientJob?.isActive == true && aoaManager.isConnected()) {
+            usbLogger.i(TAG, "runClientLoop: Already running and connected to ${accessory.model}. Ignoring duplicate runClientLoop request.")
+            return@withContext
+        }
         clientJob?.cancel()
         clientJob = launch {
             try {
@@ -85,8 +89,26 @@ class ClientServiceController @Inject constructor(
                 clientUiState.value = UsbUiState.Connecting
                 onStatusUpdate("Connecting to Host (${accessory.model ?: "USB Host"})...")
 
-                if (!aoaManager.connect(accessory)) {
-                    usbLogger.e(TAG, "runClientLoop: aoaManager.connect(accessory) failed.")
+                var connected = false
+                for (attempt in 1..30) {
+                    if (!isActive) break
+                    val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
+                    if (usbManager.hasPermission(accessory)) {
+                        if (aoaManager.connect(accessory)) {
+                            connected = true
+                            usbLogger.i(TAG, "runClientLoop: Successfully connected to accessory on attempt $attempt")
+                            break
+                        } else {
+                            usbLogger.d(TAG, "runClientLoop: aoaManager.connect attempt $attempt failed (Host may still be opening pipe). Retrying in 500ms...")
+                        }
+                    } else {
+                        usbLogger.d(TAG, "runClientLoop: Waiting for accessory permission (attempt $attempt)...")
+                    }
+                    kotlinx.coroutines.delay(500)
+                }
+
+                if (!connected) {
+                    usbLogger.e(TAG, "runClientLoop: aoaManager.connect(accessory) failed after 15s of retries.")
                     clientUiState.value = UsbUiState.Error("Failed to open USB Accessory connection.")
                     onStatusUpdate("Connection Failed")
                     return@launch

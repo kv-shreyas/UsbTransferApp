@@ -31,6 +31,27 @@ class UsbManagerWrapper @Inject constructor(
     val usbManager =
         context.getSystemService(Context.USB_SERVICE) as UsbManager
 
+    private var isPermissionReceiverRegistered = false
+    private val permissionReceiver = UsbPermissionReceiver()
+
+    @Synchronized
+    private fun registerPermissionReceiverIfNeeded() {
+        if (!isPermissionReceiverRegistered) {
+            try {
+                val filter = IntentFilter(UsbPermissionReceiver.ACTION_USB_PERMISSION)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    context.registerReceiver(permissionReceiver, filter, Context.RECEIVER_EXPORTED)
+                } else {
+                    context.registerReceiver(permissionReceiver, filter)
+                }
+                isPermissionReceiverRegistered = true
+                usbLogger.d("UsbManagerWrapper", "Runtime UsbPermissionReceiver registered successfully")
+            } catch (e: Exception) {
+                usbLogger.e("UsbManagerWrapper", "Failed to register runtime UsbPermissionReceiver: ${e.message}")
+            }
+        }
+    }
+
     fun getDevices(): Collection<UsbDevice> = usbManager.deviceList.values
 
     fun getAccessories(): Array<UsbAccessory>? = usbManager.accessoryList
@@ -44,9 +65,9 @@ class UsbManagerWrapper @Inject constructor(
     }
 
     fun requestPermission(device: UsbDevice) {
+        registerPermissionReceiverIfNeeded()
         usbLogger.i("UsbManagerWrapper", "Requesting permission for device ${device.productName} (${device.deviceId})")
-        val intent = Intent(context, UsbPermissionReceiver::class.java).apply {
-            action = UsbPermissionReceiver.ACTION_USB_PERMISSION
+        val intent = Intent(UsbPermissionReceiver.ACTION_USB_PERMISSION).apply {
             setPackage(context.packageName)
         }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
@@ -65,9 +86,9 @@ class UsbManagerWrapper @Inject constructor(
     }
 
     fun requestPermission(accessory: UsbAccessory) {
+        registerPermissionReceiverIfNeeded()
         usbLogger.i("UsbManagerWrapper", "Requesting permission for accessory ${accessory.model}")
-        val intent = Intent(context, UsbPermissionReceiver::class.java).apply {
-            action = UsbPermissionReceiver.ACTION_USB_PERMISSION
+        val intent = Intent(UsbPermissionReceiver.ACTION_USB_PERMISSION).apply {
             setPackage(context.packageName)
         }
         val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

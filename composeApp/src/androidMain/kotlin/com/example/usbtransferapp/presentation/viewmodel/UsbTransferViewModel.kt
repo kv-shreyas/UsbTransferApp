@@ -209,7 +209,18 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     fun detectAndConnect() {
-        if (isBusyOrConnected()) {
+        if (_uiState.value is UsbUiState.RequestingPermission) {
+            val dev = currentDevice
+            val acc = currentAccessory
+            val hasPerm = (acc != null && usbManagerWrapper.hasPermission(acc)) ||
+                          (dev != null && usbManagerWrapper.hasPermission(dev))
+            if (hasPerm) {
+                usbLogger.i(TAG, "detectAndConnect: Received intent/broadcast while in RequestingPermission and permission is now GRANTED! Proceeding immediately...")
+            } else {
+                usbLogger.d(TAG, "detectAndConnect: Actively requesting permission (state: ${_uiState.value}). Ignoring redundant check.")
+                return
+            }
+        } else if (isBusyOrConnected()) {
             usbLogger.d(TAG, "detectAndConnect: Already actively connecting or checking (state: ${_uiState.value}, connectJob=${connectJob?.isActive}). Ignoring redundant intent/broadcast.")
             return
         }
@@ -248,7 +259,11 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     fun requestPermissionAndConnect() {
-        if (isBusyOrConnected()) {
+        val dev = currentDevice
+        val acc = currentAccessory
+        val hasPerm = (acc != null && usbManagerWrapper.hasPermission(acc)) ||
+                      (dev != null && usbManagerWrapper.hasPermission(dev))
+        if (isBusyOrConnected() && !(_uiState.value is UsbUiState.RequestingPermission && hasPerm)) {
             usbLogger.d(TAG, "requestPermissionAndConnect: Already actively connecting or checking (state: ${_uiState.value}, connectJob=${connectJob?.isActive}). Ignoring redundant request.")
             return
         }
@@ -270,15 +285,27 @@ class UsbTransferViewModel @Inject constructor(
                     usbLogger.d(TAG, "requestPermissionAndConnect: Requesting permission for device ${device.deviceId}")
                     _uiState.value = UsbUiState.RequestingPermission
                     usbManagerWrapper.requestPermission(device)
-                    val grantedEvent = withTimeoutOrNull(60_000) {
-                        UsbPermissionBus.flow.firstOrNull { event ->
-                            (event is UsbPermissionEvent.DeviceGranted && event.device.deviceId == device.deviceId) ||
-                            (event is UsbPermissionEvent.DeviceDenied && event.device.deviceId == device.deviceId)
+                    val granted = withTimeoutOrNull(60_000) {
+                        var isGranted = false
+                        while (isActive) {
+                            if (usbManagerWrapper.hasPermission(device)) {
+                                isGranted = true
+                                break
+                            }
+                            val event = withTimeoutOrNull(250) { UsbPermissionBus.flow.firstOrNull() }
+                            if (event is UsbPermissionEvent.DeviceGranted && event.device.deviceId == device.deviceId) {
+                                isGranted = true
+                                break
+                            } else if (event is UsbPermissionEvent.DeviceDenied && event.device.deviceId == device.deviceId) {
+                                isGranted = false
+                                break
+                            }
                         }
+                        isGranted
                     }
-                    if (grantedEvent is UsbPermissionEvent.DeviceGranted) {
+                    if (granted == true || usbManagerWrapper.hasPermission(device)) {
                         usbLogger.i(TAG, "requestPermissionAndConnect: Permission GRANTED for device ${device.deviceId}")
-                        proceedWithDevice(grantedEvent.device)
+                        proceedWithDevice(device)
                     } else {
                         usbLogger.w(TAG, "requestPermissionAndConnect: Permission denied or timed out for device ${device.deviceId}")
                         _uiState.value = UsbUiState.Error("USB permission denied or timed out")
@@ -292,15 +319,27 @@ class UsbTransferViewModel @Inject constructor(
                     usbLogger.d(TAG, "requestPermissionAndConnect: Requesting permission for accessory ${accessory.model}")
                     _uiState.value = UsbUiState.RequestingPermission
                     usbManagerWrapper.requestPermission(accessory)
-                    val grantedEvent = withTimeoutOrNull(60_000) {
-                        UsbPermissionBus.flow.firstOrNull { event ->
-                            (event is UsbPermissionEvent.AccessoryGranted && event.accessory == accessory) ||
-                            (event is UsbPermissionEvent.AccessoryDenied && event.accessory == accessory)
+                    val granted = withTimeoutOrNull(60_000) {
+                        var isGranted = false
+                        while (isActive) {
+                            if (usbManagerWrapper.hasPermission(accessory)) {
+                                isGranted = true
+                                break
+                            }
+                            val event = withTimeoutOrNull(250) { UsbPermissionBus.flow.firstOrNull() }
+                            if (event is UsbPermissionEvent.AccessoryGranted && event.accessory == accessory) {
+                                isGranted = true
+                                break
+                            } else if (event is UsbPermissionEvent.AccessoryDenied && event.accessory == accessory) {
+                                isGranted = false
+                                break
+                            }
                         }
+                        isGranted
                     }
-                    if (grantedEvent is UsbPermissionEvent.AccessoryGranted) {
+                    if (granted == true || usbManagerWrapper.hasPermission(accessory)) {
                         usbLogger.i(TAG, "requestPermissionAndConnect: Permission GRANTED for accessory ${accessory.model}")
-                        proceedWithAccessory(grantedEvent.accessory)
+                        proceedWithAccessory(accessory)
                     } else {
                         usbLogger.w(TAG, "requestPermissionAndConnect: Permission denied or timed out for accessory ${accessory.model}")
                         _uiState.value = UsbUiState.Error("USB permission denied or timed out")
@@ -589,6 +628,10 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     fun cancelTransfer() {
+        commandJob?.cancel()
+        commandJob = null
+        fetchRemoteJob?.cancel()
+        fetchRemoteJob = null
         _progressState.value = _progressState.value.copy(statusMessage = "Transfer Cancelled ❌", isComplete = true)
         _uiState.value = UsbUiState.Success("Transfer Cancelled")
         viewModelScope.launch(Dispatchers.IO) {

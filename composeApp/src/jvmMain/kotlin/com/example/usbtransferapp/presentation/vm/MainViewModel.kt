@@ -110,6 +110,8 @@ class MainViewModel(
 
     fun cancelTransfer() {
         println("[ViewModel] Cancelling transfer job locally...")
+        transferJob?.cancel()
+        transferJob = null
         
         // Immediately dismiss the UI to prevent hanging feeling
         _progressState.value = TransferProgress()

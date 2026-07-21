@@ -23,6 +23,10 @@ class AoaConnectionManager @Inject constructor(
     private var outputStream: FileOutputStream? = null
 
     fun connect(accessory: UsbAccessory): Boolean {
+        if (isConnected()) {
+            usbLogger.d(TAG, "AOA already connected to accessory: $accessory")
+            return true
+        }
         usbLogger.d(TAG, "Connecting to accessory: $accessory")
         fileDescriptor = wrapper.openAccessory(accessory)
         

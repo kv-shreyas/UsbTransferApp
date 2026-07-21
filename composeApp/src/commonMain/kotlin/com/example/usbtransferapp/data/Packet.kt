@@ -22,6 +22,15 @@ object Packet {
         return buffer.array()
     }
 
+    fun buildDataPacket(iv: ByteArray, ciphertext: ByteArray): ByteArray {
+        val buffer = ByteBuffer.allocate(HEADER_SIZE + iv.size + ciphertext.size)
+        buffer.put(TYPE_DATA)
+        buffer.putInt(iv.size + ciphertext.size)
+        buffer.put(iv)
+        buffer.put(ciphertext)
+        return buffer.array()
+    }
+
     fun parse(buffer: ByteArray): PacketData? {
         if (buffer.size < HEADER_SIZE) return null
         

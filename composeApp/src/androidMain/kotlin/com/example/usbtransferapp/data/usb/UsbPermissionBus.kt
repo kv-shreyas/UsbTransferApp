@@ -13,7 +13,7 @@ sealed class UsbPermissionEvent {
 }
 
 object UsbPermissionBus {
-    private val _flow = MutableSharedFlow<UsbPermissionEvent>()
+    private val _flow = MutableSharedFlow<UsbPermissionEvent>(replay = 1, extraBufferCapacity = 10)
     val flow = _flow.asSharedFlow()
 
     suspend fun emit(event: UsbPermissionEvent) {

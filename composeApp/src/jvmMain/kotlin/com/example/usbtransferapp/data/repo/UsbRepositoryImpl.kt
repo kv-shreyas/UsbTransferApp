@@ -200,12 +200,9 @@ class UsbRepositoryImpl(
 
     private fun sendEncrypted(payload: ByteArray): Boolean {
         val encrypted = cryptoManager.encrypt(payload)
-        val securePayload = ByteBuffer.allocate(encrypted.iv.size + encrypted.ciphertext.size)
-            .put(encrypted.iv)
-            .put(encrypted.ciphertext)
-            .array()
+        val packet = Packet.buildDataPacket(encrypted.iv, encrypted.ciphertext)
         
-        val success = connection.bulkWrite(Packet.build(Packet.TYPE_DATA, securePayload))
+        val success = connection.bulkWrite(packet)
         if (!success) println("[UsbRepo] Error: Failed to write encrypted packet (Size: ${payload.size} bytes)")
         return success
     }
@@ -303,8 +300,8 @@ class UsbRepositoryImpl(
     override fun receiveStream(): Flow<ByteArray> = channelFlow {
         println("[UsbRepo] Starting data stream reception...")
         kotlinx.coroutines.coroutineScope {
-            val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
-            val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+            val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+            val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
 
             // Worker 1: USB Receive
             launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -372,15 +369,17 @@ class UsbRepositoryImpl(
         var totalSent = 0L
         coroutineScope {
             fis.use { fis ->
-                val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
-                val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+                val chunkChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+                val encryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
 
                 // Worker 1: Disk Read
                 launch(kotlinx.coroutines.Dispatchers.IO) {
                     try {
-                        val buffer = ByteArray(256 * 1024)
                         var read: Int
-                        while (fis.read(buffer).also { read = it } != -1 && isActive) {
+                        while (isActive) {
+                            val buffer = ByteArray(256 * 1024)
+                            read = fis.read(buffer)
+                            if (read == -1) break
                             val chunk = if (read == buffer.size) buffer else buffer.copyOf(read)
                             chunkChannel.send(chunk)
                         }
@@ -394,11 +393,8 @@ class UsbRepositoryImpl(
                     try {
                         for (chunk in chunkChannel) {
                             val encrypted = cryptoManager.encrypt(chunk)
-                            val securePayload = ByteBuffer.allocate(encrypted.iv.size + encrypted.ciphertext.size)
-                                .put(encrypted.iv)
-                                .put(encrypted.ciphertext)
-                                .array()
-                            encryptedChannel.send(securePayload)
+                            val packet = Packet.buildDataPacket(encrypted.iv, encrypted.ciphertext)
+                            encryptedChannel.send(packet)
                         }
                     } finally {
                         encryptedChannel.close()
@@ -406,11 +402,19 @@ class UsbRepositoryImpl(
                 }
 
                 // Worker 3: USB Write (Main Coroutine)
+                var lastSentPercent = -1
+                var lastSentTime = 0L
                 for (securePayload in encryptedChannel) {
-                    if (connection.bulkWrite(Packet.build(Packet.TYPE_DATA, securePayload))) {
-                        val chunkSize = securePayload.size - 28 // Subtract IV (12) + Tag (16)
+                    if (connection.bulkWrite(securePayload)) {
+                        val chunkSize = securePayload.size - 33 // Subtract IV (12) + Tag (16) + Header (5)
                         totalSent += chunkSize
-                        send(((totalSent * 100) / fileSize).toInt())
+                        val percent = ((totalSent * 100) / fileSize).toInt()
+                        val now = System.currentTimeMillis()
+                        if (now - lastSentTime > 250L || totalSent >= fileSize) {
+                            lastSentPercent = percent
+                            lastSentTime = now
+                            send(percent)
+                        }
                     } else {
                         val errorMsg = "Failed to send chunk at $totalSent bytes."
                         println("[UsbRepo] Error: $errorMsg")
@@ -453,8 +457,8 @@ class UsbRepositoryImpl(
         var totalReceived = 0L
         coroutineScope {
             try {
-                val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
-                val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+                val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+                val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
 
                 // Worker 1: USB Receive
                 launch(kotlinx.coroutines.Dispatchers.IO) {
@@ -490,10 +494,18 @@ class UsbRepositoryImpl(
                 }
 
                 // Worker 3: Disk Write (Main Coroutine)
+                var lastRecvPercent = -1
+                var lastRecvTime = 0L
                 for (chunk in decryptedChannel) {
                     fos.write(chunk)
                     totalReceived += chunk.size
-                    send(((totalReceived * 100) / fileSize).toInt())
+                    val percent = ((totalReceived * 100) / fileSize).toInt()
+                    val now = System.currentTimeMillis()
+                    if (now - lastRecvTime > 250L || totalReceived >= fileSize) {
+                        lastRecvPercent = percent
+                        lastRecvTime = now
+                        send(percent)
+                    }
                     if (totalReceived >= fileSize) break
                 }
             } finally {
@@ -533,8 +545,8 @@ class UsbRepositoryImpl(
         var totalReceived = 0L
         kotlinx.coroutines.coroutineScope {
             try {
-                val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
-                val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(2)
+                val rawPacketChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
+                val decryptedChannel = kotlinx.coroutines.channels.Channel<ByteArray>(32)
 
                 // Worker 1: USB Receive
                 launch(kotlinx.coroutines.Dispatchers.IO) {

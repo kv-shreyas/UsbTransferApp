@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <queries>
+        <package android:name="com.example.smartnav_v3" />
+        <provider android:authorities="com.example.smartnav_v3.storageprovider" />
+        <provider android:authorities="com.example.smartnav_v3.apkprovider" />
+    </queries>
+
     <uses-feature android:name="android.hardware.usb.host" />
     <uses-feature android:name="android.hardware.usb.accessory" />
 
