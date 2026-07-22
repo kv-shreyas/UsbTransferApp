@@ -65,11 +65,11 @@ kotlin {
 }
 
 android {
-    namespace = "com.example.usbtransferapp"
+    namespace = "com.example.securequicktransferapp"
     compileSdk = libs.versions.android.compileSdk.get().toInt()
 
     defaultConfig {
-        applicationId = "com.example.usbtransferapp"
+        applicationId = "com.example.securequicktransferapp"
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
@@ -99,10 +99,10 @@ dependencies {
 
 compose.desktop {
     application {
-        mainClass = "com.example.usbtransferapp.MainKt"
+        mainClass = "com.example.securequicktransferapp.MainKt"
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
-            packageName = "SecureQuickTransfer"
+            packageName = "SecureQuickTransferApp"
             packageVersion = "1.0.0"
             includeAllModules = true
             windows {

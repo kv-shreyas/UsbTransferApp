@@ -1,4 +1,4 @@
-rootProject.name = "UsbTransferApp"
+rootProject.name = "SecureQuickTransferApp"
 enableFeaturePreview("TYPESAFE_PROJECT_ACCESSORS")
 
 pluginManagement {
