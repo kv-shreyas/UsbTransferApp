@@ -109,6 +109,38 @@ class UsbTransferViewModel @Inject constructor(
     fun clearLogs() = usbLogger.clearLogs()
     fun getLogFilePath() = usbLogger.getLogFilePath()
 
+    fun installAppUpdate(context: android.content.Context) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val apkFile = java.io.File("/sdcard/updateUsbApp/usb_desktop_update.apk")
+            if (!apkFile.exists()) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Update file not found at /sdcard/updateUsbApp/usb_desktop_update.apk", android.widget.Toast.LENGTH_LONG).show()
+                }
+                return@launch
+            }
+            
+            val uri = androidx.core.content.FileProvider.getUriForFile(
+                context, 
+                "${context.packageName}.fileprovider", 
+                apkFile
+            )
+            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                putExtra(android.content.Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+            }
+            try {
+                context.startActivity(intent)
+            } catch (e: Exception) {
+                Log.e("UsbTransferViewModel", "Update failed", e)
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(context, "Update failed to launch", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
+
     init {
         usbLogger.i(TAG, "ViewModel initialized. Role: ${_usbRole.value}")
         if (clientServiceController.isServiceRunning.value) {

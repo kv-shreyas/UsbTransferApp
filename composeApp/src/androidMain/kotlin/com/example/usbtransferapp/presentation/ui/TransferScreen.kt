@@ -65,6 +65,8 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
         )
     }
 
+    var showAboutDialog by remember { mutableStateOf(false) }
+
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
@@ -72,10 +74,27 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
-                )
+                ),
+                actions = {
+                    IconButton(onClick = { showAboutDialog = true }) {
+                        Icon(Icons.Default.Info, contentDescription = "About")
+                    }
+                    IconButton(onClick = { 
+                        (context as? android.app.Activity)?.finishAffinity()
+                    }) {
+                        Icon(Icons.Default.ExitToApp, contentDescription = "Exit App")
+                    }
+                }
             )
         }
     ) { padding ->
+        
+        if (showAboutDialog) {
+            AboutAppDialog(
+                onDismiss = { showAboutDialog = false },
+                onUpdate = { viewModel.installAppUpdate(context) }
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -146,6 +165,40 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
             SecurityFooter()
         }
     }
+}
+
+@Composable
+fun AboutAppDialog(onDismiss: () -> Unit, onUpdate: () -> Unit) {
+    val context = LocalContext.current
+    val packageInfo = try {
+        context.packageManager.getPackageInfo(context.packageName, 0)
+    } catch (e: Exception) {
+        null
+    }
+    val versionName = packageInfo?.versionName ?: "Unknown"
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        title = { Text("About") },
+        text = {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                Text("SmartNav USB Manager", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Spacer(modifier = Modifier.height(8.dp))
+                Text("Version: $versionName", style = MaterialTheme.typography.bodyMedium)
+            }
+        },
+        confirmButton = {
+            Button(onClick = onUpdate) {
+                Text("Update App")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
 }
 
 @Composable
