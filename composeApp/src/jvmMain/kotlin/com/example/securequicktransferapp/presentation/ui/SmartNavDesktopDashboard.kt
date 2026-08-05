@@ -167,7 +167,7 @@ fun SmartNavDesktopDashboard(
                 ) {
                     Icon(Icons.Default.Build, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Generate Base Files", fontSize = 11.sp, maxLines = 1)
+                    Text("Generate Base Files", fontSize = 15.sp, maxLines = 1)
                 }
                 Button(
                     onClick = {
@@ -180,7 +180,7 @@ fun SmartNavDesktopDashboard(
                 ) {
                     Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Open Workspace", fontSize = 11.sp, maxLines = 1)
+                    Text("Open Workspace", fontSize = 15.sp, maxLines = 1)
                 }
                 Button(
                     onClick = { refreshStaging() },
@@ -189,7 +189,7 @@ fun SmartNavDesktopDashboard(
                 ) {
                     Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Reload UI", fontSize = 11.sp, maxLines = 1)
+                    Text("Reload UI", fontSize = 15.sp, maxLines = 1)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -218,7 +218,7 @@ fun SmartNavDesktopDashboard(
                             onClick = { 
                                 selectedStagingDirs = if (isSelected) selectedStagingDirs - dir else selectedStagingDirs + dir
                             },
-                            label = { Text(dir.name, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            label = { Text(dir.name, fontSize = 14.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
                             leadingIcon = if (isSelected) {
                                 { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
                             } else null,

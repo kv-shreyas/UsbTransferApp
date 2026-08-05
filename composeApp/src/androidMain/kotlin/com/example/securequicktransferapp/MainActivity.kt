@@ -8,8 +8,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import com.example.securequicktransferapp.presentation.theme.SecureTransferTheme
 import com.example.securequicktransferapp.presentation.ui.TransferScreen
 import com.example.securequicktransferapp.presentation.viewmodel.UsbTransferViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -28,7 +29,11 @@ class MainActivity : ComponentActivity() {
         checkStoragePermissions()
 
         setContent {
-            TransferScreen(viewModel)
+            var isDarkTheme by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+            
+            SecureTransferTheme(darkTheme = isDarkTheme) {
+                TransferScreen(viewModel = viewModel, isDarkTheme = isDarkTheme, onThemeToggle = { isDarkTheme = !isDarkTheme })
+            }
         }
     }
 

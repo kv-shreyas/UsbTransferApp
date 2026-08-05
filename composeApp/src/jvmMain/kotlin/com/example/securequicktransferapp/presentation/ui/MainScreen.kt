@@ -1,41 +1,95 @@
 package com.example.securequicktransferapp.presentation.ui
 
-import androidx.compose.animation.*
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudUpload
+import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.EditNote
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.FolderOpen
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.LinkOff
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.UsbOff
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.ElevatedCard
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.input.pointer.isSecondaryPressed
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.DialogProperties
-import androidx.compose.ui.window.WindowPosition
-import androidx.compose.ui.window.rememberWindowState
-import com.example.securequicktransferapp.domain.model.RemoteFile
 import com.example.secureqt.sdk.SecureQtSdk
+import com.example.securequicktransferapp.domain.model.RemoteFile
 import com.example.securequicktransferapp.domain.model.TransferProgress
 import com.example.securequicktransferapp.presentation.vm.MainViewModel
-import java.io.File
 import javax.swing.JFileChooser
 
 @Composable
-fun MainScreen(vm: MainViewModel) {
+fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: () -> Unit = {}) {
     var currentScreen by remember { mutableStateOf("explorer") }
     val state by vm.state.collectAsState()
     val remoteFiles by vm.remoteFiles.collectAsState()
@@ -78,7 +132,13 @@ fun MainScreen(vm: MainViewModel) {
 
         // Main Content
         Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(24.dp)) {
-            if (!isConnected) {
+            if (currentScreen == "settings") {
+                SettingsScreen(
+                    isDarkTheme = isDarkTheme,
+                    onThemeToggle = onThemeToggle,
+                    onBack = { currentScreen = "explorer" }
+                )
+            } else if (!isConnected) {
                 DesktopNotConnectedView(
                     state = state,
                     isPhysicallyConnected = isPhysicallyConnected,
@@ -219,10 +279,11 @@ fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, isConnected
     Surface(
         modifier = Modifier.width(280.dp).fillMaxHeight(),
         color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
         tonalElevation = 1.dp
     ) {
         Column(modifier = Modifier.padding(20.dp)) {
-            Text("Control Panel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Control Panel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(32.dp))
 
             if (isConnected) {
@@ -237,12 +298,15 @@ fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, isConnected
                     modifier = Modifier.fillMaxWidth().padding(bottom = 24.dp)
                 ) {
                     Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Lock, null, tint = Color.Gray, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Lock, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(8.dp))
-                        Text("Connect device to unlock File Explorer & SmartNav options.", fontSize = 11.sp, color = Color.Gray)
+                        Text("Connect device to unlock File Explorer & SmartNav options.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                     }
                 }
             }
+
+            NavigationItem("Settings", Icons.Default.Settings, currentScreen == "settings") { onNavigate("settings") }
+            Spacer(Modifier.height(32.dp))
 
             ConnectionCard(state, vm.isAoaMode, isPhysicallyConnected, physicalDeviceName, onConnect = { vm.connect() }, onDisconnect = onDisconnect)
 
@@ -252,7 +316,7 @@ fun Sidebar(vm: MainViewModel, state: String, currentScreen: String, isConnected
                 Spacer(Modifier.height(8.dp))
                 
                 Box(modifier = Modifier.weight(1f)) {
-                    Text("No active transfers", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                    Text("No active transfers", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }
             } else {
                 Spacer(Modifier.weight(1f))
@@ -270,9 +334,9 @@ fun NavigationItem(label: String, icon: ImageVector, selected: Boolean, onClick:
         color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
-            Icon(icon, null, tint = if (selected) MaterialTheme.colorScheme.primary else Color.Gray)
+            Icon(icon, null, tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
             Spacer(Modifier.width(12.dp))
-            Text(label, color = if (selected) MaterialTheme.colorScheme.primary else Color.Gray, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+            Text(label, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
         }
     }
 }
@@ -283,7 +347,7 @@ fun ConnectionCard(state: String, isAoaMode: Boolean, isPhysicallyConnected: Boo
     val isConnected = !isDisconnected
     
     val statusColor = when {
-        !isConnected -> if (state == "Idle" || state == "Searching...") Color.Gray else Color.Red
+        !isConnected -> if (state == "Idle" || state == "Searching...") MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f) else MaterialTheme.colorScheme.error
         state.contains("Error") || state.contains("Cancelled") -> Color(0xFFFFA500)
         else -> Color(0xFF4CAF50)
     }
@@ -360,7 +424,7 @@ fun ConnectionCard(state: String, isAoaMode: Boolean, isPhysicallyConnected: Boo
                 Text(
                     if (isPhysicallyConnected) "Click Connect to initialize secure session." else "Plug in your Android device via USB.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
                 Spacer(Modifier.height(12.dp))
                 Button(
@@ -395,7 +459,7 @@ fun Header(
         }
         Spacer(Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
             Text(path, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.secondary)
         }
         if (onCreateFolder != null) {
@@ -434,9 +498,9 @@ fun FileList(
         if (files.isEmpty()) {
             Box(contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(48.dp), tint = Color.LightGray)
+                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
                     Spacer(Modifier.height(8.dp))
-                    Text("No compatible files found", color = Color.Gray)
+                    Text("No compatible files found", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }
             }
         } else {
@@ -584,7 +648,7 @@ fun FileRow(
                 Text(
                     if (file.isDirectory) "Directory" else SecureQtSdk.Utils.formatSize(file.size),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.Gray
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
 
@@ -675,7 +739,7 @@ fun FileRow(
                 Spacer(Modifier.width(8.dp))
                 Text("Encrypted Link", fontSize = 12.sp, fontWeight = FontWeight.Bold)
             }
-            Text("ECDH-P256 / AES-GCM", fontSize = 10.sp, color = Color.Gray)
+            Text("ECDH-P256 / AES-GCM", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
         }
     }
 
@@ -715,7 +779,7 @@ fun FileRow(
                             Text(
                                 progress.statusMessage.ifEmpty { progress.filename },
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = Color.Gray,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -748,7 +812,7 @@ fun FileRow(
                             Text(
                                 "Speed",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.Gray
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                             Text(progress.speed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
@@ -756,7 +820,7 @@ fun FileRow(
                             Text(
                                 "Elapsed",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.Gray
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                             Text(progress.elapsed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
@@ -764,7 +828,7 @@ fun FileRow(
                             Text(
                                 "Remaining",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.Gray
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                             Text(progress.eta, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
@@ -772,7 +836,7 @@ fun FileRow(
                             Text(
                                 "Progress",
                                 style = MaterialTheme.typography.labelSmall,
-                                color = Color.Gray
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             )
                             Text(
                                 "${progress.percentage}%",
@@ -817,7 +881,7 @@ fun FileRow(
                                 .fillMaxWidth()
                                 .heightIn(max = 100.dp)
                                 .clip(RoundedCornerShape(4.dp))
-                                .background(Color.Gray.copy(alpha = 0.1f))
+                                .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f).copy(alpha = 0.1f))
                                 .padding(8.dp)
                         ) {
                             items(progress.queue.size) { i ->
@@ -827,7 +891,7 @@ fun FileRow(
                                 val color = when {
                                     isDone -> Color(0xFF4CAF50)
                                     isCurrent -> MaterialTheme.colorScheme.primary
-                                    else -> Color.Gray
+                                    else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                 }
                                 Text(
                                     text = "${i + 1}. $item",
@@ -869,7 +933,7 @@ fun FileRow(
                         Text(
                             "Please do not disconnect the USB cable",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color.Red.copy(alpha = 0.5f)
+                            color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
                         )
                     }
                 }
@@ -926,7 +990,7 @@ fun DesktopNotConnectedView(
                     "Please connect your Android device via USB cable to access remote file management and the SmartNav package tools."
                 },
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color.Gray,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
 

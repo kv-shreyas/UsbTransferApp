@@ -43,7 +43,7 @@ import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
+fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkTheme: Boolean = true, onThemeToggle: () -> Unit = {}) {
     val state by viewModel.uiState.collectAsState()
     val isCableConnected by viewModel.isCablePhysicallyConnected.collectAsState()
     val role by viewModel.usbRole.collectAsState()
@@ -68,6 +68,24 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
     }
 
     var showAboutDialog by remember { mutableStateOf(false) }
+    var showSettingsScreen by remember { mutableStateOf(false) }
+
+    if (showSettingsScreen) {
+        SettingsScreen(
+            isDarkTheme = isDarkTheme,
+            onThemeToggle = onThemeToggle,
+            onBack = { showSettingsScreen = false },
+            onShowAbout = { showAboutDialog = true },
+            onExitApp = { (context as? android.app.Activity)?.finishAffinity() }
+        )
+        if (showAboutDialog) {
+            AboutAppDialog(
+                onDismiss = { showAboutDialog = false },
+                onUpdate = { viewModel.installAppUpdate(context) }
+            )
+        }
+        return
+    }
 
     Scaffold(
         topBar = {
@@ -78,25 +96,13 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel()) {
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 ),
                 actions = {
-                    IconButton(onClick = { showAboutDialog = true }) {
-                        Icon(Icons.Default.Info, contentDescription = "About")
-                    }
-                    IconButton(onClick = { 
-                        (context as? android.app.Activity)?.finishAffinity()
-                    }) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = "Exit App")
+                    IconButton(onClick = { showSettingsScreen = true }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
                 }
             )
         }
     ) { padding ->
-        
-        if (showAboutDialog) {
-            AboutAppDialog(
-                onDismiss = { showAboutDialog = false },
-                onUpdate = { viewModel.installAppUpdate(context) }
-            )
-        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -206,15 +212,15 @@ fun AboutAppDialog(onDismiss: () -> Unit, onUpdate: () -> Unit) {
 @Composable
 fun StatusHeader(state: UsbUiState) {
     val (color, text, icon) = when (state) {
-        is UsbUiState.Idle -> Triple(Color.Gray, "Idle", Icons.Default.Info)
-        is UsbUiState.NoDevice -> Triple(Color.Red, "Disconnected", Icons.Default.UsbOff)
+        is UsbUiState.Idle -> Triple(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), "Idle", Icons.Default.Info)
+        is UsbUiState.NoDevice -> Triple(MaterialTheme.colorScheme.error, "Disconnected", Icons.Default.UsbOff)
         is UsbUiState.DeviceDetected -> Triple(Color(0xFFFFA500), "Device Ready", Icons.Default.Usb)
         is UsbUiState.RequestingPermission -> Triple(Color(0xFFFFA500), "Authenticating", Icons.Default.Lock)
         is UsbUiState.Connecting -> Triple(MaterialTheme.colorScheme.primary, "Connecting", Icons.Default.SettingsEthernet)
         is UsbUiState.Transferring -> Triple(MaterialTheme.colorScheme.primary, "Secure Link Active", Icons.Default.Sync)
         is UsbUiState.Receiving -> Triple(MaterialTheme.colorScheme.primary, "Transfer in Progress", Icons.Default.Download)
         is UsbUiState.Success -> Triple(Color(0xFF4CAF50), "Connected & Secure", Icons.Default.VerifiedUser)
-        is UsbUiState.Error -> Triple(Color.Red, "Error", Icons.Default.Error)
+        is UsbUiState.Error -> Triple(MaterialTheme.colorScheme.error, "Error", Icons.Default.Error)
     }
 
     Surface(
@@ -288,7 +294,7 @@ fun StateContent(
                     Text("USB Cable Connected", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(8.dp))
                 } else {
-                    BigIcon(Icons.Default.UsbOff, Color.Gray)
+                    BigIcon(Icons.Default.UsbOff, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                     Text("USB Connection Setup", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(8.dp))
                 }
@@ -398,15 +404,15 @@ fun StateContent(
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text("✅ Device is ready (Client Mode)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
                             Spacer(Modifier.height(4.dp))
-                            Text("Waiting for commands from the connected Host device.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
+                            Text("Waiting for commands from the connected Host device.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                         }
                     }
                 }
             }
             is UsbUiState.Error -> {
-                BigIcon(Icons.Default.Error, Color.Red)
+                BigIcon(Icons.Default.Error, MaterialTheme.colorScheme.error)
                 Text("Connection Failed", style = MaterialTheme.typography.headlineSmall)
-                Text(state.error, color = Color.Red, textAlign = TextAlign.Center)
+                Text(state.error, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = onConnect) {
                     Icon(Icons.Default.Refresh, null)
@@ -447,12 +453,12 @@ fun StateContent(
                 }
             }
             else -> {
-                BigIcon(Icons.Default.Usb, Color.Gray)
+                BigIcon(Icons.Default.Usb, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 Text("USB Transfer", style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Plug in the USB cable to get started.\nThe device will be detected automatically.",
-                    color = Color.Gray,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -562,9 +568,9 @@ fun ConnectionGuideCard(
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
-                        Text("Step 1: Select a Role below for THIS device.", fontSize = 11.sp, color = Color.Gray)
-                        Text("Step 2: Connect to the other device (Desktop or Android) via USB / OTG cable.", fontSize = 11.sp, color = Color.Gray)
-                        Text("Step 3: Accept any USB permission popup that appears on screen.", fontSize = 11.sp, color = Color.Gray)
+                        Text("Step 1: Select a Role below for THIS device.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Step 2: Connect to the other device (Desktop or Android) via USB / OTG cable.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Step 3: Accept any USB permission popup that appears on screen.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                     }
                 }
             }
@@ -618,7 +624,7 @@ fun RoleSelectionCards(
                 Spacer(Modifier.height(6.dp))
                 Text("Host", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isHostSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(2.dp))
-                Text("Initiate connection &\nbrowse/manage files", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isHostSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else Color.Gray)
+                Text("Initiate connection &\nbrowse/manage files", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isHostSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
             }
         }
 
@@ -636,7 +642,7 @@ fun RoleSelectionCards(
                 Spacer(Modifier.height(6.dp))
                 Text("Client", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isClientSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface)
                 Spacer(Modifier.height(2.dp))
-                Text("Receive connection &\nallow file transfers", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isClientSelected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f) else Color.Gray)
+                Text("Receive connection &\nallow file transfers", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isClientSelected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
             }
         }
     }
@@ -673,7 +679,7 @@ fun DebugLogsViewer(
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (expanded) {
                         TextButton(onClick = onClear, contentPadding = PaddingValues(2.dp)) {
-                            Text("Clear", fontSize = 11.sp, color = Color.Red)
+                            Text("Clear", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                         }
                     }
                     Icon(
@@ -689,7 +695,7 @@ fun DebugLogsViewer(
                     Text(
                         "File written to: $logFilePath",
                         fontSize = 10.sp,
-                        color = Color.Gray,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
 
@@ -709,7 +715,7 @@ fun DebugLogsViewer(
                             .padding(8.dp)
                     ) {
                         if (logLines.isEmpty()) {
-                            Text("No log messages yet...", color = Color.Gray, fontSize = 11.sp)
+                            Text("No log messages yet...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 11.sp)
                         } else {
                             LazyColumn(
                                 state = listState,
@@ -995,7 +1001,7 @@ fun RemoteFileManager(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text("Loading folder contents...", color = Color.Gray, fontSize = 14.sp)
+                    Text("Loading folder contents...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 14.sp)
                 }
             }
         } else {
@@ -1073,9 +1079,9 @@ fun AndroidFileList(
         if (files.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(48.dp), tint = Color.LightGray)
+                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
                     Spacer(Modifier.height(8.dp))
-                    Text("Directory is empty", color = Color.Gray)
+                    Text("Directory is empty", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                 }
             }
         } else {
@@ -1190,7 +1196,7 @@ fun AndroidFileRow(
             Text(
                 if (file.isDirectory) "Directory" else SecureQtSdk.Utils.formatSize(file.size),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.Gray
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
 
@@ -1372,7 +1378,7 @@ fun AndroidTransferProgressDialog(
                             Text(
                                 text = progress.statusMessage,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.Gray,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -1394,19 +1400,19 @@ fun AndroidTransferProgressDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(horizontalAlignment = Alignment.Start) {
-                        Text("Speed", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("Speed", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                         Text(progress.speed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Elapsed", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("Elapsed", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                         Text(progress.elapsed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Remaining", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("Remaining", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                         Text(progress.eta, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Progress", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                        Text("Progress", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
                         Text("${progress.percentage}%", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
@@ -1440,7 +1446,7 @@ fun AndroidTransferProgressDialog(
                             .fillMaxWidth()
                             .heightIn(max = 100.dp)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(Color.Gray.copy(alpha = 0.1f))
+                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f).copy(alpha = 0.1f))
                             .padding(8.dp)
                     ) {
                         items(progress.queue.size) { i ->
@@ -1450,7 +1456,7 @@ fun AndroidTransferProgressDialog(
                             val color = when {
                                 isDone -> Color(0xFF4CAF50)
                                 isCurrent -> MaterialTheme.colorScheme.primary
-                                else -> Color.Gray
+                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                             }
                             Text(
                                 text = "${i + 1}. $item",
@@ -1492,7 +1498,7 @@ fun AndroidTransferProgressDialog(
                     Text(
                         "Please do not disconnect the USB cable",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.Red.copy(alpha = 0.5f)
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
                     )
                 }
             }
