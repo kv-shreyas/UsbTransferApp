@@ -83,7 +83,27 @@ android {
     }
     buildTypes {
         getByName("release") {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
+            signingConfig = null
+        }
+    }
+    
+    applicationVariants.all {
+        val variant = this
+        val appName = "SecureQuickTransferApp"
+        val versionName = variant.versionName ?: "1.0.0"
+        val buildTypeName = variant.buildType.name
+
+        variant.outputs.all {
+            val output = this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl
+            if (output != null) {
+                output.outputFileName = "${appName}_v${versionName}_${buildTypeName}.apk"
+            }
         }
     }
     compileOptions {
