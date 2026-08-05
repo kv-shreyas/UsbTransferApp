@@ -1,12 +1,12 @@
 package com.example.securequicktransferapp.presentation.vm
 
-import com.example.securequicktransferapp.domain.usecases.*
+import com.example.secureqt.sdk.SecureQtSdk
 import com.example.securequicktransferapp.domain.constants.Constants
 import com.example.securequicktransferapp.domain.model.RemoteFile
-import com.example.securequicktransferapp.presentation.ui.formatSize
+import com.example.securequicktransferapp.domain.model.TransferProgress
+import com.example.securequicktransferapp.domain.usecases.UsbUseCases
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.isActive
@@ -15,22 +15,12 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.io.FileInputStream
 
 class MainViewModel(
-    private val connectUseCase: ConnectUsbUseCase,
-    private val disconnectUseCase: DisconnectUsbUseCase,
-    private val receiveUseCase: ReceiveFileUseCase,
-    private val sendUseCase: SendFileUseCase,
-    private val fetchUseCase: FetchFileUseCase,
-    private val fetchDirectoryUseCase: FetchDirectoryUseCase,
-    private val listDirUseCase: ListDirectoryUseCase,
-    private val cancelTransferUseCase: CancelTransferUseCase,
-    private val createFolderUseCase: CreateFolderUseCase,
-    private val deleteFileUseCase: DeleteFileUseCase,
-    private val renameFileUseCase: RenameFileUseCase,
+    private val usbUseCases: UsbUseCases,
     private val usbRepository: com.example.securequicktransferapp.domain.repo.UsbRepository
 ) {
+    val TAG = "MainViewModel"
     private val scope = CoroutineScope(Dispatchers.IO)
     private val usbMutex = Mutex()
 
@@ -43,22 +33,7 @@ class MainViewModel(
     private val _currentRemotePath = MutableStateFlow("/sdcard")
     val currentRemotePath: StateFlow<String> = _currentRemotePath
 
-    data class TransferProgress(
-        val isVisible: Boolean = false,
-        val filename: String = "",
-        val percentage: Int = 0,
-        val speed: String = "0 B/s",
-        val transferred: String = "0 B",
-        val total: String = "0 B",
-        val eta: String = "Unknown",
-        val elapsed: String = "0s",
-        val currentFileIndex: Int = 0,
-        val totalFiles: Int = 0,
-        val statusMessage: String = "",
-        val isComplete: Boolean = false,
-        val batchElapsed: String = "0s",
-        val queue: List<String> = emptyList()
-    )
+
 
     private val _progressState = MutableStateFlow(TransferProgress())
     val progressState: StateFlow<TransferProgress> = _progressState
@@ -86,12 +61,12 @@ class MainViewModel(
                     _physicallyConnectedDeviceName.value = name ?: "No Device"
 
                     if (!connected && wasConnected) {
-                        println("[ViewModel] USB cable physically unplugged from Desktop! Auto-disconnecting...")
+                        println($$"$$TAG USB cable physically unplugged from Desktop! Auto-disconnecting...")
                         if (_state.value != "Idle" && _state.value != "Searching..." && !_state.value.contains("Disconnect")) {
                             disconnect()
                         }
                     } else if (!connected && _state.value != "Idle" && _state.value != "Searching..." && !_state.value.contains("Disconnect") && !_state.value.contains("Failed") && !_state.value.contains("Connection Lost")) {
-                        println("[ViewModel] USB device no longer present on bus! Auto-disconnecting...")
+                        println($$"$$TAG USB device no longer present on bus! Auto-disconnecting...")
                         disconnect()
                     }
                 } catch (e: Exception) {
@@ -112,7 +87,7 @@ class MainViewModel(
     }
 
     fun cancelTransfer() {
-        println("[ViewModel] Cancelling transfer job locally...")
+        println($$"$$TAG Cancelling transfer job locally...")
         transferJob?.cancel()
         transferJob = null
         
@@ -126,12 +101,12 @@ class MainViewModel(
             
             usbMutex.withLock {
                 try {
-                    cancelTransferUseCase()
+                    usbUseCases.cancelTransfer()
                 } catch (e: Exception) {
-                    println("[ViewModel] Cancel transfer error: ${e.message}")
+                    println($$"$$TAG Cancel transfer error: ${e.message}")
                 }
             }
-            println("[ViewModel] Transfer cancelled successfully.")
+            println($$"$$TAG Transfer cancelled successfully.")
         }
     }
 
@@ -147,11 +122,11 @@ class MainViewModel(
             connectionMonitorJob = null
 
             usbMutex.withLock {
-                println("[ViewModel] Attempting to connect to USB device...")
+                println($$"$$TAG Attempting to connect to USB device...")
                 _state.value = "Searching..."
-                val success = connectUseCase()
+                val success = usbUseCases.connectUsb()
                 _state.value = if (success) "Ready" else "Connection Failed"
-                println("[ViewModel] Connection status: success=$success")
+                println($$"$$TAG Connection status: success=$success")
                 if (success) {
                     refreshRemoteFilesInternal()
                     startConnectionMonitor()
@@ -168,16 +143,16 @@ class MainViewModel(
 
     fun disconnect() {
         if (_state.value == "Idle" || _state.value == "Disconnecting..." || _state.value.contains("Disconnected")) return
-        println("[ViewModel] Force disconnecting device...")
+        println($$"$$TAG Force disconnecting device...")
         _state.value = "Disconnecting..."
         transferJob?.cancel()
         connectionMonitorJob?.cancel()
         
         scope.launch {
             try {
-                disconnectUseCase()
+                usbUseCases.disconnectUsb()
             } catch (e: Exception) {
-                println("[ViewModel] Disconnect error: ${e.message}")
+                println($$"$$TAG Disconnect error: ${e.message}")
             } finally {
                 _remoteFiles.value = emptyList()
                 _currentRemotePath.value = "/sdcard"
@@ -197,21 +172,27 @@ class MainViewModel(
 
     private suspend fun refreshRemoteFilesInternal() {
         try {
-            println("[ViewModel] Listing directory: ${_currentRemotePath.value}")
+            println($$"$$TAG Listing directory: ${_currentRemotePath.value}")
             _state.value = "Listing ${_currentRemotePath.value}..."
-            val files = listDirUseCase(_currentRemotePath.value)
+            val files = usbUseCases.listDirectory(_currentRemotePath.value)
+            
+            if (!usbRepository.checkPhysicalConnection().first) {
+                println($$"$$TAG Device disconnected during listDirectory. Aborting refresh.")
+                return
+            }
+            
             _remoteFiles.value = files
             _state.value = "Ready"
-            println("[ViewModel] Successfully listed ${files.size} items.")
+            println($$"$$TAG Successfully listed ${files.size} items.")
         } catch (e: Exception) {
-            println("[ViewModel] Error listing directory: ${e.message}")
+            println($$"$$TAG Error listing directory: ${e.message}")
             _state.value = "Error: ${e.message}"
         }
     }
 
     fun navigateTo(file: RemoteFile) {
         if (file.isDirectory) {
-            println("[ViewModel] Navigating into directory: ${file.path}")
+            println($$"$$TAG Navigating into directory: ${file.path}")
             _currentRemotePath.value = file.path
             refreshRemoteFiles()
         }
@@ -224,7 +205,7 @@ class MainViewModel(
         // If parent is empty or somehow goes above sdcard when restricted, clamp it (though our root is / or /sdcard)
         val nextPath = if (parent.isEmpty()) "/" else parent
         
-        println("[ViewModel] Navigating up from $current to $nextPath")
+        println($$"$$TAG Navigating up from $current to $nextPath")
         _currentRemotePath.value = nextPath
         refreshRemoteFiles()
     }
@@ -232,33 +213,61 @@ class MainViewModel(
     fun sendFiles(files: List<File>, targetPath: String? = null) {
         val destinationPath = targetPath ?: _currentRemotePath.value
         transferJob = scope.launch {
-            val total = files.size
+            val allItems = mutableListOf<Pair<File, String>>()
+            fun flatten(file: File, remoteParent: String) {
+                if (file.isDirectory) {
+                    val remoteDir = if (remoteParent.endsWith("/")) remoteParent + file.name else "$remoteParent/${file.name}"
+                    allItems.add(Pair(file, remoteDir))
+                    file.listFiles()?.forEach { flatten(it, remoteDir) }
+                } else {
+                    allItems.add(Pair(file, remoteParent))
+                }
+            }
+            files.forEach { flatten(it, destinationPath) }
+
+            val total = allItems.size
             val batchStartTime = System.currentTimeMillis()
-            val queueNames = files.map { it.name }
+            val queueNames = allItems.map { it.first.name }
+            
             _progressState.value = _progressState.value.copy(
                 isVisible = true, 
                 totalFiles = total, 
                 isComplete = false,
                 queue = queueNames
             )
-            for ((index, file) in files.withIndex()) {
+            
+            for ((index, item) in allItems.withIndex()) {
                 if (!isActive) break
+                val (file, remoteParentOrPath) = item
                 _progressState.value = _progressState.value.copy(currentFileIndex = index + 1)
+                
                 if (file.isDirectory) {
-                    sendDirectory(file, destinationPath, batchStartTime)
+                    usbMutex.withLock {
+                        _state.value = "Creating Folder: ${file.name}..."
+                        try {
+                            usbUseCases.createFolder(remoteParentOrPath)
+                            _state.value = "Folder Created: ${file.name}"
+                        } catch (e: Exception) {
+                            if (e !is kotlinx.coroutines.CancellationException) {
+                                println($$"$$TAG Error creating folder: ${e.message}")
+                            }
+                        }
+                    }
                 } else {
-                    sendSingleFile(file, destinationPath, batchStartTime)
+                    transferSingleFile(file, remoteParentOrPath, batchStartTime)
                 }
             }
+            
             if (isActive) {
                 _progressState.value = _progressState.value.copy(isComplete = true, statusMessage = "Transfer Complete")
+                refreshRemoteFiles()
             }
         }
     }
 
-    private suspend fun sendSingleFile(file: File, destinationPath: String, batchStartTime: Long = System.currentTimeMillis()) {
+    private suspend fun transferSingleFile(file: File, destinationPath: String, batchStartTime: Long = System.currentTimeMillis()) {
         usbMutex.withLock {
-            println("[ViewModel] Sending file: ${file.name} (size: ${file.length()} bytes) to $destinationPath")
+            println($$"$$TAG Sending file/directory: ${file.name} to $destinationPath")
             _state.value = "Sending: ${file.name}..."
 
             val startTime = System.currentTimeMillis()
@@ -267,7 +276,7 @@ class MainViewModel(
             _progressState.value = _progressState.value.copy(
                 isVisible = true,
                 filename = file.name,
-                total = formatSize(fileSize),
+                total = if (file.isDirectory) "Directory" else SecureQtSdk.Utils.formatSize(fileSize),
                 percentage = 0,
                 speed = "0 B/s",
                 transferred = "0 B",
@@ -277,35 +286,33 @@ class MainViewModel(
             )
 
             try {
-                sendUseCase(file, destinationPath).collect { progress -> 
+                usbUseCases.sendFile(file, destinationPath, isDirectory = file.isDirectory).collect { progress -> 
                     _state.value = "Sending: $progress%" 
-                    if (progress % 2 == 0) println("[ViewModel] Upload progress: $progress%")
-
                     val currentTime = System.currentTimeMillis()
                     val elapsedSeconds = (currentTime - startTime) / 1000L
                     val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
-                    val transferredBytes = (fileSize * progress) / 100
-
-                    val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
-                    val speed = formatSize(speedBytesPerSec) + "/s"
+                    
+                    val transferredBytes = if (file.isDirectory) 0L else (fileSize * progress) / 100
+                    val speedBytesPerSec = if (elapsedSeconds > 0 && !file.isDirectory) (transferredBytes / elapsedSeconds) else 0L
+                    val speed = if (file.isDirectory) "Calculating..." else SecureQtSdk.Utils.formatSize(speedBytesPerSec) + "/s"
 
                     val eta = if (speedBytesPerSec > 0) {
                         val remainingBytes = fileSize - transferredBytes
                         val remainingSeconds = remainingBytes / speedBytesPerSec
-                        formatTime(remainingSeconds)
+                        SecureQtSdk.Utils.formatTime(remainingSeconds)
                     } else "Calculating..."
 
                     _progressState.value = _progressState.value.copy(
                         percentage = progress,
                         speed = speed,
-                        transferred = formatSize(transferredBytes),
+                        transferred = if (file.isDirectory) "Processing..." else SecureQtSdk.Utils.formatSize(transferredBytes),
                         eta = eta,
-                        elapsed = formatTime(elapsedSeconds),
-                        batchElapsed = formatTime(batchElapsedSeconds)
+                        elapsed = SecureQtSdk.Utils.formatTime(elapsedSeconds),
+                        batchElapsed = SecureQtSdk.Utils.formatTime(batchElapsedSeconds)
                     )
                 }
                 _state.value = "Sent Successfully ✅"
-                println("[ViewModel] File sent successfully: ${file.name}")
+                println($$"$$TAG File/Directory sent successfully: ${file.name}")
                 refreshRemoteFilesInternal()
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
@@ -330,11 +337,7 @@ class MainViewModel(
             for ((index, remoteFile) in remoteFiles.withIndex()) {
                 if (!isActive) break
                 _progressState.value = _progressState.value.copy(currentFileIndex = index + 1)
-                if (remoteFile.isDirectory) {
-                    fetchDirectory(remoteFile, batchStartTime)
-                } else {
-                    fetchSingleFile(remoteFile, batchStartTime)
-                }
+                executeFetch(remoteFile, batchStartTime)
             }
             if (isActive) {
                 _progressState.value = _progressState.value.copy(isComplete = true, statusMessage = "Fetch Complete")
@@ -342,13 +345,13 @@ class MainViewModel(
         }
     }
 
-    private suspend fun fetchSingleFile(remoteFile: RemoteFile, batchStartTime: Long = System.currentTimeMillis()) {
+    private suspend fun executeFetch(remoteFile: RemoteFile, batchStartTime: Long = System.currentTimeMillis()) {
         val downloadDir = File(System.getProperty("user.home"), "Downloads")
         downloadDir.mkdirs()
         val localFile = File(downloadDir, remoteFile.name)
 
         usbMutex.withLock {
-            println("[ViewModel] Fetching file: ${remoteFile.name} (size: ${remoteFile.size} bytes)")
+            println($$"$$TAG Fetching: ${remoteFile.name} (size: ${remoteFile.size} bytes)")
             _state.value = "Fetching: ${remoteFile.name}..."
 
             val startTime = System.currentTimeMillis()
@@ -357,7 +360,7 @@ class MainViewModel(
             _progressState.value = _progressState.value.copy(
                 isVisible = true,
                 filename = remoteFile.name,
-                total = formatSize(fileSize),
+                total = if (remoteFile.isDirectory) "Directory" else SecureQtSdk.Utils.formatSize(fileSize),
                 percentage = 0,
                 speed = "0 B/s",
                 transferred = "0 B",
@@ -367,29 +370,32 @@ class MainViewModel(
             )
 
             try {
-                fetchUseCase(remoteFile.path, localFile).collect { progress -> 
+                val flow = if (remoteFile.isDirectory) usbUseCases.fetchDirectory(remoteFile.path, localFile)
+                           else usbUseCases.fetchFile(remoteFile.path, localFile)
+                
+                flow.collect { progress -> 
                     _state.value = "Fetching: $progress%" 
                     val currentTime = System.currentTimeMillis()
                     val elapsedSeconds = (currentTime - startTime) / 1000L
                     val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
-                    val transferredBytes = (fileSize * progress) / 100
+                    val transferredBytes = if (remoteFile.isDirectory) 0L else (fileSize * progress) / 100
 
-                    val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
-                    val speed = formatSize(speedBytesPerSec) + "/s"
+                    val speedBytesPerSec = if (elapsedSeconds > 0 && !remoteFile.isDirectory) (transferredBytes / elapsedSeconds) else 0L
+                    val speed = if (remoteFile.isDirectory) "Calculating..." else SecureQtSdk.Utils.formatSize(speedBytesPerSec) + "/s"
 
                     val eta = if (speedBytesPerSec > 0) {
                         val remainingBytes = fileSize - transferredBytes
                         val remainingSeconds = remainingBytes / speedBytesPerSec
-                        formatTime(remainingSeconds)
+                        SecureQtSdk.Utils.formatTime(remainingSeconds)
                     } else "Calculating..."
 
                     _progressState.value = _progressState.value.copy(
                         percentage = progress,
                         speed = speed,
-                        transferred = formatSize(transferredBytes),
+                        transferred = if (remoteFile.isDirectory) "Processing..." else SecureQtSdk.Utils.formatSize(transferredBytes),
                         eta = eta,
-                        elapsed = formatTime(elapsedSeconds),
-                        batchElapsed = formatTime(batchElapsedSeconds)
+                        elapsed = SecureQtSdk.Utils.formatTime(elapsedSeconds),
+                        batchElapsed = SecureQtSdk.Utils.formatTime(batchElapsedSeconds)
                     )
                 }
                 _state.value = "Fetched to ${localFile.absolutePath} ✅"
@@ -402,180 +408,6 @@ class MainViewModel(
         }
     }
 
-    private suspend fun sendDirectory(dir: File, destinationPath: String, batchStartTime: Long = System.currentTimeMillis(), currentFileIndex: Int = 1, totalFiles: Int = 1) {
-        usbMutex.withLock {
-            println("[ViewModel] Preparing to send directory: ${dir.name} to $destinationPath")
-            
-            val tempZip = withContext(Dispatchers.IO) {
-                File.createTempFile(dir.name, ".zip")
-            }
-            try {
-                _progressState.value = _progressState.value.copy(
-                    isVisible = true,
-                    filename = "${dir.name}.zip",
-                    statusMessage = "Zipping ${dir.name}...",
-                    currentFileIndex = currentFileIndex,
-                    totalFiles = totalFiles
-                )
-                zipDirectory(dir, tempZip) { currentItem ->
-                    _progressState.value = _progressState.value.copy(statusMessage = "Zipping: $currentItem")
-                }
-                
-                println("[ViewModel] Sending zipped directory: ${tempZip.name} to $destinationPath")
-                _state.value = "Sending: ${dir.name}.zip..."
-                
-                val startTime = System.currentTimeMillis()
-                val fileSize = tempZip.length()
-                
-                _progressState.value = _progressState.value.copy(
-                    total = formatSize(fileSize),
-                    statusMessage = "Sending ${dir.name}.zip..."
-                )
-
-                sendUseCase(tempZip, destinationPath, isDirectory = true, remoteFileName = "${dir.name}.zip").collect { progress -> 
-                    _state.value = "Sending: $progress%" 
-                    val currentTime = System.currentTimeMillis()
-                    val elapsedSeconds = (currentTime - startTime) / 1000L
-                    val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
-                    val transferredBytes = (fileSize * progress) / 100
-                    val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
-                    val speed = formatSize(speedBytesPerSec) + "/s"
-                    val eta = if (speedBytesPerSec > 0) {
-                        formatTime((fileSize - transferredBytes) / speedBytesPerSec)
-                    } else "Calculating..."
-
-                    _progressState.value = _progressState.value.copy(
-                        percentage = progress,
-                        speed = speed,
-                        transferred = formatSize(transferredBytes),
-                        eta = eta,
-                        elapsed = formatTime(elapsedSeconds),
-                        batchElapsed = formatTime(batchElapsedSeconds)
-                    )
-                }
-                _state.value = "Sent Successfully ✅"
-                println("[ViewModel] Directory sent successfully: ${dir.name}")
-                refreshRemoteFilesInternal()
-            } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException) {
-                    _state.value = "Error: ${e.message}"
-                    _progressState.value = _progressState.value.copy(statusMessage = "Error: ${e.message}", isComplete = true)
-                }
-            } finally {
-                withContext(Dispatchers.IO) { tempZip.delete() }
-            }
-        }
-    }
-
-    private suspend fun zipDirectory(dir: File, zipFile: File, onProgress: (String) -> Unit) = withContext(Dispatchers.IO) {
-        java.util.zip.ZipOutputStream(java.io.FileOutputStream(zipFile)).use { zout ->
-            dir.walkTopDown().forEach { file ->
-                ensureActive()
-                val entryName = file.toRelativeString(dir).replace('\\', '/')
-                if (entryName.isNotEmpty()) {
-                    val entry = java.util.zip.ZipEntry(if (file.isDirectory) "$entryName/" else entryName)
-                    zout.putNextEntry(entry)
-                    if (!file.isDirectory) {
-                        onProgress(entryName)
-                        file.inputStream().use { input ->
-                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                            var bytes = input.read(buffer)
-                            while (bytes >= 0) {
-                                ensureActive()
-                                zout.write(buffer, 0, bytes)
-                                bytes = input.read(buffer)
-                            }
-                        }
-                    }
-                    zout.closeEntry()
-                }
-            }
-        }
-    }
-
-    private suspend fun fetchDirectory(remoteFile: RemoteFile, batchStartTime: Long = System.currentTimeMillis()) {
-        val downloadDir = File(System.getProperty("user.home"), "Downloads")
-        downloadDir.mkdirs()
-        val localFile = File(downloadDir, "${remoteFile.name}.zip")
-
-        usbMutex.withLock {
-            println("[ViewModel] Fetching directory: ${remoteFile.name}")
-            _state.value = "Fetching: ${remoteFile.name}..."
-
-            val startTime = System.currentTimeMillis()
-            
-            _progressState.value = _progressState.value.copy(
-                isVisible = true, 
-                filename = "${remoteFile.name}.zip", 
-                total = "Calculating...",
-                percentage = 0,
-                speed = "0 B/s",
-                transferred = "0 B",
-                eta = "Calculating...",
-                elapsed = "0s",
-                statusMessage = "Fetching ${remoteFile.name}.zip..."
-            )
-
-            try {
-                fetchDirectoryUseCase(remotePath = remoteFile.path, localFile = localFile).collect { progress -> 
-                    val currentTime = System.currentTimeMillis()
-                    val elapsedSeconds = (currentTime - startTime) / 1000L
-                    val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
-                    val transferredBytes = localFile.length()
-
-                    val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
-                    val speed = formatSize(speedBytesPerSec) + "/s"
-
-                    _progressState.value = _progressState.value.copy(
-                        percentage = progress,
-                        speed = speed,
-                        transferred = formatSize(transferredBytes),
-                        total = "ZIP Stream",
-                        eta = "Processing...",
-                        elapsed = formatTime(elapsedSeconds),
-                        batchElapsed = formatTime(batchElapsedSeconds),
-                        statusMessage = "Downloading ${remoteFile.name}.zip..."
-                    )
-                }
-                _state.value = "Fetched to ${localFile.absolutePath} ✅"
-                println("[ViewModel] Directory fetched successfully: ${remoteFile.name}")
-            } catch (e: Exception) {
-                if (e !is kotlinx.coroutines.CancellationException) {
-                    _state.value = "Error: ${e.message}"
-                    _progressState.value = _progressState.value.copy(statusMessage = "Error: ${e.message}", isComplete = true)
-                }
-            }
-        }
-    }
-
-    private fun formatTime(seconds: Long): String {
-        return when {
-            seconds < 60 -> "${seconds}s"
-            seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
-            else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
-        }
-    }
-
-
-
-    fun receiveFile() {
-        scope.launch {
-            val file = File("received.bin")
-            println("[ViewModel] Receiving data to: ${file.absolutePath}")
-            usbMutex.withLock {
-                try {
-                    receiveUseCase(file).collect { bytes -> 
-                        _state.value = "Received: $bytes bytes" 
-                    }
-                    _state.value = "Completed ✅"
-                    println("[ViewModel] Data reception completed.")
-                } catch (e: Exception) {
-                    println("[ViewModel] Error receiving file: ${e.message}")
-                    _state.value = "Error: ${e.message}"
-                }
-            }
-        }
-    }
 
     fun deleteFile(remoteFile: RemoteFile) {
         scope.launch {
@@ -627,7 +459,7 @@ class MainViewModel(
                 _state.value = "Creating folder: $folderName..."
                 try {
                     val remotePath = "${_currentRemotePath.value}/$folderName".replace("//", "/")
-                    val success = createFolderUseCase(remotePath)
+                    val success = usbUseCases.createFolder(remotePath)
                     if (success) {
                         _state.value = "Folder created successfully"
                         refreshRemoteFilesInternal()
@@ -641,14 +473,31 @@ class MainViewModel(
         }
     }
 
+    fun checkRemoteFileExists(targetFolder: String, fileName: String, onResult: (Boolean) -> Unit) {
+        scope.launch {
+            val exists = usbMutex.withLock {
+                try {
+                    val files = usbUseCases.listDirectory(targetFolder)
+                    files.any { it.name == fileName }
+                } catch (e: Exception) {
+                    false
+                }
+            }
+            withContext(Dispatchers.Main) {
+                onResult(exists)
+            }
+        }
+    }
+
     fun sendTextAsRemoteFile(fileName: String, content: String, targetFolder: String) {
         scope.launch {
             usbMutex.withLock {
+                println("[ViewModel] sendTextAsRemoteFile: Preparing to send $fileName to $targetFolder...")
                 try {
                     val tempFile = File.createTempFile("smartnav_", "_$fileName")
                     tempFile.writeText(content)
                     val destinationPath = targetFolder.trimEnd('/')
-                    sendUseCase(tempFile, destinationPath, isDirectory = false, remoteFileName = fileName).collect { progress ->
+                    usbUseCases.sendFile(tempFile, destinationPath, isDirectory = false, remoteFileName = fileName).collect { progress ->
                         _progressState.value = _progressState.value.copy(
                             isVisible = true,
                             filename = fileName,
@@ -658,9 +507,10 @@ class MainViewModel(
                     }
                     tempFile.delete()
                     _progressState.value = TransferProgress(isComplete = true, statusMessage = "Sent $fileName")
+                    println("[ViewModel] sendTextAsRemoteFile: Successfully sent $fileName to $destinationPath.")
                     refreshRemoteFilesInternal()
                 } catch (e: Exception) {
-                    println("[ViewModel] Error sending text file $fileName: ${e.message}")
+                    println("[ViewModel] sendTextAsRemoteFile: Error sending text file $fileName: ${e.message}")
                 }
             }
         }
@@ -681,9 +531,7 @@ class MainViewModel(
                 Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_VECTOR}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
                 Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_ICONS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
                 Pair(Constants.SmartnavRoot.DIR_DATABASE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair(Constants.SmartnavRoot.DIR_LOG_MANAGER, Pair(Constants.SmartnavRoot.FILE_LOG_COUNTER, Constants.SmartnavRoot.DEFAULT_LOG_COUNTER_VALUE)),
-                Pair(Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("${Constants.SmartnavRoot.DIR_DEV_LOGS}/${Constants.SmartnavRoot.DIR_CRASH_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
+                Pair(Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
             )
             for ((folder, filePair) in foldersAndFiles) {
                 val (fileName, content) = filePair

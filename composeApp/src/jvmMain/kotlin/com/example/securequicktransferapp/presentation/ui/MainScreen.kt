@@ -25,7 +25,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.WindowPosition
+import androidx.compose.ui.window.rememberWindowState
 import com.example.securequicktransferapp.domain.model.RemoteFile
+import com.example.secureqt.sdk.SecureQtSdk
+import com.example.securequicktransferapp.domain.model.TransferProgress
 import com.example.securequicktransferapp.presentation.vm.MainViewModel
 import java.io.File
 import javax.swing.JFileChooser
@@ -188,7 +192,7 @@ fun MainScreen(vm: MainViewModel) {
                     modifier = Modifier.weight(1f),
                     onFolderClick = { vm.navigateTo(it) },
                     onFilesFetch = { vm.fetchFiles(it) },
-                    onFileDelete = { vm.deleteFile(it) },
+                    onFilesDelete = { files -> files.forEach { vm.deleteFile(it) } },
                     onFileRename = { file, newName -> vm.renameFile(file, newName) }
                 )
 
@@ -416,7 +420,7 @@ fun FileList(
     modifier: Modifier = Modifier,
     onFolderClick: (RemoteFile) -> Unit, 
     onFilesFetch: (List<RemoteFile>) -> Unit,
-    onFileDelete: (RemoteFile) -> Unit,
+    onFilesDelete: (List<RemoteFile>) -> Unit,
     onFileRename: (RemoteFile, String) -> Unit
 ) {
     var selectedFiles by androidx.compose.runtime.remember { mutableStateOf(setOf<RemoteFile>()) }
@@ -451,6 +455,18 @@ fun FileList(
                             Spacer(Modifier.width(8.dp))
                             Text("Fetch Selected")
                         }
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = { 
+                                onFilesDelete(selectedFiles.toList())
+                                selectedFiles = emptySet()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Delete Selected")
+                        }
                     }
                 }
                 LazyColumn(modifier = Modifier.weight(1f)) {
@@ -463,7 +479,7 @@ fun FileList(
                             },
                             onFolderClick = onFolderClick, 
                             onFileFetch = { onFilesFetch(listOf(it)) }, 
-                            onFileDelete = onFileDelete,
+                            onFileDelete = { onFilesDelete(listOf(it)) },
                             onFileRename = onFileRename
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
@@ -566,7 +582,7 @@ fun FileRow(
             Column(modifier = Modifier.weight(1f)) {
                 Text(file.name, fontWeight = FontWeight.Medium)
                 Text(
-                    if (file.isDirectory) "Directory" else formatSize(file.size),
+                    if (file.isDirectory) "Directory" else SecureQtSdk.Utils.formatSize(file.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = Color.Gray
                 )
@@ -663,16 +679,11 @@ fun FileRow(
         }
     }
 
-    fun formatSize(bytes: Long): String {
-        if (bytes < 1024) return "$bytes B"
-        val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
-        val pre = "KMGTPE"[exp - 1]
-        return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
-    }
+
 
     @Composable
     fun TransferProgressDialog(
-        progress: com.example.securequicktransferapp.presentation.vm.MainViewModel.TransferProgress,
+        progress: TransferProgress,
         onCancel: () -> Unit,
         onDismiss: () -> Unit
     ) {

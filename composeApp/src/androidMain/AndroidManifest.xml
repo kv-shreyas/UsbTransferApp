@@ -55,7 +55,7 @@
         </activity>
 
         <receiver
-            android:name=".data.usb.UsbPermissionReceiver"
+            android:name=".data.usb.broadcast.UsbPermissionReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="com.example.USB_PERMISSION" />
@@ -63,7 +63,7 @@
         </receiver>
 
         <receiver
-            android:name=".data.usb.UsbAttachmentReceiver"
+            android:name=".data.usb.broadcast.UsbAttachmentReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
@@ -75,7 +75,7 @@
         </receiver>
 
         <service
-            android:name=".data.usb.UsbClientForegroundService"
+            android:name=".data.usb.service.UsbClientForegroundService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|dataSync" />
 

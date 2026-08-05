@@ -1,5 +1,6 @@
 package com.example.securequicktransferapp.data.logging
 
+import com.example.secureqt.sdk.logging.ILogger
 import android.content.Context
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -21,7 +22,7 @@ import javax.inject.Singleton
 @Singleton
 class UsbLogger @Inject constructor(
     @param:ApplicationContext private val context: Context
-) {
+) : ILogger {
     private val _logLines = MutableStateFlow<List<String>>(emptyList())
     val logLines: StateFlow<List<String>> = _logLines.asStateFlow()
 
@@ -90,10 +91,10 @@ class UsbLogger @Inject constructor(
         }
     }
 
-    fun i(tag: String, message: String) = log("INFO", tag, message)
-    fun d(tag: String, message: String) = log("DEBUG", tag, message)
-    fun w(tag: String, message: String, throwable: Throwable? = null) = log("WARN", tag, message, throwable)
-    fun e(tag: String, message: String, throwable: Throwable? = null) = log("ERROR", tag, message, throwable)
+    override fun i(tag: String, message: String) = log("INFO", tag, message)
+    override fun d(tag: String, message: String) = log("DEBUG", tag, message)
+    override fun w(tag: String, message: String, throwable: Throwable?) = log("WARN", tag, message, throwable)
+    override fun e(tag: String, message: String, throwable: Throwable?) = log("ERROR", tag, message, throwable)
 
     fun getLogFilePath(): String {
         return logFile?.absolutePath ?: "Unavailable"

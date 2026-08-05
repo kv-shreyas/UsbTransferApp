@@ -3,22 +3,28 @@ package com.example.securequicktransferapp.presentation.viewmodel
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbDevice
 import android.util.Log
+import com.example.secureqt.sdk.SecureQtSdk
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.securequicktransferapp.data.UsbRole
 import com.example.securequicktransferapp.data.UsbUiState
-import com.example.securequicktransferapp.data.usb.AoaConnectionManager
-import com.example.securequicktransferapp.data.usb.AoaHostSwitcher
-import com.example.securequicktransferapp.data.usb.DelegatingUsbConnection
-import com.example.securequicktransferapp.data.usb.HostCommandSender
-import com.example.securequicktransferapp.data.usb.UsbConnectionManager
-import com.example.securequicktransferapp.data.usb.UsbDataSource
-import com.example.securequicktransferapp.data.usb.UsbManagerWrapper
-import com.example.securequicktransferapp.data.usb.UsbPermissionBus
-import com.example.securequicktransferapp.data.usb.UsbPermissionEvent
-import com.example.securequicktransferapp.data.usb.UsbCommandProcessor
+import com.example.securequicktransferapp.domain.model.TransferProgress
+import com.example.securequicktransferapp.data.logging.UsbLogger
+import com.example.securequicktransferapp.data.preferences.UsbPreferencesManager
+import com.example.securequicktransferapp.data.usb.connection.AoaConnectionManager
+import com.example.securequicktransferapp.data.usb.connection.AoaHostSwitcher
+import com.example.securequicktransferapp.data.usb.service.ClientServiceController
+import com.example.securequicktransferapp.data.usb.connection.DelegatingUsbConnection
+import com.example.securequicktransferapp.data.usb.command.HostCommandSender
+import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
+import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
+import com.example.securequicktransferapp.data.usb.connection.UsbManagerWrapper
+import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionBus
+import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionEvent
+import com.example.securequicktransferapp.data.usb.command.UsbCommandProcessor
 import com.example.securequicktransferapp.domain.constants.Constants
 import com.example.securequicktransferapp.domain.model.RemoteFile
+import com.example.securequicktransferapp.domain.usecases.UsbUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -46,17 +52,10 @@ class UsbTransferViewModel @Inject constructor(
     private val dataSource: UsbDataSource,
     private val commandProcessor: UsbCommandProcessor,
     private val hostCommandSender: HostCommandSender,
-    private val listDirectoryUseCase: com.example.securequicktransferapp.domain.usecases.ListDirectoryUseCase,
-    private val sendFileUseCase: com.example.securequicktransferapp.domain.usecases.SendFileUseCase,
-    private val fetchFileUseCase: com.example.securequicktransferapp.domain.usecases.FetchFileUseCase,
-    private val fetchDirectoryUseCase: com.example.securequicktransferapp.domain.usecases.FetchDirectoryUseCase,
-    private val deleteFileUseCase: com.example.securequicktransferapp.domain.usecases.DeleteFileUseCase,
-    private val renameFileUseCase: com.example.securequicktransferapp.domain.usecases.RenameFileUseCase,
-    private val createFolderUseCase: com.example.securequicktransferapp.domain.usecases.CreateFolderUseCase,
-    private val cancelTransferUseCase: com.example.securequicktransferapp.domain.usecases.CancelTransferUseCase,
-    private val preferencesManager: com.example.securequicktransferapp.data.preferences.UsbPreferencesManager,
-    private val clientServiceController: com.example.securequicktransferapp.data.usb.ClientServiceController,
-    val usbLogger: com.example.securequicktransferapp.data.logging.UsbLogger
+    private val usbUseCases: UsbUseCases,
+    private val preferencesManager: UsbPreferencesManager,
+    private val clientServiceController: ClientServiceController,
+    val usbLogger: UsbLogger
 ) : ViewModel() {
 
     companion object {
@@ -81,22 +80,7 @@ class UsbTransferViewModel @Inject constructor(
     private val _isRemoteLoading = MutableStateFlow(false)
     val isRemoteLoading: StateFlow<Boolean> = _isRemoteLoading
 
-    data class TransferProgress(
-        val isVisible: Boolean = false,
-        val filename: String = "",
-        val percentage: Int = 0,
-        val speed: String = "0 B/s",
-        val transferred: String = "0 B",
-        val total: String = "0 B",
-        val eta: String = "Unknown",
-        val elapsed: String = "0s",
-        val currentFileIndex: Int = 0,
-        val totalFiles: Int = 0,
-        val statusMessage: String = "",
-        val isComplete: Boolean = false,
-        val batchElapsed: String = "0s",
-        val queue: List<String> = emptyList()
-    )
+
 
     private val _progressState = MutableStateFlow(TransferProgress())
     val progressState: StateFlow<TransferProgress> = _progressState
@@ -171,6 +155,9 @@ class UsbTransferViewModel @Inject constructor(
     private var commandJob: Job? = null
     private var connectJob: Job? = null
     private var cableMonitorJob: Job? = null
+
+    private var fetchRemoteJob: Job? = null
+
 
     private fun startCableMonitor() {
         cableMonitorJob?.cancel()
@@ -531,7 +518,7 @@ class UsbTransferViewModel @Inject constructor(
                     onReceiveStarted = { fileName, fileSize ->
                         receiveStartTime = System.currentTimeMillis()
                         receiveFileSize = fileSize
-                        val formattedSize = if (fileSize > 0) formatSize(fileSize) else "Unknown"
+                        val formattedSize = if (fileSize > 0) SecureQtSdk.Utils.formatSize(fileSize) else "Unknown"
                         _uiState.value = UsbUiState.Receiving(fileName, 0f)
                         _progressState.value = _progressState.value.copy(
                             isVisible = true,
@@ -554,26 +541,26 @@ class UsbTransferViewModel @Inject constructor(
                         _uiState.value = UsbUiState.Receiving(currentFileName, progress)
                         val elapsedSec = (System.currentTimeMillis() - receiveStartTime) / 1000L
                         val transferredBytes = (receiveFileSize * progress).toLong()
-                        val speedSec = if (elapsedSec > 0) formatSize(transferredBytes / elapsedSec) + "/s" else "Calculating..."
+                        val speedSec = if (elapsedSec > 0) SecureQtSdk.Utils.formatSize(transferredBytes / elapsedSec) + "/s" else "Calculating..."
                         val etaStr = if (elapsedSec > 0 && progress > 0f) {
                             val remainingBytes = receiveFileSize - transferredBytes
                             val speedBps = transferredBytes / elapsedSec
-                            if (speedBps > 0) formatTime(remainingBytes / speedBps) else "Calculating..."
+                            if (speedBps > 0) SecureQtSdk.Utils.formatTime(remainingBytes / speedBps) else "Calculating..."
                         } else "Calculating..."
                         _progressState.value = _progressState.value.copy(
                             percentage = (progress * 100).toInt(),
                             statusMessage = "Receiving $currentFileName... (${(progress * 100).toInt()}%)",
-                            transferred = formatSize(transferredBytes),
+                            transferred = SecureQtSdk.Utils.formatSize(transferredBytes),
                             speed = speedSec,
                             eta = etaStr,
-                            elapsed = formatTime(elapsedSec)
+                            elapsed = SecureQtSdk.Utils.formatTime(elapsedSec)
                         )
                     },
                     onReceiveFinished = {
                         val currentFileName = _progressState.value.filename.ifEmpty { "File" }
                         val elapsedSec = (System.currentTimeMillis() - receiveStartTime) / 1000L
-                        val finalSizeStr = if (receiveFileSize > 0) formatSize(receiveFileSize) else "Done"
-                        val finalSpeedStr = if (elapsedSec > 0 && receiveFileSize > 0) "${formatSize(receiveFileSize / elapsedSec)}/s" else "Done"
+                        val finalSizeStr = if (receiveFileSize > 0) SecureQtSdk.Utils.formatSize(receiveFileSize) else "Done"
+                        val finalSpeedStr = if (elapsedSec > 0 && receiveFileSize > 0) "${SecureQtSdk.Utils.formatSize(receiveFileSize / elapsedSec)}/s" else "Done"
                         usbLogger.i(TAG, "Receive finished for $currentFileName ($finalSizeStr)")
                         _progressState.value = _progressState.value.copy(
                             isComplete = true,
@@ -583,7 +570,7 @@ class UsbTransferViewModel @Inject constructor(
                             transferred = finalSizeStr,
                             speed = finalSpeedStr,
                             eta = "Done",
-                            elapsed = formatTime(elapsedSec),
+                            elapsed = SecureQtSdk.Utils.formatTime(elapsedSec),
                             statusMessage = "Receive Complete - Successfully received $currentFileName"
                         )
                         _uiState.value = UsbUiState.Success("File Received Successfully ($currentFileName)")
@@ -626,7 +613,6 @@ class UsbTransferViewModel @Inject constructor(
         }
     }
 
-    private var fetchRemoteJob: kotlinx.coroutines.Job? = null
 
     fun fetchRemoteFiles(path: String, forceRefresh: Boolean = false) {
         val normalizedPath = if (path == "/" || path.isEmpty() || path == "/sdcard") "/sdcard" else path.trimEnd('/')
@@ -648,7 +634,7 @@ class UsbTransferViewModel @Inject constructor(
             _isRemoteLoading.value = true
             _remoteFiles.value = emptyList()
             try {
-                val list = listDirectoryUseCase(normalizedPath)
+                val list = usbUseCases.listDirectory(normalizedPath)
                 val sorted = list.sortedWith(compareBy<RemoteFile> { !it.isDirectory }.thenBy { it.name.lowercase() })
                 directoryCache[normalizedPath] = Pair(System.currentTimeMillis(), sorted)
                 usbLogger.i(TAG, "fetchRemoteFiles: Received ${sorted.size} items for remote path '$normalizedPath'")
@@ -670,7 +656,7 @@ class UsbTransferViewModel @Inject constructor(
         _uiState.value = UsbUiState.Success("Transfer Cancelled")
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                cancelTransferUseCase()
+                usbUseCases.cancelTransfer()
             } catch (e: Exception) {
                 usbLogger.w(TAG, "cancelTransfer error: ${e.message}")
             }
@@ -684,7 +670,7 @@ class UsbTransferViewModel @Inject constructor(
             _isRemoteLoading.value = true
             val remotePath = "$currentPath/$folderName".replace("//", "/")
             try {
-                val success = createFolderUseCase(remotePath)
+                val success = usbUseCases.createFolder(remotePath)
                 if (success) {
                     usbLogger.i(TAG, "Successfully created remote folder: $folderName")
                     fetchRemoteFiles(currentPath, forceRefresh = true)
@@ -703,20 +689,6 @@ class UsbTransferViewModel @Inject constructor(
         _progressState.value = TransferProgress()
     }
 
-    fun formatSize(bytes: Long): String {
-        if (bytes < 1024) return "$bytes B"
-        val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
-        val pre = "KMGTPE"[exp - 1]
-        return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
-    }
-
-    fun formatTime(seconds: Long): String {
-        return when {
-            seconds < 60 -> "${seconds}s"
-            seconds < 3600 -> "${seconds / 60}m ${seconds % 60}s"
-            else -> "${seconds / 3600}h ${(seconds % 3600) / 60}m"
-        }
-    }
 
     fun navigateUp() {
         val current = _currentRemotePath.value
@@ -807,7 +779,7 @@ class UsbTransferViewModel @Inject constructor(
         _progressState.value = _progressState.value.copy(
             isVisible = true,
             filename = file.name,
-            total = formatSize(fileSize),
+            total = SecureQtSdk.Utils.formatSize(fileSize),
             percentage = 0,
             speed = "0 B/s",
             transferred = "0 B",
@@ -819,44 +791,44 @@ class UsbTransferViewModel @Inject constructor(
         )
 
         try {
-            sendFileUseCase(file, destinationPath).collect { progress ->
+            usbUseCases.sendFile(file, destinationPath).collect { progress ->
                 val currentTime = System.currentTimeMillis()
                 val elapsedSeconds = (currentTime - startTime) / 1000L
                 val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
                 val transferredBytes = (fileSize * progress) / 100
 
                 val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
-                val speed = formatSize(speedBytesPerSec) + "/s"
+                val speed = SecureQtSdk.Utils.formatSize(speedBytesPerSec) + "/s"
 
                 val eta = if (speedBytesPerSec > 0) {
                     val remainingBytes = fileSize - transferredBytes
                     val remainingSeconds = remainingBytes / speedBytesPerSec
-                    formatTime(remainingSeconds)
+                    SecureQtSdk.Utils.formatTime(remainingSeconds)
                 } else "Calculating..."
 
                 _progressState.value = _progressState.value.copy(
                     percentage = progress,
                     speed = speed,
-                    transferred = formatSize(transferredBytes),
+                    transferred = SecureQtSdk.Utils.formatSize(transferredBytes),
                     eta = eta,
-                    elapsed = formatTime(elapsedSeconds),
-                    batchElapsed = formatTime(batchElapsedSeconds)
+                    elapsed = SecureQtSdk.Utils.formatTime(elapsedSeconds),
+                    batchElapsed = SecureQtSdk.Utils.formatTime(batchElapsedSeconds)
                 )
                 _uiState.value = UsbUiState.Receiving(file.name, progress / 100f)
             }
             usbLogger.i(TAG, "File sent successfully: ${file.name}")
             if (totalFiles == 1 && !_progressState.value.statusMessage.contains("Cancelled")) {
                 val totalElapsedSeconds = (System.currentTimeMillis() - startTime) / 1000L
-                val finalSpeed = if (totalElapsedSeconds > 0) "${formatSize(fileSize / totalElapsedSeconds)}/s" else "Done"
+                val finalSpeed = if (totalElapsedSeconds > 0) "${SecureQtSdk.Utils.formatSize(fileSize / totalElapsedSeconds)}/s" else "Done"
                 _progressState.value = _progressState.value.copy(
                     isComplete = true,
                     percentage = 100,
                     filename = file.name,
                     speed = finalSpeed,
-                    transferred = formatSize(fileSize),
-                    total = formatSize(fileSize),
+                    transferred = SecureQtSdk.Utils.formatSize(fileSize),
+                    total = SecureQtSdk.Utils.formatSize(fileSize),
                     eta = "Done",
-                    elapsed = formatTime(totalElapsedSeconds),
+                    elapsed = SecureQtSdk.Utils.formatTime(totalElapsedSeconds),
                     statusMessage = "Upload Complete - Successfully sent ${file.name}"
                 )
                 _uiState.value = UsbUiState.Success("File Sent Successfully (${file.name})")
@@ -910,7 +882,7 @@ class UsbTransferViewModel @Inject constructor(
                     percentage = 100,
                     filename = completedNames,
                     eta = "Done",
-                    elapsed = formatTime(totalElapsedSec),
+                    elapsed = SecureQtSdk.Utils.formatTime(totalElapsedSec),
                     statusMessage = "Fetch Complete - Successfully downloaded: $completedNames"
                 )
                 _uiState.value = UsbUiState.Success("Fetch Complete ($completedNames)")
@@ -954,7 +926,7 @@ class UsbTransferViewModel @Inject constructor(
         _progressState.value = _progressState.value.copy(
             isVisible = true,
             filename = remoteFile.name,
-            total = formatSize(fileSize),
+            total = SecureQtSdk.Utils.formatSize(fileSize),
             percentage = 0,
             speed = "0 B/s",
             transferred = "0 B",
@@ -966,7 +938,7 @@ class UsbTransferViewModel @Inject constructor(
         )
 
         try {
-            fetchFileUseCase(remoteFile.path, targetFile).collect { progress ->
+            usbUseCases.fetchFile(remoteFile.path, targetFile).collect { progress ->
                 val currentTime = System.currentTimeMillis()
                 val elapsedSeconds = (currentTime - startTime) / 1000L
                 val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
@@ -974,22 +946,22 @@ class UsbTransferViewModel @Inject constructor(
                 val currentTotalSize = if (fileSize > 0) fileSize else transferredBytes
 
                 val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
-                val speed = formatSize(speedBytesPerSec) + "/s"
+                val speed = SecureQtSdk.Utils.formatSize(speedBytesPerSec) + "/s"
 
                 val eta = if (speedBytesPerSec > 0 && currentTotalSize > transferredBytes) {
                     val remainingBytes = currentTotalSize - transferredBytes
                     val remainingSeconds = remainingBytes / speedBytesPerSec
-                    formatTime(remainingSeconds)
+                    SecureQtSdk.Utils.formatTime(remainingSeconds)
                 } else "Calculating..."
 
                 _progressState.value = _progressState.value.copy(
                     percentage = progress,
                     speed = speed,
-                    transferred = formatSize(transferredBytes),
-                    total = formatSize(currentTotalSize),
+                    transferred = SecureQtSdk.Utils.formatSize(transferredBytes),
+                    total = SecureQtSdk.Utils.formatSize(currentTotalSize),
                     eta = eta,
-                    elapsed = formatTime(elapsedSeconds),
-                    batchElapsed = formatTime(batchElapsedSeconds)
+                    elapsed = SecureQtSdk.Utils.formatTime(elapsedSeconds),
+                    batchElapsed = SecureQtSdk.Utils.formatTime(batchElapsedSeconds)
                 )
                 _uiState.value = UsbUiState.Receiving(remoteFile.name, progress / 100f)
             }
@@ -997,8 +969,8 @@ class UsbTransferViewModel @Inject constructor(
             if (totalFiles == 1 && !_progressState.value.statusMessage.contains("Cancelled")) {
                 val finalFileSize = if (fileSize > 0) fileSize else if (targetFile.exists()) targetFile.length() else 0L
                 val totalElapsedSeconds = (System.currentTimeMillis() - startTime) / 1000L
-                val finalSpeed = if (totalElapsedSeconds > 0 && finalFileSize > 0) "${formatSize(finalFileSize / totalElapsedSeconds)}/s" else "Done"
-                val finalSizeStr = if (finalFileSize > 0) formatSize(finalFileSize) else "Done"
+                val finalSpeed = if (totalElapsedSeconds > 0 && finalFileSize > 0) "${SecureQtSdk.Utils.formatSize(finalFileSize / totalElapsedSeconds)}/s" else "Done"
+                val finalSizeStr = if (finalFileSize > 0) SecureQtSdk.Utils.formatSize(finalFileSize) else "Done"
                 _progressState.value = _progressState.value.copy(
                     isComplete = true,
                     percentage = 100,
@@ -1007,7 +979,7 @@ class UsbTransferViewModel @Inject constructor(
                     transferred = finalSizeStr,
                     total = finalSizeStr,
                     eta = "Done",
-                    elapsed = formatTime(totalElapsedSeconds),
+                    elapsed = SecureQtSdk.Utils.formatTime(totalElapsedSeconds),
                     statusMessage = "Fetch Complete - Saved to ${targetFile.parentFile?.name ?: "Download"}/${targetFile.name}"
                 )
                 _uiState.value = UsbUiState.Success("File Received Successfully (${remoteFile.name})")
@@ -1044,22 +1016,22 @@ class UsbTransferViewModel @Inject constructor(
         )
 
         try {
-            fetchDirectoryUseCase(remoteFile.path, targetZip).collect { progress ->
+            usbUseCases.fetchDirectory(remoteFile.path, targetZip).collect { progress ->
                 val currentTime = System.currentTimeMillis()
                 val elapsedSeconds = (currentTime - startTime) / 1000L
                 val batchElapsedSeconds = (currentTime - batchStartTime) / 1000L
                 val transferredBytes = targetZip.length()
 
                 val speedBytesPerSec = if (elapsedSeconds > 0) (transferredBytes / elapsedSeconds) else 0L
-                val speed = formatSize(speedBytesPerSec) + "/s"
+                val speed = SecureQtSdk.Utils.formatSize(speedBytesPerSec) + "/s"
 
                 _progressState.value = _progressState.value.copy(
                     percentage = progress,
                     speed = speed,
-                    transferred = formatSize(transferredBytes),
-                    total = formatSize(transferredBytes),
-                    elapsed = formatTime(elapsedSeconds),
-                    batchElapsed = formatTime(batchElapsedSeconds)
+                    transferred = SecureQtSdk.Utils.formatSize(transferredBytes),
+                    total = SecureQtSdk.Utils.formatSize(transferredBytes),
+                    elapsed = SecureQtSdk.Utils.formatTime(elapsedSeconds),
+                    batchElapsed = SecureQtSdk.Utils.formatTime(batchElapsedSeconds)
                 )
                 _uiState.value = UsbUiState.Receiving("${remoteFile.name}.zip", progress / 100f)
             }
@@ -1067,8 +1039,8 @@ class UsbTransferViewModel @Inject constructor(
             if (totalFiles == 1 && !_progressState.value.statusMessage.contains("Cancelled")) {
                 val totalElapsedSeconds = (System.currentTimeMillis() - startTime) / 1000L
                 val finalSize = targetZip.length()
-                val finalSpeed = if (totalElapsedSeconds > 0 && finalSize > 0) "${formatSize(finalSize / totalElapsedSeconds)}/s" else "Done"
-                val finalSizeStr = if (finalSize > 0) formatSize(finalSize) else "Done"
+                val finalSpeed = if (totalElapsedSeconds > 0 && finalSize > 0) "${SecureQtSdk.Utils.formatSize(finalSize / totalElapsedSeconds)}/s" else "Done"
+                val finalSizeStr = if (finalSize > 0) SecureQtSdk.Utils.formatSize(finalSize) else "Done"
                 _progressState.value = _progressState.value.copy(
                     isComplete = true,
                     percentage = 100,
@@ -1077,7 +1049,7 @@ class UsbTransferViewModel @Inject constructor(
                     transferred = finalSizeStr,
                     total = finalSizeStr,
                     eta = "Done",
-                    elapsed = formatTime(totalElapsedSeconds),
+                    elapsed = SecureQtSdk.Utils.formatTime(totalElapsedSeconds),
                     statusMessage = "Fetch Complete - Saved to ${targetZip.parentFile?.name ?: "Download"}/${targetZip.name}"
                 )
                 _uiState.value = UsbUiState.Success("Directory Received Successfully (${remoteFile.name}.zip)")
@@ -1095,7 +1067,7 @@ class UsbTransferViewModel @Inject constructor(
 
     fun deleteRemoteFile(remotePath: String) {
         viewModelScope.launch {
-            if (deleteFileUseCase(remotePath)) {
+            if (usbUseCases.deleteFile(remotePath)) {
                 directoryCache.remove(_currentRemotePath.value)
                 fetchRemoteFiles(_currentRemotePath.value, forceRefresh = true)
             }
@@ -1104,7 +1076,7 @@ class UsbTransferViewModel @Inject constructor(
 
     fun renameRemoteFile(oldPath: String, newPath: String) {
         viewModelScope.launch {
-            if (renameFileUseCase(oldPath, newPath)) {
+            if (usbUseCases.renameFile(oldPath, newPath)) {
                 directoryCache.remove(_currentRemotePath.value)
                 fetchRemoteFiles(_currentRemotePath.value, forceRefresh = true)
             }
@@ -1143,9 +1115,7 @@ class UsbTransferViewModel @Inject constructor(
                 Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_VECTOR}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
                 Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_ICONS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
                 Pair(Constants.SmartnavRoot.DIR_DATABASE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair(Constants.SmartnavRoot.DIR_LOG_MANAGER, Pair(Constants.SmartnavRoot.FILE_LOG_COUNTER, Constants.SmartnavRoot.DEFAULT_LOG_COUNTER_VALUE)),
-                Pair(Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("${Constants.SmartnavRoot.DIR_DEV_LOGS}/${Constants.SmartnavRoot.DIR_CRASH_LOGS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
+                Pair(Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
             )
             for ((folder, filePair) in foldersAndFiles) {
                 if (!isActive) break
@@ -1203,13 +1173,13 @@ class UsbTransferViewModel @Inject constructor(
             
             _progressState.value = _progressState.value.copy(
                 statusMessage = "Sending ${dir.name}.zip...",
-                total = formatSize(fileSize),
+                total = SecureQtSdk.Utils.formatSize(fileSize),
                 percentage = 0,
                 transferred = "0 B",
                 speed = "0 B/s"
             )
             
-            sendFileUseCase(tempZip, destinationPath, isDirectory = true, remoteFileName = dir.name).collect { progress ->
+            usbUseCases.sendFile(tempZip, destinationPath, isDirectory = true, remoteFileName = dir.name).collect { progress ->
                 val currentTime = System.currentTimeMillis()
                 val elapsedSeconds = (currentTime - startTime) / 1000L
                 val transferredBytes = (fileSize * progress) / 100
@@ -1218,8 +1188,8 @@ class UsbTransferViewModel @Inject constructor(
                 
                 _progressState.value = _progressState.value.copy(
                     percentage = progress,
-                    transferred = formatSize(transferredBytes),
-                    speed = "${formatSize(speedBytesPerSec)}/s",
+                    transferred = SecureQtSdk.Utils.formatSize(transferredBytes),
+                    speed = "${SecureQtSdk.Utils.formatSize(speedBytesPerSec)}/s",
                     eta = eta,
                     elapsed = "${elapsedSeconds}s"
                 )
@@ -1272,7 +1242,7 @@ class UsbTransferViewModel @Inject constructor(
         commandJob?.cancel()
         commandJob = null
 
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             if (sendSignal) {
                 try {
                     if (_usbRole.value is UsbRole.Host) {

@@ -27,7 +27,9 @@ fun SmartNavDesktopDashboard(
     vm: MainViewModel,
     onNavigateToExplorerPath: (String) -> Unit
 ) {
-    val stagingDir = remember { java.io.File(System.getProperty("user.home"), "Downloads/SmartNavStaging") }
+    var stagingDirPath by remember { mutableStateOf(java.io.File(System.getProperty("user.home"), "Downloads/SmartNavStaging").absolutePath) }
+    val stagingDir = java.io.File(stagingDirPath)
+    
     var stagingDirectories by remember { mutableStateOf(stagingDir.listFiles()?.filter { it.isDirectory } ?: emptyList()) }
     var selectedStagingDirs by remember { mutableStateOf(stagingDirectories.toSet()) }
     
@@ -37,12 +39,51 @@ fun SmartNavDesktopDashboard(
         selectedStagingDirs = newDirs.toSet()
     }
 
-    var selectedBasePath by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH) }
+    var selectedBasePath by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH) }
 
     var passwordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE) }
     var maintenancePasswordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_MAINTENANCE_PASSWORD_VALUE) }
     var kmmPasswordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_KMM_PASSWORD_VALUE) }
-    var logCounterInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_LOG_COUNTER_VALUE) }
+
+    var showOverwriteDialog by remember { mutableStateOf(false) }
+    var pendingPushAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingPushFileName by remember { mutableStateOf("") }
+
+    if (showOverwriteDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                showOverwriteDialog = false 
+                pendingPushAction = null
+            },
+            title = { Text("File Already Exists") },
+            text = { Text("The file '$pendingPushFileName' already exists on the remote device. Do you want to overwrite it?") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showOverwriteDialog = false
+                    pendingPushAction?.invoke()
+                    pendingPushAction = null
+                }) { Text("Overwrite", color = Color.Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showOverwriteDialog = false
+                    pendingPushAction = null
+                }) { Text("Cancel") }
+            }
+        )
+    }
+
+    val handlePush = { fileName: String, folder: String, action: () -> Unit ->
+        vm.checkRemoteFileExists(folder, fileName) { exists ->
+            if (exists) {
+                pendingPushFileName = fileName
+                pendingPushAction = action
+                showOverwriteDialog = true
+            } else {
+                action()
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -76,18 +117,12 @@ fun SmartNavDesktopDashboard(
 
                 Spacer(Modifier.height(4.dp))
                 Text("Target Base Directory:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    FilterChip(
-                        selected = selectedBasePath == Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH,
-                        onClick = { selectedBasePath = Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH },
-                        label = { Text(Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH, fontSize = 11.sp) }
-                    )
                     FilterChip(
                         selected = selectedBasePath == Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH,
                         onClick = { selectedBasePath = Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH },
-                        label = { Text("App External Files", fontSize = 11.sp) }
+                        label = { Text(Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
                     )
-                }
             }
         }
 
@@ -98,20 +133,41 @@ fun SmartNavDesktopDashboard(
             icon = Icons.Default.CreateNewFolder,
             iconColor = Color(0xFF4CAF50)
         ) {
-            Text(
-                "Staging Location: ${stagingDir.absolutePath}",
-                fontSize = 12.sp,
-                color = Color.Gray
-            )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = stagingDirPath,
+                    onValueChange = { stagingDirPath = it },
+                    label = { Text("Local Workspace Directory", fontSize = 12.sp) },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+                IconButton(
+                    onClick = {
+                        val chooser = javax.swing.JFileChooser(stagingDirPath)
+                        chooser.fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+                        chooser.dialogTitle = "Select Workspace Directory"
+                        if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+                            stagingDirPath = chooser.selectedFile.absolutePath
+                            refreshStaging()
+                        }
+                    },
+                    modifier = Modifier.padding(top = 8.dp)
+                ) {
+                    Icon(Icons.Default.MoreHoriz, contentDescription = "Browse...", tint = MaterialTheme.colorScheme.primary)
+                }
+            }
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = { 
                         vm.prepareLocalSmartNavStaging(stagingDir) { refreshStaging() }
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
                 ) {
-                    Text("Initialize Staging", fontSize = 12.sp)
+                    Icon(Icons.Default.Build, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Generate Base Files", fontSize = 11.sp, maxLines = 1)
                 }
                 Button(
                     onClick = {
@@ -119,15 +175,21 @@ fun SmartNavDesktopDashboard(
                             java.awt.Desktop.getDesktop().open(stagingDir)
                         }
                     },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                 ) {
-                    Text("Open Folder", fontSize = 12.sp)
+                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Open Workspace", fontSize = 11.sp, maxLines = 1)
                 }
                 Button(
                     onClick = { refreshStaging() },
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary)
                 ) {
-                    Text("Refresh List", fontSize = 12.sp)
+                    Icon(Icons.Default.Refresh, null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Reload UI", fontSize = 11.sp, maxLines = 1)
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -144,15 +206,25 @@ fun SmartNavDesktopDashboard(
                         Text("Select All", fontSize = 12.sp)
                     }
                 }
-                stagingDirectories.forEach { dir ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Checkbox(
-                            checked = selectedStagingDirs.contains(dir),
-                            onCheckedChange = { checked ->
-                                selectedStagingDirs = if (checked) selectedStagingDirs + dir else selectedStagingDirs - dir
-                            }
+                @OptIn(ExperimentalLayoutApi::class)
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    stagingDirectories.forEach { dir ->
+                        val isSelected = selectedStagingDirs.contains(dir)
+                        FilterChip(
+                            selected = isSelected,
+                            onClick = { 
+                                selectedStagingDirs = if (isSelected) selectedStagingDirs - dir else selectedStagingDirs + dir
+                            },
+                            label = { Text(dir.name, fontSize = 11.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal) },
+                            leadingIcon = if (isSelected) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary) }
+                            } else null,
+                            border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary)
+                                     else BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         )
-                        Text(dir.name, fontSize = 12.sp)
                     }
                 }
                 Spacer(Modifier.height(8.dp))
@@ -185,7 +257,10 @@ fun SmartNavDesktopDashboard(
                 value = passwordInput,
                 onValueChange = { passwordInput = it },
                 onPush = {
-                    vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_PASSWORD, passwordInput, "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}")
+                    val target = "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"
+                    handlePush(Constants.SmartnavRoot.FILE_PASSWORD, target) {
+                        vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_PASSWORD, passwordInput, target)
+                    }
                 }
             )
 
@@ -196,7 +271,10 @@ fun SmartNavDesktopDashboard(
                 value = maintenancePasswordInput,
                 onValueChange = { maintenancePasswordInput = it },
                 onPush = {
-                    vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, maintenancePasswordInput, "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}")
+                    val target = "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"
+                    handlePush(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, target) {
+                        vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, maintenancePasswordInput, target)
+                    }
                 }
             )
 
@@ -207,37 +285,12 @@ fun SmartNavDesktopDashboard(
                 value = kmmPasswordInput,
                 onValueChange = { kmmPasswordInput = it },
                 onPush = {
-                    vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_KMM_PASSWORD, kmmPasswordInput, "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}")
+                    val target = "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"
+                    handlePush(Constants.SmartnavRoot.FILE_KMM_PASSWORD, target) {
+                        vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_KMM_PASSWORD, kmmPasswordInput, target)
+                    }
                 }
             )
-        }
-
-        // Log Counter Creator Section
-        DesktopSectionCard(
-            title = "Log Manager & Counter",
-            subtitle = "Create or reset ${Constants.SmartnavRoot.FILE_LOG_COUNTER} inside \$selectedBasePath/${Constants.SmartnavRoot.DIR_LOG_MANAGER}/",
-            icon = Icons.Default.ReceiptLong,
-            iconColor = MaterialTheme.colorScheme.primary
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = logCounterInput,
-                    onValueChange = { logCounterInput = it },
-                    label = { Text("Log Counter Value", fontSize = 12.sp) },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
-                Button(
-                    onClick = {
-                        vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_LOG_COUNTER, logCounterInput, "$selectedBasePath/${Constants.SmartnavRoot.DIR_LOG_MANAGER}")
-                    },
-                    modifier = Modifier.height(56.dp)
-                ) {
-                    Icon(Icons.Default.Send, null, modifier = Modifier.size(16.dp))
-                    Spacer(Modifier.width(6.dp))
-                    Text("Push File")
-                }
-            }
         }
 
         // Quick Jump & Inspection Shortcuts
@@ -252,7 +305,6 @@ fun SmartNavDesktopDashboard(
                 Pair("Password Dir ($selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"),
                 Pair("Tracks ($selectedBasePath/${Constants.SmartnavRoot.DIR_TRACKS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_TRACKS}"),
                 Pair("Maps Root ($selectedBasePath/${Constants.SmartnavRoot.DIR_MAPS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_MAPS}"),
-                Pair("Crash Logs ($selectedBasePath/${Constants.SmartnavRoot.DIR_DEV_LOGS}/${Constants.SmartnavRoot.DIR_CRASH_LOGS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_DEV_LOGS}/${Constants.SmartnavRoot.DIR_CRASH_LOGS}"),
                 Pair("App Update (${Constants.SmartnavRoot.PATH_APP_UPDATE})", Constants.SmartnavRoot.PATH_APP_UPDATE)
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -1,4 +1,5 @@
 package com.example.securequicktransferapp.presentation.ui
+import com.example.secureqt.sdk.SecureQtSdk
 
 import android.net.Uri
 import android.os.Environment
@@ -34,8 +35,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.securequicktransferapp.data.UsbRole
-import com.example.securequicktransferapp.data.UsbUiState
 import com.example.securequicktransferapp.domain.model.RemoteFile
+import com.example.securequicktransferapp.domain.model.TransferProgress
+import com.example.securequicktransferapp.data.UsbUiState
 import com.example.securequicktransferapp.presentation.viewmodel.UsbTransferViewModel
 import java.io.File
 
@@ -1186,7 +1188,7 @@ fun AndroidFileRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(file.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
             Text(
-                if (file.isDirectory) "Directory" else formatSize(file.size),
+                if (file.isDirectory) "Directory" else SecureQtSdk.Utils.formatSize(file.size),
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.Gray
             )
@@ -1303,18 +1305,8 @@ fun DeleteConfirmDialog(
 }
 
 @Composable
-
-
-fun formatSize(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
-    val exp = (Math.log(bytes.toDouble()) / Math.log(1024.0)).toInt()
-    val pre = "KMGTPE"[exp - 1]
-    return String.format("%.1f %sB", bytes / Math.pow(1024.0, exp.toDouble()), pre)
-}
-
-@Composable
 fun AndroidTransferProgressDialog(
-    progress: UsbTransferViewModel.TransferProgress,
+    progress: TransferProgress,
     onCancel: () -> Unit,
     onDismiss: () -> Unit
 ) {

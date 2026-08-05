@@ -29,6 +29,7 @@ kotlin {
             implementation(libs.hilt.android)
         }
         commonMain.dependencies {
+            implementation(project(":secureqt-sdk"))
             implementation(libs.compose.runtime)
             implementation(libs.compose.foundation)
             implementation(libs.compose.material3)

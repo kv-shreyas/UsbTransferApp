@@ -16,17 +16,7 @@ val appModule = module {
         UsbRepositoryImpl(get(), get())
     }
 
-    factory { ConnectUsbUseCase(get()) }
-    factory { DisconnectUsbUseCase(get()) }
-    factory { ReceiveFileUseCase(get()) }
-    factory { SendFileUseCase(get()) }
-    factory { FetchFileUseCase(get()) }
-    factory { FetchDirectoryUseCase(get()) }
-    factory { ListDirectoryUseCase(get()) }
-    factory { CancelTransferUseCase(get()) }
-    factory { DeleteFileUseCase(get()) }
-    factory { RenameFileUseCase(get()) }
-    factory { CreateFolderUseCase(get()) }
+    factory { UsbUseCases(get()) }
 
-    single { MainViewModel(get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get(), get()) }
+    single { MainViewModel(get(), get()) }
 }

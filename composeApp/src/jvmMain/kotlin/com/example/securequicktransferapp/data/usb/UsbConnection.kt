@@ -20,6 +20,11 @@ class UsbConnection {
     private val ACCESSORY_SEND_STRING = 52
     private val ACCESSORY_START = 53
 
+    // Reusable direct buffers to prevent severe GC thrashing and allocation overhead during transfers
+    private val readBuffer = ByteBuffer.allocateDirect(300 * 1024)
+    private val writeBuffer = ByteBuffer.allocateDirect(300 * 1024)
+    private val transferredBuffer = IntBuffer.allocate(1)
+
     fun switchToAoa(device: Device): Boolean {
         val tempHandle = DeviceHandle()
         val openResult = LibUsb.open(device, tempHandle)
@@ -204,15 +209,6 @@ class UsbConnection {
         return null
     }
 
-    private fun detectEndpoints(device: Device) {
-        // No longer used, replaced by findAoaEndpoints
-    }
-
-    // Reusable direct buffers to prevent severe GC thrashing and allocation overhead during transfers
-    private val readBuffer = ByteBuffer.allocateDirect(300 * 1024)
-    private val writeBuffer = ByteBuffer.allocateDirect(300 * 1024)
-    private val transferredBuffer = IntBuffer.allocate(1)
-
     fun bulkRead(): ByteArray? {
         if (handle == null) {
             println("[UsbConnection] Error: bulkRead failed - handle is null.")
@@ -232,6 +228,9 @@ class UsbConnection {
 
         if (result != LibUsb.SUCCESS) {
             println("[UsbConnection] Error: bulkRead failed. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointIn)}")
+            if (result == LibUsb.ERROR_NO_DEVICE) {
+                close()
+            }
             return null
         }
 
@@ -296,6 +295,9 @@ class UsbConnection {
 
         if (result != LibUsb.SUCCESS) {
             println("[UsbConnection] Error: bulkWrite failed after $attempt attempts. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointOut)}")
+            if (result == LibUsb.ERROR_NO_DEVICE) {
+                close()
+            }
             return false
         }
 
