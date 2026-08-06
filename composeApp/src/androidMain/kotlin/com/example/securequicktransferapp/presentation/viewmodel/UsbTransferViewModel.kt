@@ -158,7 +158,6 @@ class UsbTransferViewModel @Inject constructor(
 
     private var fetchRemoteJob: Job? = null
 
-
     private fun startCableMonitor() {
         cableMonitorJob?.cancel()
         cableMonitorJob = viewModelScope.launch {
@@ -348,10 +347,10 @@ class UsbTransferViewModel @Inject constructor(
                                 break
                             }
                             val event = withTimeoutOrNull(250) { UsbPermissionBus.flow.firstOrNull() }
-                            if (event is UsbPermissionEvent.AccessoryGranted && event.accessory == accessory) {
+                            if (event is UsbPermissionEvent.AccessoryGranted && event.accessory.model == accessory.model && event.accessory.manufacturer == accessory.manufacturer) {
                                 isGranted = true
                                 break
-                            } else if (event is UsbPermissionEvent.AccessoryDenied && event.accessory == accessory) {
+                            } else if (event is UsbPermissionEvent.AccessoryDenied && event.accessory.model == accessory.model && event.accessory.manufacturer == accessory.manufacturer) {
                                 isGranted = false
                                 break
                             }

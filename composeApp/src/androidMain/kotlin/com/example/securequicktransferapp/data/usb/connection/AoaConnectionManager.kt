@@ -64,7 +64,11 @@ class AoaConnectionManager @Inject constructor(
                 null
             }
         } catch (e: Exception) {
-            usbLogger.e(TAG, "Error receiving data", e)
+            if (e.message?.contains("ENODEV") == true) {
+                usbLogger.w(TAG, "receive: USB device disconnected (ENODEV)")
+            } else {
+                usbLogger.e(TAG, "Error receiving data", e)
+            }
             null
         }
     }
@@ -73,7 +77,11 @@ class AoaConnectionManager @Inject constructor(
         return try {
             inputStream?.read(buffer) ?: -1
         } catch (e: Exception) {
-            Log.e(TAG, "Error receiving zero-alloc data", e)
+            if (e.message?.contains("ENODEV") == true) {
+                usbLogger.w(TAG, "receive: USB device disconnected (ENODEV)")
+            } else {
+                Log.e(TAG, "Error receiving zero-alloc data", e)
+            }
             -1
         }
     }
@@ -89,7 +97,11 @@ class AoaConnectionManager @Inject constructor(
             }
             if (offset == size) buffer else null
         } catch (e: Exception) {
-            Log.e(TAG, "Error receiving exact data", e)
+            if (e.message?.contains("ENODEV") == true) {
+                usbLogger.w(TAG, "receiveExact: USB device disconnected (ENODEV)")
+            } else {
+                Log.e(TAG, "Error receiving exact data", e)
+            }
             null
         }
     }

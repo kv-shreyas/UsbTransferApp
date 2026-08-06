@@ -15,6 +15,7 @@ import java.io.File
 class UsbRepositoryImpl(
     private val deviceManager: UsbDeviceManager,
     private val connection: UsbConnection,
+    private val targetDeviceId: String? = null,
     private val logger: ILogger = ConsoleLogger()
 ) : UsbRepository {
 
@@ -29,11 +30,15 @@ class UsbRepositoryImpl(
 
     override fun connect(): Boolean {
         isAoaMode = false
-        logger.i(TAG, "Attempting to find Android device...")
+        logger.i(TAG, "Attempting to find Android device (targetDeviceId: $targetDeviceId)...")
         
         var device: org.usb4java.Device? = null
         for (i in 0 until 5) {
-            device = deviceManager.findAndroidDevice()
+            device = if (targetDeviceId != null) {
+                deviceManager.findDeviceById(targetDeviceId)
+            } else {
+                deviceManager.findAndroidDevice()
+            }
             if (device != null) break
             Thread.sleep(200)
         }
@@ -54,7 +59,11 @@ class UsbRepositoryImpl(
                     var accessory: org.usb4java.Device? = null
                     for (i in 0 until 25) {
                         Thread.sleep(120)
-                        accessory = deviceManager.findAndroidDevice(requireAccessory = true)
+                        accessory = if (targetDeviceId != null) {
+                            deviceManager.findDeviceById(targetDeviceId)
+                        } else {
+                            deviceManager.findAndroidDevice(requireAccessory = true)
+                        }
                         if (accessory != null) break
                     }
                     if (accessory == null) return false
@@ -85,7 +94,11 @@ class UsbRepositoryImpl(
     }
 
     override fun disconnect() {
-        kotlinx.coroutines.runBlocking { transferClient.sendDisconnect() }
+        try {
+            kotlinx.coroutines.runBlocking { transferClient.sendDisconnect() }
+        } catch (e: Exception) {
+            logger.w(TAG, "Error sending disconnect signal: ${e.message}")
+        }
         connection.close()
     }
 
@@ -134,5 +147,11 @@ class UsbRepositoryImpl(
         transferClient.cancelTransfer()
     }
 
-    override fun checkPhysicalConnection(): Pair<Boolean, String?> = deviceManager.isDevicePhysicallyConnected()
+    override fun checkPhysicalConnection(): Pair<Boolean, String?> {
+        return if (targetDeviceId != null) {
+            deviceManager.isDevicePhysicallyConnected(targetDeviceId)
+        } else {
+            deviceManager.isDevicePhysicallyConnected()
+        }
+    }
 }

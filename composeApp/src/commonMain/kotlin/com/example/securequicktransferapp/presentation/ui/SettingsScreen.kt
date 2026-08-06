@@ -1,6 +1,7 @@
 package com.example.securequicktransferapp.presentation.ui
 
 import androidx.compose.foundation.clickable
+import com.example.securequicktransferapp.presentation.theme.AppTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -35,8 +36,8 @@ fun SettingsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    containerColor = AppTheme.colors.primaryContainer,
+                    titleContentColor = AppTheme.colors.onPrimaryContainer
                 )
             )
         }
@@ -47,12 +48,12 @@ fun SettingsScreen(
                 .padding(padding)
                 .padding(24.dp)
         ) {
-            Text("Appearance", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+            Text("Appearance", style = MaterialTheme.typography.titleLarge, color = AppTheme.colors.primary, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(16.dp))
             
             Surface(
                 modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surfaceVariant,
+                color = AppTheme.colors.surfaceVariant,
                 shape = MaterialTheme.shapes.medium
             ) {
                 Row(
@@ -62,12 +63,12 @@ fun SettingsScreen(
                     Icon(
                         imageVector = if (isDarkTheme) Icons.Default.DarkMode else Icons.Default.LightMode, 
                         contentDescription = "Theme Icon",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        tint = AppTheme.colors.onSurfaceVariant
                     )
                     Spacer(Modifier.width(16.dp))
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Dark Theme", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
-                        Text("Switch between Light and Dark aesthetics", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Switch between Light and Dark aesthetics", style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
                     }
                     Switch(
                         checked = isDarkTheme,
@@ -78,12 +79,12 @@ fun SettingsScreen(
 
             if (onShowAbout != null || onExitApp != null) {
                 Spacer(Modifier.height(32.dp))
-                Text("System", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                Text("System", style = MaterialTheme.typography.titleLarge, color = AppTheme.colors.primary, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(16.dp))
                 
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    color = AppTheme.colors.surfaceVariant,
                     shape = MaterialTheme.shapes.medium
                 ) {
                     Column {
@@ -95,13 +96,13 @@ fun SettingsScreen(
                                     .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(androidx.compose.material.icons.Icons.Default.Info, contentDescription = "About", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Icon(androidx.compose.material.icons.Icons.Default.Info, contentDescription = "About", tint = AppTheme.colors.onSurfaceVariant)
                                 Spacer(Modifier.width(16.dp))
                                 Text("About Application", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                             }
                         }
                         if (onShowAbout != null && onExitApp != null) {
-                            HorizontalDivider(color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.2f))
+                            HorizontalDivider(color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.2f))
                         }
                         if (onExitApp != null) {
                             Row(
@@ -111,9 +112,9 @@ fun SettingsScreen(
                                     .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(androidx.compose.material.icons.Icons.Default.ExitToApp, contentDescription = "Exit App", tint = MaterialTheme.colorScheme.error)
+                                Icon(androidx.compose.material.icons.Icons.Default.ExitToApp, contentDescription = "Exit App", tint = AppTheme.colors.error)
                                 Spacer(Modifier.width(16.dp))
-                                Text("Exit Application", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.error)
+                                Text("Exit Application", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = AppTheme.colors.error)
                             }
                         }
                     }

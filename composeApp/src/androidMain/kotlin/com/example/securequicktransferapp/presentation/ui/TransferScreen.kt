@@ -1,5 +1,6 @@
 package com.example.securequicktransferapp.presentation.ui
 import com.example.secureqt.sdk.SecureQtSdk
+import com.example.securequicktransferapp.presentation.theme.AppTheme
 
 import android.net.Uri
 import android.os.Environment
@@ -38,6 +39,8 @@ import com.example.securequicktransferapp.data.UsbRole
 import com.example.securequicktransferapp.domain.model.RemoteFile
 import com.example.securequicktransferapp.domain.model.TransferProgress
 import com.example.securequicktransferapp.data.UsbUiState
+import com.example.securequicktransferapp.presentation.theme.SuccessColor
+import com.example.securequicktransferapp.presentation.theme.WarningColor
 import com.example.securequicktransferapp.presentation.viewmodel.UsbTransferViewModel
 import java.io.File
 
@@ -92,8 +95,8 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkThem
             CenterAlignedTopAppBar(
                 title = { Text("USB Secure Transfer", fontWeight = FontWeight.Bold) },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    containerColor = AppTheme.colors.primaryContainer,
+                    titleContentColor = AppTheme.colors.onPrimaryContainer
                 ),
                 actions = {
                     IconButton(onClick = { showSettingsScreen = true }) {
@@ -187,7 +190,7 @@ fun AboutAppDialog(onDismiss: () -> Unit, onUpdate: () -> Unit) {
     
     AlertDialog(
         onDismissRequest = onDismiss,
-        icon = { Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+        icon = { Icon(Icons.Default.Info, contentDescription = null, tint = AppTheme.colors.primary) },
         title = { Text("About") },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -212,15 +215,15 @@ fun AboutAppDialog(onDismiss: () -> Unit, onUpdate: () -> Unit) {
 @Composable
 fun StatusHeader(state: UsbUiState) {
     val (color, text, icon) = when (state) {
-        is UsbUiState.Idle -> Triple(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), "Idle", Icons.Default.Info)
-        is UsbUiState.NoDevice -> Triple(MaterialTheme.colorScheme.error, "Disconnected", Icons.Default.UsbOff)
-        is UsbUiState.DeviceDetected -> Triple(Color(0xFFFFA500), "Device Ready", Icons.Default.Usb)
-        is UsbUiState.RequestingPermission -> Triple(Color(0xFFFFA500), "Authenticating", Icons.Default.Lock)
-        is UsbUiState.Connecting -> Triple(MaterialTheme.colorScheme.primary, "Connecting", Icons.Default.SettingsEthernet)
-        is UsbUiState.Transferring -> Triple(MaterialTheme.colorScheme.primary, "Secure Link Active", Icons.Default.Sync)
-        is UsbUiState.Receiving -> Triple(MaterialTheme.colorScheme.primary, "Transfer in Progress", Icons.Default.Download)
-        is UsbUiState.Success -> Triple(Color(0xFF4CAF50), "Connected & Secure", Icons.Default.VerifiedUser)
-        is UsbUiState.Error -> Triple(MaterialTheme.colorScheme.error, "Error", Icons.Default.Error)
+        is UsbUiState.Idle -> Triple(AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), "Idle", Icons.Default.Info)
+        is UsbUiState.NoDevice -> Triple(AppTheme.colors.error, "Disconnected", Icons.Default.UsbOff)
+        is UsbUiState.DeviceDetected -> Triple(WarningColor, "Device Ready", Icons.Default.Usb)
+        is UsbUiState.RequestingPermission -> Triple(WarningColor, "Authenticating", Icons.Default.Lock)
+        is UsbUiState.Connecting -> Triple(AppTheme.colors.primary, "Connecting", Icons.Default.SettingsEthernet)
+        is UsbUiState.Transferring -> Triple(AppTheme.colors.primary, "Secure Link Active", Icons.Default.Sync)
+        is UsbUiState.Receiving -> Triple(AppTheme.colors.primary, "Transfer in Progress", Icons.Default.Download)
+        is UsbUiState.Success -> Triple(SuccessColor, "Connected & Secure", Icons.Default.VerifiedUser)
+        is UsbUiState.Error -> Triple(AppTheme.colors.error, "Error", Icons.Default.Error)
     }
 
     Surface(
@@ -290,11 +293,11 @@ fun StateContent(
             }
             is UsbUiState.NoDevice -> {
                 if (isCableConnected) {
-                    BigIcon(Icons.Default.Usb, MaterialTheme.colorScheme.primary)
+                    BigIcon(Icons.Default.Usb, AppTheme.colors.primary)
                     Text("USB Cable Connected", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(8.dp))
                 } else {
-                    BigIcon(Icons.Default.UsbOff, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                    BigIcon(Icons.Default.UsbOff, AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                     Text("USB Connection Setup", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(8.dp))
                 }
@@ -305,7 +308,7 @@ fun StateContent(
                 )
             }
             is UsbUiState.DeviceDetected -> {
-                BigIcon(Icons.Default.Devices, MaterialTheme.colorScheme.primary)
+                BigIcon(Icons.Default.Devices, AppTheme.colors.primary)
                 Text("USB Device Detected", style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(8.dp))
 
@@ -316,7 +319,7 @@ fun StateContent(
 
                 if (isBusyCheck) {
                     Surface(
-                        color = MaterialTheme.colorScheme.tertiaryContainer,
+                        color = AppTheme.colors.tertiaryContainer,
                         shape = RoundedCornerShape(14.dp),
                         modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                     ) {
@@ -325,29 +328,29 @@ fun StateContent(
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            CircularProgressIndicator(modifier = Modifier.size(40.dp), color = MaterialTheme.colorScheme.onTertiaryContainer)
+                            CircularProgressIndicator(modifier = Modifier.size(40.dp), color = AppTheme.colors.onTertiaryContainer)
                             Text(
                                 "Negotiating & Verifying Connection...",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                color = AppTheme.colors.onTertiaryContainer
                             )
                             Text(
                                 state.name,
                                 textAlign = TextAlign.Center,
                                 fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.9f)
+                                color = AppTheme.colors.onTertiaryContainer.copy(alpha = 0.9f)
                             )
                         }
                     }
                 } else {
-                    Text(state.name, color = MaterialTheme.colorScheme.secondary)
+                    Text(state.name, color = AppTheme.colors.secondary)
                     Spacer(Modifier.height(16.dp))
 
                     if (role != null) {
                         val roleText = if (role is UsbRole.Host) "Host (Initiating Connection)" else "Client (Receiver)"
                         Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer,
+                            color = AppTheme.colors.primaryContainer,
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                         ) {
@@ -357,7 +360,7 @@ fun StateContent(
                                 textAlign = TextAlign.Center,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                                color = AppTheme.colors.onPrimaryContainer
                             )
                         }
                         Button(
@@ -392,27 +395,27 @@ fun StateContent(
                         viewModel = viewModel
                     )
                 } else {
-                    BigIcon(Icons.Default.CheckCircle, Color(0xFF4CAF50))
+                    BigIcon(Icons.Default.CheckCircle, SuccessColor)
                     Text("Ready & Secure", style = MaterialTheme.typography.headlineSmall)
                     Spacer(Modifier.height(12.dp))
 
                     Surface(
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        color = AppTheme.colors.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(16.dp)) {
-                            Text("✅ Device is ready (Client Mode)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = Color(0xFF4CAF50))
+                            Text("✅ Device is ready (Client Mode)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = SuccessColor)
                             Spacer(Modifier.height(4.dp))
-                            Text("Waiting for commands from the connected Host device.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                            Text("Waiting for commands from the connected Host device.", style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                         }
                     }
                 }
             }
             is UsbUiState.Error -> {
-                BigIcon(Icons.Default.Error, MaterialTheme.colorScheme.error)
+                BigIcon(Icons.Default.Error, AppTheme.colors.error)
                 Text("Connection Failed", style = MaterialTheme.typography.headlineSmall)
-                Text(state.error, color = MaterialTheme.colorScheme.error, textAlign = TextAlign.Center)
+                Text(state.error, color = AppTheme.colors.error, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = onConnect) {
                     Icon(Icons.Default.Refresh, null)
@@ -425,7 +428,7 @@ fun StateContent(
                 Spacer(Modifier.height(16.dp))
                 Text("Awaiting OS Permission...", fontWeight = FontWeight.Medium)
                 Spacer(Modifier.height(8.dp))
-                Text("Please accept the system dialog to proceed.", color = MaterialTheme.colorScheme.secondary, textAlign = TextAlign.Center)
+                Text("Please accept the system dialog to proceed.", color = AppTheme.colors.secondary, textAlign = TextAlign.Center)
             }
             is UsbUiState.Connecting -> {
                 CircularProgressIndicator(modifier = Modifier.size(64.dp))
@@ -438,10 +441,10 @@ fun StateContent(
                 Text("Handshaking...", fontWeight = FontWeight.Medium)
             }
             is UsbUiState.Receiving -> {
-                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(64.dp), tint = AppTheme.colors.primary)
                 Spacer(Modifier.height(24.dp))
                 Text("Transferring...", fontWeight = FontWeight.Medium)
-                Text(state.fileName, color = MaterialTheme.colorScheme.secondary, textAlign = TextAlign.Center)
+                Text(state.fileName, color = AppTheme.colors.secondary, textAlign = TextAlign.Center)
                 Spacer(Modifier.height(16.dp))
                 LinearProgressIndicator(
                     progress = { if (state.progress >= 0) state.progress else 0f },
@@ -449,16 +452,16 @@ fun StateContent(
                 )
                 if (state.progress >= 0f) {
                     Spacer(Modifier.height(8.dp))
-                    Text("${(state.progress * 100).toInt()}%", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    Text("${(state.progress * 100).toInt()}%", color = AppTheme.colors.primary, fontWeight = FontWeight.Bold)
                 }
             }
             else -> {
-                BigIcon(Icons.Default.Usb, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                BigIcon(Icons.Default.Usb, AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                 Text("USB Transfer", style = MaterialTheme.typography.headlineSmall)
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Plug in the USB cable to get started.\nThe device will be detected automatically.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.bodyMedium
                 )
@@ -475,7 +478,7 @@ fun ConnectionGuideCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.8f)),
+        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surfaceVariant.copy(alpha = 0.8f)),
         shape = RoundedCornerShape(14.dp),
     ) {
         Column(
@@ -483,13 +486,13 @@ fun ConnectionGuideCard(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Usb, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+                Icon(Icons.Default.Usb, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(8.dp))
                 Text(
                     if (isCableConnected) "USB Role Setup (Cable Connected)" else "USB Connection Setup",
                     fontWeight = FontWeight.Bold,
                     fontSize = 14.sp,
-                    color = MaterialTheme.colorScheme.primary
+                    color = AppTheme.colors.primary
                 )
             }
 
@@ -537,7 +540,7 @@ fun ConnectionGuideCard(
                 }
             } else if (isCableConnected && currentRole == null) {
                 Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                    color = AppTheme.colors.primaryContainer.copy(alpha = 0.5f),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -546,18 +549,18 @@ fun ConnectionGuideCard(
                             "USB Cable Detected (Peripheral Port)",
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                            color = AppTheme.colors.onPrimaryContainer
                         )
                         Text(
                             "This phone connected as the Upstream/Peripheral USB port. Select the Client role below so the other Host device can connect.",
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.9f)
+                            color = AppTheme.colors.onPrimaryContainer.copy(alpha = 0.9f)
                         )
                     }
                 }
             } else {
                 Surface(
-                    color = MaterialTheme.colorScheme.surface,
+                    color = AppTheme.colors.surface,
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
@@ -566,11 +569,11 @@ fun ConnectionGuideCard(
                             "How it works:",
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
-                            color = MaterialTheme.colorScheme.onSurface
+                            color = AppTheme.colors.onSurface
                         )
-                        Text("Step 1: Select a Role below for THIS device.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                        Text("Step 2: Connect to the other device (Desktop or Android) via USB / OTG cable.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
-                        Text("Step 3: Accept any USB permission popup that appears on screen.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Step 1: Select a Role below for THIS device.", fontSize = 11.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Step 2: Connect to the other device (Desktop or Android) via USB / OTG cable.", fontSize = 11.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Step 3: Accept any USB permission popup that appears on screen.", fontSize = 11.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                     }
                 }
             }
@@ -586,14 +589,14 @@ fun ConnectionGuideCard(
                     "👉 Now tap 'Initialize Connection' on the Host device. This device will automatically authenticate and connect."
                 }
                 Surface(
-                    color = if (currentRole is UsbRole.Host) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.secondaryContainer,
+                    color = if (currentRole is UsbRole.Host) AppTheme.colors.primaryContainer else AppTheme.colors.secondaryContainer,
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Column(modifier = Modifier.padding(10.dp)) {
-                        Text("Selected Role: $roleName", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (currentRole is UsbRole.Host) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text("Selected Role: $roleName", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (currentRole is UsbRole.Host) AppTheme.colors.onPrimaryContainer else AppTheme.colors.onSecondaryContainer)
                         Spacer(Modifier.height(4.dp))
-                        Text(nextAction, fontSize = 11.sp, color = if (currentRole is UsbRole.Host) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSecondaryContainer)
+                        Text(nextAction, fontSize = 11.sp, color = if (currentRole is UsbRole.Host) AppTheme.colors.onPrimaryContainer else AppTheme.colors.onSecondaryContainer)
                     }
                 }
             }
@@ -614,17 +617,17 @@ fun RoleSelectionCards(
         Card(
             onClick = { onSelectRole(UsbRole.Host("Remote Device")) },
             modifier = Modifier.weight(1f),
-            border = if (isHostSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+            border = if (isHostSelected) BorderStroke(2.dp, AppTheme.colors.primary) else null,
             colors = CardDefaults.cardColors(
-                containerColor = if (isHostSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                containerColor = if (isHostSelected) AppTheme.colors.primaryContainer else AppTheme.colors.surface
             )
         ) {
             Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Upload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+                Icon(Icons.Default.Upload, null, tint = AppTheme.colors.primary, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.height(6.dp))
-                Text("Host", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isHostSelected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurface)
+                Text("Host", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isHostSelected) AppTheme.colors.onPrimaryContainer else AppTheme.colors.onSurface)
                 Spacer(Modifier.height(2.dp))
-                Text("Initiate connection &\nbrowse/manage files", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isHostSelected) MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                Text("Initiate connection &\nbrowse/manage files", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isHostSelected) AppTheme.colors.onPrimaryContainer.copy(alpha = 0.8f) else AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
             }
         }
 
@@ -632,17 +635,17 @@ fun RoleSelectionCards(
         Card(
             onClick = { onSelectRole(UsbRole.Client("Remote Host")) },
             modifier = Modifier.weight(1f),
-            border = if (isClientSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.secondary) else null,
+            border = if (isClientSelected) BorderStroke(2.dp, AppTheme.colors.secondary) else null,
             colors = CardDefaults.cardColors(
-                containerColor = if (isClientSelected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surface
+                containerColor = if (isClientSelected) AppTheme.colors.secondaryContainer else AppTheme.colors.surface
             )
         ) {
             Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Download, null, tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(24.dp))
+                Icon(Icons.Default.Download, null, tint = AppTheme.colors.secondary, modifier = Modifier.size(24.dp))
                 Spacer(Modifier.height(6.dp))
-                Text("Client", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isClientSelected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurface)
+                Text("Client", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isClientSelected) AppTheme.colors.onSecondaryContainer else AppTheme.colors.onSurface)
                 Spacer(Modifier.height(2.dp))
-                Text("Receive connection &\nallow file transfers", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isClientSelected) MaterialTheme.colorScheme.onSecondaryContainer.copy(alpha = 0.8f) else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                Text("Receive connection &\nallow file transfers", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isClientSelected) AppTheme.colors.onSecondaryContainer.copy(alpha = 0.8f) else AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
             }
         }
     }
@@ -659,7 +662,7 @@ fun DebugLogsViewer(
     Surface(
         tonalElevation = 2.dp,
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
         modifier = Modifier.fillMaxWidth()
     ) {
         Column(modifier = Modifier.fillMaxWidth()) {
@@ -672,14 +675,14 @@ fun DebugLogsViewer(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Code, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                    Icon(Icons.Default.Code, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text("Connection Diagnostics & Logs (${logLines.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (expanded) {
                         TextButton(onClick = onClear, contentPadding = PaddingValues(2.dp)) {
-                            Text("Clear", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                            Text("Clear", fontSize = 11.sp, color = AppTheme.colors.error)
                         }
                     }
                     Icon(
@@ -690,12 +693,12 @@ fun DebugLogsViewer(
             }
 
             if (expanded) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                HorizontalDivider(color = AppTheme.colors.outlineVariant)
                 Column(modifier = Modifier.padding(8.dp)) {
                     Text(
                         "File written to: $logFilePath",
                         fontSize = 10.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                        color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f),
                         modifier = Modifier.padding(bottom = 4.dp)
                     )
 
@@ -715,7 +718,7 @@ fun DebugLogsViewer(
                             .padding(8.dp)
                     ) {
                         if (logLines.isEmpty()) {
-                            Text("No log messages yet...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 11.sp)
+                            Text("No log messages yet...", color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 11.sp)
                         } else {
                             LazyColumn(
                                 state = listState,
@@ -765,7 +768,7 @@ fun HostModeDashboard(
     Column(modifier = Modifier.fillMaxSize()) {
         // Top Option Selector / Tab Bar
         Surface(
-            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+            color = AppTheme.colors.surfaceVariant.copy(alpha = 0.5f),
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
         ) {
@@ -777,8 +780,8 @@ fun HostModeDashboard(
                 Button(
                     onClick = { selectedOption = "fileManager" },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isFileManager) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        contentColor = if (isFileManager) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (isFileManager) AppTheme.colors.primary else Color.Transparent,
+                        contentColor = if (isFileManager) AppTheme.colors.onPrimary else AppTheme.colors.onSurfaceVariant
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.weight(1f).height(42.dp),
@@ -793,8 +796,8 @@ fun HostModeDashboard(
                 Button(
                     onClick = { selectedOption = "smartnav" },
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSmartNav) MaterialTheme.colorScheme.primary else Color.Transparent,
-                        contentColor = if (isSmartNav) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        containerColor = if (isSmartNav) AppTheme.colors.primary else Color.Transparent,
+                        contentColor = if (isSmartNav) AppTheme.colors.onPrimary else AppTheme.colors.onSurfaceVariant
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier.weight(1f).height(42.dp),
@@ -999,9 +1002,9 @@ fun RemoteFileManager(
         if (isRemoteLoading) {
             Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+                    CircularProgressIndicator(color = AppTheme.colors.primary)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Text("Loading folder contents...", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 14.sp)
+                    Text("Loading folder contents...", color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 14.sp)
                 }
             }
         } else {
@@ -1027,21 +1030,21 @@ fun RemoteFileManager(
 fun AndroidActionBar(currentPath: String, onSendFile: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f),
+        color = AppTheme.colors.primaryContainer.copy(alpha = 0.35f),
         shape = RoundedCornerShape(12.dp)
     ) {
         Row(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.CloudUpload, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(24.dp))
+            Icon(Icons.Default.CloudUpload, null, tint = AppTheme.colors.primary, modifier = Modifier.size(24.dp))
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text("Upload to Android Client", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                 Text(
                     "Destination: $currentPath",
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary,
+                    color = AppTheme.colors.secondary,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -1073,29 +1076,29 @@ fun AndroidFileList(
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        color = MaterialTheme.colorScheme.surface
+        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
+        color = AppTheme.colors.surface
     ) {
         if (files.isEmpty()) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f))
+                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(48.dp), tint = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.4f))
                     Spacer(Modifier.height(8.dp))
-                    Text("Directory is empty", color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                    Text("Directory is empty", color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                 }
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
                 if (selectedFiles.isNotEmpty()) {
                     Row(
-                        modifier = Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.primaryContainer).padding(12.dp),
+                        modifier = Modifier.fillMaxWidth().background(AppTheme.colors.primaryContainer).padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
                             "${selectedFiles.size} items selected",
                             modifier = Modifier.weight(1f),
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = AppTheme.colors.onPrimaryContainer,
                             fontSize = 13.sp
                         )
                         Button(
@@ -1111,7 +1114,7 @@ fun AndroidFileList(
                         }
                         Spacer(Modifier.width(8.dp))
                         TextButton(onClick = { selectedFiles = emptySet() }) {
-                            Text("Clear", fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text("Clear", fontSize = 12.sp, color = AppTheme.colors.onPrimaryContainer)
                         }
                     }
                 }
@@ -1128,7 +1131,7 @@ fun AndroidFileList(
                             onFileDelete = onFileDelete,
                             onFileRename = onFileRename
                         )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = AppTheme.colors.outlineVariant)
                     }
                 }
             }
@@ -1187,7 +1190,7 @@ fun AndroidFileRow(
         Icon(
             imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
             contentDescription = null,
-            tint = if (file.isDirectory) Color(0xFFFFA500) else MaterialTheme.colorScheme.primary,
+            tint = if (file.isDirectory) WarningColor else AppTheme.colors.primary,
             modifier = Modifier.size(28.dp)
         )
         Spacer(Modifier.width(12.dp))
@@ -1196,7 +1199,7 @@ fun AndroidFileRow(
             Text(
                 if (file.isDirectory) "Directory" else SecureQtSdk.Utils.formatSize(file.size),
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
 
@@ -1204,7 +1207,7 @@ fun AndroidFileRow(
             Icon(
                 Icons.Default.Download,
                 contentDescription = if (file.isDirectory) "Download Directory (ZIP)" else "Download File",
-                tint = MaterialTheme.colorScheme.primary
+                tint = AppTheme.colors.primary
             )
         }
 
@@ -1233,12 +1236,12 @@ fun AndroidFileRow(
                     leadingIcon = { Icon(Icons.Default.Edit, null) }
                 )
                 DropdownMenuItem(
-                    text = { Text("Delete", color = MaterialTheme.colorScheme.error) },
+                    text = { Text("Delete", color = AppTheme.colors.error) },
                     onClick = {
                         showContextMenu = false
                         showDeleteConfirmDialog = true
                     },
-                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = MaterialTheme.colorScheme.error) }
+                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = AppTheme.colors.error) }
                 )
             }
         }
@@ -1297,7 +1300,7 @@ fun DeleteConfirmDialog(
         confirmButton = {
             Button(
                 onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
             ) {
                 Text("Delete")
             }
@@ -1348,7 +1351,7 @@ fun AndroidTransferProgressDialog(
                     Icon(
                         if (progress.isComplete) Icons.Default.CheckCircle else if (isUpload) Icons.Default.Upload else Icons.Default.Download,
                         null,
-                        tint = if (progress.isComplete) Color(0xFF4CAF50) else MaterialTheme.colorScheme.primary,
+                        tint = if (progress.isComplete) SuccessColor else AppTheme.colors.primary,
                         modifier = Modifier.size(36.dp)
                     )
                     Spacer(Modifier.width(16.dp))
@@ -1357,7 +1360,7 @@ fun AndroidTransferProgressDialog(
                             text = titleText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (progress.isComplete) Color(0xFF4CAF50) else MaterialTheme.colorScheme.onSurface
+                            color = if (progress.isComplete) SuccessColor else AppTheme.colors.onSurface
                         )
                         Spacer(Modifier.height(4.dp))
                         val fileLabel = when {
@@ -1369,7 +1372,7 @@ fun AndroidTransferProgressDialog(
                             text = "$fileLabel${progress.filename.ifEmpty { "Unknown File" }}",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
+                            color = AppTheme.colors.primary,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis
                         )
@@ -1378,7 +1381,7 @@ fun AndroidTransferProgressDialog(
                             Text(
                                 text = progress.statusMessage,
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                                color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f),
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -1400,19 +1403,19 @@ fun AndroidTransferProgressDialog(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column(horizontalAlignment = Alignment.Start) {
-                        Text("Speed", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Speed", style = MaterialTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                         Text(progress.speed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Elapsed", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Elapsed", style = MaterialTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                         Text(progress.elapsed, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Remaining", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Remaining", style = MaterialTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                         Text(progress.eta, fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                     Column(horizontalAlignment = Alignment.End) {
-                        Text("Progress", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+                        Text("Progress", style = MaterialTheme.typography.labelSmall, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                         Text("${progress.percentage}%", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                     }
                 }
@@ -1426,13 +1429,13 @@ fun AndroidTransferProgressDialog(
                     Text(
                         "${progress.transferred} / ${progress.total}",
                         style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = AppTheme.colors.secondary
                     )
                     if (progress.totalFiles > 1) {
                         Text(
                             "Total Elapsed: ${progress.batchElapsed}",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
+                            color = AppTheme.colors.secondary
                         )
                     }
                 }
@@ -1446,7 +1449,7 @@ fun AndroidTransferProgressDialog(
                             .fillMaxWidth()
                             .heightIn(max = 100.dp)
                             .clip(RoundedCornerShape(4.dp))
-                            .background(MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f).copy(alpha = 0.1f))
+                            .background(AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f).copy(alpha = 0.1f))
                             .padding(8.dp)
                     ) {
                         items(progress.queue.size) { i ->
@@ -1454,9 +1457,9 @@ fun AndroidTransferProgressDialog(
                             val isCurrent = (i + 1) == progress.currentFileIndex
                             val isDone = (i + 1) < progress.currentFileIndex
                             val color = when {
-                                isDone -> Color(0xFF4CAF50)
-                                isCurrent -> MaterialTheme.colorScheme.primary
-                                else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                                isDone -> SuccessColor
+                                isCurrent -> AppTheme.colors.primary
+                                else -> AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f)
                             }
                             Text(
                                 text = "${i + 1}. $item",
@@ -1484,7 +1487,7 @@ fun AndroidTransferProgressDialog(
                     } else {
                         TextButton(
                             onClick = onCancel,
-                            colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            colors = ButtonDefaults.textButtonColors(contentColor = AppTheme.colors.error)
                         ) {
                             Icon(Icons.Default.Close, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -1498,7 +1501,7 @@ fun AndroidTransferProgressDialog(
                     Text(
                         "Please do not disconnect the USB cable",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.5f)
+                        color = AppTheme.colors.error.copy(alpha = 0.5f)
                     )
                 }
             }
@@ -1520,7 +1523,7 @@ fun BigIcon(icon: ImageVector, color: Color) {
 @Composable
 fun SecurityFooter() {
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant,
+        color = AppTheme.colors.surfaceVariant,
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -1528,12 +1531,12 @@ fun SecurityFooter() {
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(Icons.Default.Shield, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+            Icon(Icons.Default.Shield, null, tint = AppTheme.colors.primary, modifier = Modifier.size(16.dp))
             Spacer(Modifier.width(8.dp))
             Text(
                 "End-to-end encrypted via ECDH & AES-256",
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = AppTheme.colors.onSurfaceVariant
             )
         }
     }
@@ -1541,9 +1544,9 @@ fun SecurityFooter() {
 
 @Composable
 fun UsbPhysicalIndicator(isPhysicallyConnected: Boolean) {
-    val bgColor = if (isPhysicallyConnected) Color(0xFFE8F5E9) else Color(0xFFFFEBEE)
-    val borderColor = if (isPhysicallyConnected) Color(0xFF4CAF50) else Color(0xFFE57373)
-    val iconColor = if (isPhysicallyConnected) Color(0xFF2E7D32) else Color(0xFFC62828)
+    val bgColor = if (isPhysicallyConnected) SuccessColor.copy(alpha = 0.15f) else AppTheme.colors.error.copy(alpha = 0.15f)
+    val borderColor = if (isPhysicallyConnected) SuccessColor else AppTheme.colors.error
+    val iconColor = if (isPhysicallyConnected) SuccessColor else AppTheme.colors.error
     val icon = if (isPhysicallyConnected) Icons.Default.CheckCircle else Icons.Default.UsbOff
     val title = if (isPhysicallyConnected) "USB Cable Physically Connected" else "USB Cable Unplugged / Not Detected"
     val subtitle = if (isPhysicallyConnected) "Hardware link active. Ready to initialize secure connection." else "Plug in a USB or OTG cable between your devices to begin."
