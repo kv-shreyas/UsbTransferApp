@@ -60,7 +60,7 @@ class UsbRepositoryImpl(
                     for (i in 0 until 25) {
                         Thread.sleep(120)
                         accessory = if (targetDeviceId != null) {
-                            deviceManager.findDeviceById(targetDeviceId)
+                            deviceManager.findDeviceById(targetDeviceId, requireAccessory = true)
                         } else {
                             deviceManager.findAndroidDevice(requireAccessory = true)
                         }

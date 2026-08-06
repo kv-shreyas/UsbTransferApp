@@ -228,7 +228,7 @@ class UsbConnection {
 
         if (result != LibUsb.SUCCESS) {
             println("[UsbConnection] Error: bulkRead failed. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointIn)}")
-            if (result == LibUsb.ERROR_NO_DEVICE) {
+            if (result == LibUsb.ERROR_NO_DEVICE || result == LibUsb.ERROR_IO || result == LibUsb.ERROR_PIPE) {
                 close()
             }
             return null
@@ -295,7 +295,7 @@ class UsbConnection {
 
         if (result != LibUsb.SUCCESS) {
             println("[UsbConnection] Error: bulkWrite failed after $attempt attempts. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointOut)}")
-            if (result == LibUsb.ERROR_NO_DEVICE) {
+            if (result == LibUsb.ERROR_NO_DEVICE || result == LibUsb.ERROR_IO || result == LibUsb.ERROR_PIPE) {
                 close()
             }
             return false

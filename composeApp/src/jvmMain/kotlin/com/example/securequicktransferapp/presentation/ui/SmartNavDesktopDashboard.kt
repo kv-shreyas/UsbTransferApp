@@ -27,6 +27,7 @@ import com.example.securequicktransferapp.domain.constants.Constants
 import com.example.securequicktransferapp.presentation.theme.SuccessColor
 import com.example.securequicktransferapp.presentation.theme.WarningColor
 import com.example.securequicktransferapp.presentation.vm.MainViewModel
+import com.example.securequicktransferapp.domain.model.DeviceSessionStatus
 
 @Composable
 fun SmartNavDesktopDashboard(
@@ -50,6 +51,17 @@ fun SmartNavDesktopDashboard(
     var passwordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE) }
     var maintenancePasswordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_MAINTENANCE_PASSWORD_VALUE) }
     var kmmPasswordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_KMM_PASSWORD_VALUE) }
+
+    val sessionsState by vm.sessionsState.collectAsState()
+    val connectedDevices = sessionsState.filter { it.value.status is DeviceSessionStatus.Ready }.keys.toList()
+    var selectedTargetDevices by remember { mutableStateOf(connectedDevices.toSet()) }
+    
+    LaunchedEffect(connectedDevices) {
+        selectedTargetDevices = selectedTargetDevices.intersect(connectedDevices.toSet())
+        if (selectedTargetDevices.isEmpty() && connectedDevices.isNotEmpty()) {
+            selectedTargetDevices = connectedDevices.toSet()
+        }
+    }
 
     var showOverwriteDialog by remember { mutableStateOf(false) }
     var pendingPushAction by remember { mutableStateOf<(() -> Unit)?>(null) }
@@ -250,21 +262,64 @@ fun SmartNavDesktopDashboard(
                                 }
                             }
                         }
+                        
+                        // Device Selection
+                        Spacer(Modifier.height(16.dp))
+                        if (connectedDevices.isNotEmpty()) {
+                            Text("Target Devices for Parallel Clone", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppTheme.colors.onSurface)
+                            Spacer(Modifier.height(8.dp))
+                            @OptIn(ExperimentalLayoutApi::class)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                verticalArrangement = Arrangement.spacedBy(10.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                connectedDevices.forEach { deviceId ->
+                                    val isSelected = selectedTargetDevices.contains(deviceId)
+                                    val deviceName = sessionsState[deviceId]?.deviceName ?: deviceId
+                                    Surface(
+                                        modifier = Modifier.clickable {
+                                            selectedTargetDevices = if (isSelected) selectedTargetDevices - deviceId else selectedTargetDevices + deviceId
+                                        },
+                                        color = if (isSelected) SuccessColor.copy(alpha = 0.2f) else AppTheme.colors.surface,
+                                        shape = RoundedCornerShape(8.dp),
+                                        border = BorderStroke(1.dp, if (isSelected) SuccessColor else AppTheme.colors.outlineVariant)
+                                    ) {
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                                        ) {
+                                            Icon(
+                                                if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                                                contentDescription = null,
+                                                tint = if (isSelected) SuccessColor else Color.Gray,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text(deviceName, fontSize = 13.sp, fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal)
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
+                            Text("No devices connected & ready.", color = AppTheme.colors.error, fontSize = 13.sp)
+                        }
+
                         Spacer(Modifier.height(20.dp))
                         Button(
                             onClick = { 
-                                if (selectedStagingDirs.isNotEmpty()) {
-                                    vm.sendFiles(selectedStagingDirs.toList(), selectedBasePath)
+                                if (selectedStagingDirs.isNotEmpty() && selectedTargetDevices.isNotEmpty()) {
+                                    vm.sendFilesToDevices(selectedStagingDirs.toList(), selectedTargetDevices, selectedBasePath)
                                 }
                             },
-                            enabled = selectedStagingDirs.isNotEmpty(),
+                            enabled = selectedStagingDirs.isNotEmpty() && selectedTargetDevices.isNotEmpty(),
                             colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary),
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(20.dp))
                             Spacer(Modifier.width(10.dp))
-                            Text("Clone ${selectedStagingDirs.size} Folders to Device", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                            Text("Clone ${selectedStagingDirs.size} Folders to ${selectedTargetDevices.size} Device(s)", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                         }
                     }
                 }

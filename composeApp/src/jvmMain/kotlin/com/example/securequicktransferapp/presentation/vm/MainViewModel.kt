@@ -284,6 +284,16 @@ class MainViewModel(
         watchQueueCompletion(session)
     }
 
+    fun sendFilesToDevices(files: List<File>, targetDeviceIds: Set<String>, targetPath: String) {
+        if (files.isEmpty() || targetDeviceIds.isEmpty()) return
+        targetDeviceIds.forEach { deviceId ->
+            val session = sessionManager.getSession(deviceId) ?: return@forEach
+            println("$TAG [Multi-Clone] Enqueuing ${files.size} file(s) to send → $targetPath for device $deviceId")
+            session.transferQueue.enqueueSendBatch(files, targetPath)
+            watchQueueCompletion(session)
+        }
+    }
+
     /**
      * Watches a device's queue for completion and auto-refreshes files when done.
      * Only one watcher per device — calling again replaces the old watcher.

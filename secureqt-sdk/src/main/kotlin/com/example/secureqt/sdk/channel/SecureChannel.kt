@@ -116,9 +116,11 @@ class SecureChannel(private val transport: IUsbTransport) {
     }
 
     private suspend fun waitForPublicKey(): Pair<Byte, ByteArray>? {
-        for (i in 0 until 240) { // Try up to 60 seconds
+        for (i in 0 until 60) { // Try up to 15 seconds
+            if (!transport.isConnected()) return null
             val packet = receiveRawPacket()
             if (packet == null) {
+                if (!transport.isConnected()) return null
                 delay(250)
                 continue
             }

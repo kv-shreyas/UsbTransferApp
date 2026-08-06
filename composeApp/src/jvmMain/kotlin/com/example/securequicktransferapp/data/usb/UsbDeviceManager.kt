@@ -112,7 +112,7 @@ open class UsbDeviceManager {
      * Searches for a specific connected device matching [hardwareId] (e.g. "bus_1_port_3").
      * Returns a retained Device pointer (+1 ref count) or null if not found.
      */
-    open fun findDeviceById(hardwareId: String): Device? = synchronized(usbLock) {
+    open fun findDeviceById(hardwareId: String, requireAccessory: Boolean = false): Device? = synchronized(usbLock) {
         val list = DeviceList()
         val result = LibUsb.getDeviceList(context, list)
         if (result < 0) return null
@@ -128,6 +128,7 @@ open class UsbDeviceManager {
                     val isAoa = pid == 0x2D00 || pid == 0x2D01
 
                     if (isAndroidVid || isAoa) {
+                        if (requireAccessory && !isAoa) continue
                         val (id, _, _) = getHardwareIdentifier(device)
                         if (id == hardwareId) {
                             LibUsb.refDevice(device)

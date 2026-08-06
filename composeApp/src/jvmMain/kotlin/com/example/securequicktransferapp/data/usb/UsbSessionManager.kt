@@ -80,7 +80,11 @@ class UsbSessionManager(
         val discoveredMap = discoveredDevices.associateBy { it.id }
 
         // 1. Identify and remove disconnected sessions
-        val removedIds = activeSessions.keys.filter { it !in discoveredMap }
+        val removedIds = activeSessions.keys.filter { id -> 
+            val session = activeSessions[id]
+            val isConnecting = session?.sessionState?.value?.status is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Connecting
+            id !in discoveredMap && !isConnecting
+        }
         for (id in removedIds) {
             sessionJobs.remove(id)?.cancel()
             val session = activeSessions.remove(id)
@@ -114,8 +118,13 @@ class UsbSessionManager(
                 sessionJobs[id] = job
 
                 // The device is now discovered and sits in 'Idle/DeviceDetected' state.
-                // We do NOT automatically connect here. The user must manually click Connect in the UI.
-                // scope.launch { session.connect() }
+                // We do NOT automatically connect here IF it's a fresh MTP device.
+                // The user must manually click Connect in the UI.
+                // BUT, if it's already in AOA mode, it means we just successfully switched it,
+                // or it was already in AOA mode, so we should automatically connect to finalize the handshake.
+                if (devInfo.isAoa) {
+                    scope.launch { session.connect() }
+                }
             } else {
                 // Device already tracked in activeSessions.
                 // discoverDevices() returned a +1 refCount handle that won't be stored.

@@ -124,8 +124,8 @@ class ClientServiceController @Inject constructor(
                 delegatingConnection.setDelegate(aoaManager)
 
                 while (isActive && aoaManager.isConnected()) {
-                    clientUiState.value = UsbUiState.Transferring
-                    onStatusUpdate("Handshaking with Host...")
+                    clientUiState.value = UsbUiState.Success("Standby: Waiting for Host...")
+                    onStatusUpdate("Standby: Waiting for Host...")
 
                     if (dataSource.performHandshake()) {
                         usbLogger.i(TAG, "runClientLoop: Handshake SUCCESS. Secure channel established.")
