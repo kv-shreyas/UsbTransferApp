@@ -7,6 +7,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -43,8 +44,10 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.HourglassEmpty
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.KeyboardDoubleArrowUp
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CardDefaults
@@ -92,6 +95,7 @@ fun TransferQueueDashboard(
 ) {
     val sessions by vm.sessionsState.collectAsState()
     val selectedDeviceId by vm.selectedDeviceId.collectAsState()
+    var expandedDeviceId by remember { mutableStateOf<String?>(selectedDeviceId) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // --- Header ---
@@ -134,7 +138,15 @@ fun TransferQueueDashboard(
                         vm = vm,
                         deviceId = deviceId,
                         sessionState = sessionState,
-                        isSelected = deviceId == selectedDeviceId
+                        isExpanded = deviceId == expandedDeviceId,
+                        onToggleExpand = {
+                            if (expandedDeviceId == deviceId) {
+                                expandedDeviceId = null
+                            } else {
+                                expandedDeviceId = deviceId
+                                vm.selectDevice(deviceId)
+                            }
+                        }
                     )
                 }
             }
@@ -191,12 +203,13 @@ private fun DeviceQueueSection(
     vm: MainViewModel,
     deviceId: String,
     sessionState: UsbSessionState,
-    isSelected: Boolean
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit
 ) {
     val queue = vm.getDeviceQueue(deviceId)
     val queueItems = queue?.queue?.collectAsState()?.value ?: emptyList()
     val isProcessing = queue?.isProcessing?.collectAsState()?.value ?: false
-    var isListExpanded by remember { mutableStateOf(false) }
+    val isListExpanded = isExpanded
 
     val isReady = sessionState.status is DeviceSessionStatus.Ready
     val isConnecting = sessionState.status is DeviceSessionStatus.Connecting
@@ -216,16 +229,16 @@ private fun DeviceQueueSection(
         .trim()
         .ifBlank { deviceId }
 
-    val borderColor = if (isSelected) AppTheme.colors.primary else AppTheme.colors.outlineVariant
+    val borderColor = if (isExpanded) AppTheme.colors.primary else AppTheme.colors.outlineVariant
     Card(
         shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth(),
-        border = BorderStroke(if (isSelected) 2.dp else 1.dp, borderColor),
+        modifier = Modifier.fillMaxWidth().clickable(
+            interactionSource = remember { MutableInteractionSource() },
+            indication = null
+        ) { onToggleExpand() },
+        border = BorderStroke(if (isExpanded) 2.dp else 1.dp, borderColor),
         colors = CardDefaults.cardColors(
-            containerColor = if (isSelected)
-                AppTheme.colors.primaryContainer.copy(alpha = 0.08f)
-            else
-                AppTheme.colors.surface
+            containerColor = AppTheme.colors.surface
         )
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
@@ -265,16 +278,7 @@ private fun DeviceQueueSection(
                     )
                 }
 
-                // Select button if not already selected
-                if (!isSelected) {
-                    OutlinedButton(
-                        onClick = { vm.selectDevice(deviceId) },
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Text("Select", fontSize = 11.sp)
-                    }
-                    Spacer(Modifier.width(8.dp))
-                }
+
 
                 // Cancel all / Clear finished buttons
                 if (isProcessing) {
@@ -364,7 +368,6 @@ private fun DeviceQueueSection(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                         .clip(RoundedCornerShape(4.dp))
-                        .clickable { isListExpanded = !isListExpanded }
                         .padding(vertical = 8.dp)
                 ) {
                     Text(
@@ -383,7 +386,7 @@ private fun DeviceQueueSection(
                 }
 
                 AnimatedVisibility(visible = !isListExpanded) {
-                    val relevantItems = queueItems.filter { it.status == TransferItemStatus.ACTIVE || it.status == TransferItemStatus.PENDING || it.status == TransferItemStatus.COMPLETED }
+                    val relevantItems = queueItems.filter { it.status == TransferItemStatus.ACTIVE || it.status == TransferItemStatus.PENDING || it.status == TransferItemStatus.COMPLETED || it.status == TransferItemStatus.CONFLICT }
                     if (relevantItems.isNotEmpty()) {
                         val totalBytes = relevantItems.sumOf { it.fileSize }
                         
@@ -446,6 +449,44 @@ private fun DeviceQueueSection(
                                     color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.8f)
                                 )
                             }
+                            
+                            val activeConflict = queueItems.firstOrNull { it.status == TransferItemStatus.CONFLICT }
+                            if (activeConflict != null) {
+                                Spacer(Modifier.height(12.dp))
+                                Surface(color = WarningColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Text("File already exists: ${activeConflict.displayName}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WarningColor)
+                                        Spacer(Modifier.height(8.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                            Button(onClick = { 
+                                                vm.selectDevice(deviceId)
+                                                vm.resolveConflict(activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP) 
+                                            }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                                Text("Skip", fontSize = 10.sp)
+                                            }
+                                            Button(onClick = { 
+                                                vm.selectDevice(deviceId)
+                                                vm.resolveConflict(activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE) 
+                                            }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)) {
+                                                Text("Overwrite", fontSize = 10.sp, color = Color.White)
+                                            }
+                                            Spacer(Modifier.width(8.dp))
+                                            Button(onClick = { 
+                                                vm.selectDevice(deviceId)
+                                                vm.resolveConflict(activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL) 
+                                            }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.surfaceVariant, contentColor = AppTheme.colors.onSurfaceVariant)) {
+                                                Text("Skip All", fontSize = 10.sp)
+                                            }
+                                            Button(onClick = { 
+                                                vm.selectDevice(deviceId)
+                                                vm.resolveConflict(activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL) 
+                                            }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error.copy(alpha = 0.7f))) {
+                                                Text("Overwrite All", fontSize = 10.sp, color = Color.White)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -464,6 +505,14 @@ private fun DeviceQueueSection(
                                 onMoveToFront = {
                                     vm.selectDevice(deviceId)
                                     vm.moveQueueItemToFront(item.id)
+                                },
+                                onRetry = {
+                                    vm.selectDevice(deviceId)
+                                    vm.retryQueueItem(item.id)
+                                },
+                                onResolveConflict = { resolution ->
+                                    vm.selectDevice(deviceId)
+                                    vm.resolveConflict(item.id, resolution)
                                 }
                             )
                         }
@@ -509,23 +558,27 @@ private fun QueueItemRow(
     item: TransferQueueItem,
     index: Int,
     onCancel: () -> Unit,
-    onMoveToFront: () -> Unit
+    onMoveToFront: () -> Unit,
+    onRetry: () -> Unit,
+    onResolveConflict: (com.example.securequicktransferapp.data.usb.ConflictResolution) -> Unit
 ) {
     val isActive = item.status == TransferItemStatus.ACTIVE
     val isPending = item.status == TransferItemStatus.PENDING
     val isCompleted = item.status == TransferItemStatus.COMPLETED
     val isFailed = item.status == TransferItemStatus.FAILED
     val isCancelled = item.status == TransferItemStatus.CANCELLED
+    val isConflict = item.status == TransferItemStatus.CONFLICT
 
     val backgroundColor = when {
         isActive -> AppTheme.colors.primaryContainer.copy(alpha = 0.2f)
+        isConflict -> WarningColor.copy(alpha = 0.1f)
         isCompleted -> SuccessColor.copy(alpha = 0.05f)
         isFailed -> AppTheme.colors.error.copy(alpha = 0.05f)
         isCancelled -> AppTheme.colors.onSurfaceVariant.copy(alpha = 0.03f)
         else -> Color.Transparent
     }
 
-    var isExpanded by remember { mutableStateOf(isActive || isFailed) }
+    var isExpanded by remember { mutableStateOf(isActive || isFailed || isConflict) }
 
     Surface(
         color = backgroundColor,
@@ -537,6 +590,7 @@ private fun QueueItemRow(
                 // Status icon
                 val (icon, iconTint) = when {
                     isActive -> Icons.Default.Sync to AppTheme.colors.primary
+                    isConflict -> Icons.Default.Warning to WarningColor
                     isPending -> Icons.Default.HourglassEmpty to WarningColor
                     isCompleted -> Icons.Default.CheckCircle to SuccessColor
                     isFailed -> Icons.Default.Error to AppTheme.colors.error
@@ -609,6 +663,27 @@ private fun QueueItemRow(
                 Spacer(Modifier.width(8.dp))
 
                 // Action buttons
+                if (isConflict) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = { onResolveConflict(com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP) }, modifier = Modifier.height(24.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                            Text("Skip", fontSize = 10.sp)
+                        }
+                        TextButton(onClick = { onResolveConflict(com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE) }, modifier = Modifier.height(24.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                            Text("Overwrite", fontSize = 10.sp, color = AppTheme.colors.error)
+                        }
+                    }
+                }
+                if (isFailed || isCancelled) {
+                    IconButton(onClick = onRetry, modifier = Modifier.size(24.dp)) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            "Retry",
+                            tint = AppTheme.colors.primary.copy(alpha = 0.7f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
                 if (isPending) {
                     IconButton(onClick = onMoveToFront, modifier = Modifier.size(24.dp)) {
                         Icon(
@@ -646,6 +721,17 @@ private fun QueueItemRow(
 
             AnimatedVisibility(visible = isExpanded) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    if (isConflict) {
+                        Text("File already exists at destination. Choose an action to apply to this file or to all future conflicts in the queue.", fontSize = 10.sp, color = WarningColor, modifier = Modifier.padding(bottom = 8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 8.dp)) {
+                            Button(onClick = { onResolveConflict(com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL) }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                                Text("Skip All", fontSize = 10.sp)
+                            }
+                            Button(onClick = { onResolveConflict(com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL) }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)) {
+                                Text("Overwrite All", fontSize = 10.sp, color = Color.White)
+                            }
+                        }
+                    }
                     // Full destination path
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(

@@ -15,6 +15,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import java.util.concurrent.atomic.AtomicBoolean
+
+enum class ConflictResolution {
+    OVERWRITE, SKIP, OVERWRITE_ALL, SKIP_ALL
+}
 
 /**
  * Per-device transfer queue manager that processes transfer items sequentially.
@@ -41,6 +46,10 @@ class TransferQueue(
 
     private var processingJob: Job? = null
     private var currentItemJob: Job? = null
+    
+    var globalConflictResolution: ConflictResolution? = null
+    private var currentDirCache = ""
+    private var remoteFilesCache = emptyList<RemoteFile>()
 
     /**
      * Enqueues a single file/directory for sending (Host → Device).
@@ -167,6 +176,47 @@ class TransferQueue(
     }
 
     /**
+     * Retries a failed or cancelled item.
+     */
+    fun retry(itemId: String) {
+        val currentQueue = _queue.value.toMutableList()
+        val index = currentQueue.indexOfFirst { it.id == itemId && (it.status == TransferItemStatus.FAILED || it.status == TransferItemStatus.CANCELLED) }
+        if (index < 0) return
+        
+        val item = currentQueue[index].copy(
+            status = TransferItemStatus.PENDING,
+            progress = 0,
+            transferred = "0 B",
+            error = null
+        )
+        currentQueue[index] = item
+        _queue.value = currentQueue
+        println("$TAG Retrying item: ${item.displayName}")
+        ensureProcessing()
+    }
+
+    /**
+     * Resolves a file conflict for a specific item.
+     */
+    fun resolveConflict(itemId: String, resolution: ConflictResolution) {
+        if (resolution == ConflictResolution.OVERWRITE_ALL || resolution == ConflictResolution.SKIP_ALL) {
+            globalConflictResolution = resolution
+        }
+        
+        val currentQueue = _queue.value.toMutableList()
+        val index = currentQueue.indexOfFirst { it.id == itemId && it.status == TransferItemStatus.CONFLICT }
+        if (index >= 0) {
+            if (resolution == ConflictResolution.SKIP || resolution == ConflictResolution.SKIP_ALL) {
+                currentQueue[index] = currentQueue[index].copy(status = TransferItemStatus.COMPLETED, progress = 100, eta = "Skipped", speed = "")
+            } else {
+                currentQueue[index] = currentQueue[index].copy(status = TransferItemStatus.PENDING, overwrite = true)
+            }
+            _queue.value = currentQueue
+            ensureProcessing()
+        }
+    }
+
+    /**
      * Moves an item to the front of the pending queue (priority boost).
      */
     fun moveToFront(itemId: String) {
@@ -212,6 +262,37 @@ class TransferQueue(
         while (true) {
             val nextItem = _queue.value.firstOrNull { it.status == TransferItemStatus.PENDING }
                 ?: break // No more pending items
+
+            if (!nextItem.overwrite) {
+                var exists = false
+                if (nextItem.type == TransferType.SEND) {
+                    if (nextItem.destinationPath != currentDirCache) {
+                        try {
+                            currentDirCache = nextItem.destinationPath
+                            remoteFilesCache = repository.listDirectory(currentDirCache)
+                        } catch (e: Exception) {
+                            remoteFilesCache = emptyList()
+                        }
+                    }
+                    exists = remoteFilesCache.any { it.name == nextItem.remoteFileName }
+                } else if (nextItem.type == TransferType.FETCH) {
+                    val downloadDir = File(nextItem.destinationPath)
+                    val localFile = File(downloadDir, nextItem.remoteFileName)
+                    exists = localFile.exists()
+                }
+
+                if (exists) {
+                    if (globalConflictResolution == ConflictResolution.SKIP_ALL) {
+                        updateItem(nextItem.id) { it.copy(status = TransferItemStatus.COMPLETED, progress = 100, eta = "Skipped", speed = "") }
+                        continue
+                    } else if (globalConflictResolution == ConflictResolution.OVERWRITE_ALL) {
+                        updateItem(nextItem.id) { it.copy(overwrite = true) }
+                    } else {
+                        updateItem(nextItem.id) { it.copy(status = TransferItemStatus.CONFLICT) }
+                        break
+                    }
+                }
+            }
 
             updateItem(nextItem.id) { it.copy(status = TransferItemStatus.ACTIVE, progress = 0) }
 
@@ -315,38 +396,46 @@ class TransferQueue(
             )}
 
             println("$TAG Fetching: ${remoteFile.name} (${remoteFile.size} bytes)")
-            val flow = if (remoteFile.isDirectory) {
-                repository.fetchDirectory(remoteFile.path, localFile)
-            } else {
-                repository.fetchFile(remoteFile.path, localFile)
-            }
+            try {
+                val flow = if (remoteFile.isDirectory) {
+                    repository.fetchDirectory(remoteFile.path, localFile)
+                } else {
+                    repository.fetchFile(remoteFile.path, localFile)
+                }
 
-            flow.collect { progress ->
-                val now = System.currentTimeMillis()
-                val elapsedSec = (now - startTime) / 1000L
-                val transferredBytes = if (remoteFile.isDirectory) 0L else (fileSize * progress) / 100
-                val speedBps = if (elapsedSec > 0 && !remoteFile.isDirectory) (transferredBytes / elapsedSec) else 0L
-                val etaSec = if (speedBps > 0) ((fileSize - transferredBytes) / speedBps) else 0L
+                flow.collect { progress ->
+                    val now = System.currentTimeMillis()
+                    val elapsedSec = (now - startTime) / 1000L
+                    val transferredBytes = if (remoteFile.isDirectory) 0L else (fileSize * progress) / 100
+                    val speedBps = if (elapsedSec > 0 && !remoteFile.isDirectory) (transferredBytes / elapsedSec) else 0L
+                    val etaSec = if (speedBps > 0) ((fileSize - transferredBytes) / speedBps) else 0L
 
-                updateItem(item.id) { it.copy(
-                    progress = progress,
-                    speed = if (remoteFile.isDirectory) "Processing..." else SecureQtSdk.Utils.formatSize(speedBps) + "/s",
-                    elapsed = SecureQtSdk.Utils.formatTime(elapsedSec),
-                    eta = if (speedBps > 0) SecureQtSdk.Utils.formatTime(etaSec) else "Calculating...",
-                    transferred = if (remoteFile.isDirectory) "Processing..." else SecureQtSdk.Utils.formatSize(transferredBytes),
-                    total = totalStr
-                )}
+                    updateItem(item.id) { it.copy(
+                        progress = progress,
+                        speed = if (remoteFile.isDirectory) "Processing..." else SecureQtSdk.Utils.formatSize(speedBps) + "/s",
+                        elapsed = SecureQtSdk.Utils.formatTime(elapsedSec),
+                        eta = if (speedBps > 0) SecureQtSdk.Utils.formatTime(etaSec) else "Calculating...",
+                        transferred = if (remoteFile.isDirectory) "Processing..." else SecureQtSdk.Utils.formatSize(transferredBytes),
+                        total = totalStr
+                    )}
+                }
+                val finalItem = item.copy(
+                    status = TransferItemStatus.COMPLETED,
+                    progress = 100,
+                    eta = "Done",
+                    total = totalStr,
+                    elapsed = SecureQtSdk.Utils.formatTime((System.currentTimeMillis() - startTime) / 1000L)
+                )
+                updateItem(item.id) { finalItem }
+                TransferHistoryRepository.addEntry(finalItem, deviceId)
+                println("$TAG Fetched successfully: ${remoteFile.name} → ${localFile.absolutePath}")
+            } catch (e: Exception) {
+                if (localFile.exists()) {
+                    if (localFile.isDirectory) localFile.deleteRecursively() else localFile.delete()
+                    println("$TAG Deleted corrupted partial fetch: ${localFile.absolutePath}")
+                }
+                throw e
             }
-            val finalItem = item.copy(
-                status = TransferItemStatus.COMPLETED,
-                progress = 100,
-                eta = "Done",
-                total = totalStr,
-                elapsed = SecureQtSdk.Utils.formatTime((System.currentTimeMillis() - startTime) / 1000L)
-            )
-            updateItem(item.id) { finalItem }
-            TransferHistoryRepository.addEntry(finalItem, deviceId)
-            println("$TAG Fetched successfully: ${remoteFile.name} → ${localFile.absolutePath}")
         }
     }
 

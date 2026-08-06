@@ -560,7 +560,11 @@ class UsbCommandProcessor @Inject constructor(
         } catch (e: Exception) {
             fos?.close()
             fos = null
-            file?.delete()
+            if (SmartNavStorageResolver.isSmartNavPath(fileName)) {
+                SmartNavStorageResolver.delete(context, fileName)
+            } else {
+                file?.delete()
+            }
             throw e
         } finally {
             fos?.close()

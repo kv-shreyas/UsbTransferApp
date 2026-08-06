@@ -170,6 +170,16 @@ class MainViewModel(
         session.transferQueue.cancelItem(itemId)
     }
 
+    fun retryQueueItem(itemId: String) {
+        val session = selectedSession() ?: return
+        session.transferQueue.retry(itemId)
+    }
+
+    fun resolveConflict(itemId: String, resolution: com.example.securequicktransferapp.data.usb.ConflictResolution) {
+        val session = selectedSession() ?: return
+        session.transferQueue.resolveConflict(itemId, resolution)
+    }
+
     fun clearFinishedQueue() {
         val session = selectedSession() ?: return
         session.transferQueue.clearFinished()

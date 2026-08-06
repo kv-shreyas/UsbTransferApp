@@ -19,7 +19,8 @@ enum class TransferItemStatus {
     ACTIVE,
     COMPLETED,
     FAILED,
-    CANCELLED
+    CANCELLED,
+    CONFLICT
 }
 
 /**
@@ -55,7 +56,8 @@ data class TransferQueueItem(
     val total: String = "",
     val error: String? = null,
     val addedAt: Long = System.currentTimeMillis(),
-    val startedAt: Long = 0L
+    val startedAt: Long = 0L,
+    val overwrite: Boolean = false
 ) {
     val displayName: String
         get() = localFile?.name ?: remoteFile?.name ?: remoteFileName
