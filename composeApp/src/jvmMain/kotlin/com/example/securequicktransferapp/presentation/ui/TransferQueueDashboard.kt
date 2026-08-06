@@ -196,7 +196,7 @@ private fun DeviceQueueSection(
     val queue = vm.getDeviceQueue(deviceId)
     val queueItems = queue?.queue?.collectAsState()?.value ?: emptyList()
     val isProcessing = queue?.isProcessing?.collectAsState()?.value ?: false
-    var isListExpanded by remember { mutableStateOf(true) }
+    var isListExpanded by remember { mutableStateOf(false) }
 
     val isReady = sessionState.status is DeviceSessionStatus.Ready
     val isConnecting = sessionState.status is DeviceSessionStatus.Connecting
@@ -382,32 +382,71 @@ private fun DeviceQueueSection(
                     )
                 }
 
-                AnimatedVisibility(visible = !isListExpanded && activeItems.isNotEmpty()) {
-                    val activeItem = activeItems.first()
-                    Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                activeItem.displayName,
-                                style = MaterialTheme.typography.bodySmall,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f)
+                AnimatedVisibility(visible = !isListExpanded) {
+                    val relevantItems = queueItems.filter { it.status == TransferItemStatus.ACTIVE || it.status == TransferItemStatus.PENDING || it.status == TransferItemStatus.COMPLETED }
+                    if (relevantItems.isNotEmpty()) {
+                        val totalBytes = relevantItems.sumOf { it.fileSize }
+                        
+                        val completedBytes = completedItems.sumOf { it.fileSize }
+                        val activeItem = activeItems.firstOrNull()
+                        val activeBytes = if (activeItem != null) (activeItem.fileSize * (activeItem.progress / 100f)).toLong() else 0L
+                        val totalTransferredBytes = completedBytes + activeBytes
+                        
+                        val overallProgress = if (totalBytes > 0) totalTransferredBytes.toFloat() / totalBytes else 0f
+                        val progressPercent = (overallProgress * 100).toInt()
+                        
+                        val overallTransferredStr = com.example.secureqt.sdk.SecureQtSdk.Utils.formatSize(totalTransferredBytes)
+                        val overallTotalStr = com.example.secureqt.sdk.SecureQtSdk.Utils.formatSize(totalBytes)
+                        
+                        val timeElapsed = activeItem?.elapsed?.takeIf { it.isNotBlank() } ?: "0s"
+                        val etaStr = activeItem?.eta?.takeIf { it.isNotBlank() } ?: "N/A"
+                        val speedStr = activeItem?.speed?.takeIf { it.isNotBlank() } ?: "0 B/s"
+                        val activeFileName = activeItem?.displayName ?: "No active transfer"
+
+                        Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    "Overall Progress: $progressPercent%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = AppTheme.colors.onSurface
+                                )
+                                Text(
+                                    "$overallTransferredStr / $overallTotalStr",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = AppTheme.colors.onSurfaceVariant
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            LinearProgressIndicator(
+                                progress = { overallProgress },
+                                modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
+                                color = AppTheme.colors.primary,
+                                trackColor = AppTheme.colors.surfaceVariant
                             )
-                            Spacer(Modifier.width(8.dp))
-                            Text(
-                                "${activeItem.transferred} / Size: ${activeItem.total}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = AppTheme.colors.onSurfaceVariant
-                            )
+                            Spacer(Modifier.height(4.dp))
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                                Text(
+                                    activeFileName,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    fontWeight = FontWeight.Medium,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.weight(1f).padding(end = 8.dp)
+                                )
+                                Text(
+                                    "Speed: $speedStr",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.8f),
+                                    modifier = Modifier.padding(end = 8.dp)
+                                )
+                                Text(
+                                    "ETA: $etaStr",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.8f)
+                                )
+                            }
                         }
-                        Spacer(Modifier.height(4.dp))
-                        LinearProgressIndicator(
-                            progress = { activeItem.progress / 100f },
-                            modifier = Modifier.fillMaxWidth().height(2.dp).clip(RoundedCornerShape(1.dp)),
-                            color = AppTheme.colors.primary,
-                            trackColor = AppTheme.colors.surfaceVariant
-                        )
                     }
                 }
 
