@@ -113,10 +113,9 @@ class UsbSessionManager(
                 }
                 sessionJobs[id] = job
 
-                // Asynchronously attempt connection and handshake
-                scope.launch {
-                    session.connect()
-                }
+                // The device is now discovered and sits in 'Idle/DeviceDetected' state.
+                // We do NOT automatically connect here. The user must manually click Connect in the UI.
+                // scope.launch { session.connect() }
             } else {
                 // Device already tracked in activeSessions.
                 // discoverDevices() returned a +1 refCount handle that won't be stored.
