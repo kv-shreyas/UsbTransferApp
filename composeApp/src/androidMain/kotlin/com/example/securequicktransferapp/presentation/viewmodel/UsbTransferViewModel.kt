@@ -1101,21 +1101,7 @@ class UsbTransferViewModel @Inject constructor(
     fun prepareLocalSmartNavStaging(stagingDir: File, onComplete: () -> Unit) {
         viewModelScope.launch(Dispatchers.IO) {
             usbLogger.i(TAG, "prepareLocalSmartNavStaging: Initializing SmartNavRoot hierarchy under ${stagingDir.absolutePath}...")
-            val foldersAndFiles = listOf(
-                Pair(Constants.SmartnavRoot.DIR_PASSWORD, Pair(Constants.SmartnavRoot.FILE_PASSWORD, Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE)),
-                Pair(Constants.SmartnavRoot.DIR_PASSWORD, Pair(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, Constants.SmartnavRoot.DEFAULT_MAINTENANCE_PASSWORD_VALUE)),
-                Pair(Constants.SmartnavRoot.DIR_PASSWORD, Pair(Constants.SmartnavRoot.FILE_KMM_PASSWORD, Constants.SmartnavRoot.DEFAULT_KMM_PASSWORD_VALUE)),
-                Pair("${Constants.SmartnavRoot.DIR_TRACKS}/${Constants.SmartnavRoot.DIR_TRACKS_META}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair(Constants.SmartnavRoot.DIR_TRACE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair(Constants.SmartnavRoot.DIR_IMEI, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("updateApp", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair(Constants.SmartnavRoot.DIR_FIRMWARE_UPGRADE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_RASTER}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_VECTOR}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair("${Constants.SmartnavRoot.DIR_MAPS}/${Constants.SmartnavRoot.DIR_MAPS_ICONS}", Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair(Constants.SmartnavRoot.DIR_DATABASE, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, "")),
-                Pair(Constants.SmartnavRoot.DIR_GNSS_DATA_LOGS, Pair(Constants.SmartnavRoot.FILE_KEEP_PLACEHOLDER, ""))
-            )
+            val foldersAndFiles = Constants.SmartnavRoot.DEFAULT_FOLDERS_AND_FILES
             for ((folder, filePair) in foldersAndFiles) {
                 if (!isActive) break
                 val (fileName, content) = filePair

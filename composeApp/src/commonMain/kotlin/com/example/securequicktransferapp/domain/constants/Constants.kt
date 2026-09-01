@@ -31,15 +31,31 @@ object Constants {
         const val FILE_PASSWORD = "password.txt"
         const val FILE_MAINTENANCE_PASSWORD = "maintenancepassword.txt"
         const val FILE_KMM_PASSWORD = "kmmpassword.txt"
-        const val FILE_LOG_COUNTER = "logCounter.txt"
-        const val FILE_CURRENT_TRACK = "currentTrack.atf"
-        const val FILE_TRACE_TEMP = "trace_temp.bin"
+        const val FILE_KMM_NAV_PASSWORD = "kmm_nav_password.txt"
         const val FILE_KEEP_PLACEHOLDER = ".keep"
 
         // Default Password & Counter Values
         const val DEFAULT_PASSWORD_VALUE = "123456"
         const val DEFAULT_MAINTENANCE_PASSWORD_VALUE = "A@#\$rdDEV"
-        const val DEFAULT_KMM_PASSWORD_VALUE = "kmm_admin"
+        const val DEFAULT_KMM_PASSWORD_VALUE = "123456"
+        const val DEFAULT_KMM_NAV_PASSWORD_VALUE = "123456"
         const val DEFAULT_LOG_COUNTER_VALUE = "0"
+
+        val DEFAULT_FOLDERS_AND_FILES: List<Pair<String, Pair<String, String>>> = listOf(
+            Pair(DIR_PASSWORD, Pair(FILE_PASSWORD, DEFAULT_PASSWORD_VALUE)),
+            Pair(DIR_PASSWORD, Pair(FILE_MAINTENANCE_PASSWORD, DEFAULT_MAINTENANCE_PASSWORD_VALUE)),
+            Pair(DIR_PASSWORD, Pair(FILE_KMM_PASSWORD, DEFAULT_KMM_PASSWORD_VALUE)),
+            Pair(DIR_PASSWORD, Pair(FILE_KMM_NAV_PASSWORD, DEFAULT_KMM_NAV_PASSWORD_VALUE)),
+//            Pair("$DIR_TRACKS/$DIR_TRACKS_META", Pair(FILE_KEEP_PLACEHOLDER, "")),
+//            Pair(DIR_TRACE, Pair(FILE_KEEP_PLACEHOLDER, "")),
+            Pair(DIR_IMEI, Pair(FILE_KEEP_PLACEHOLDER, "")),
+            Pair("updateApp", Pair(FILE_KEEP_PLACEHOLDER, "")),
+            Pair(DIR_FIRMWARE_UPGRADE, Pair(FILE_KEEP_PLACEHOLDER, "")),
+            Pair("$DIR_MAPS/$DIR_MAPS_RASTER", Pair(FILE_KEEP_PLACEHOLDER, "")),
+            Pair("$DIR_MAPS/$DIR_MAPS_VECTOR", Pair(FILE_KEEP_PLACEHOLDER, "")),
+            Pair("$DIR_MAPS/$DIR_MAPS_ICONS", Pair(FILE_KEEP_PLACEHOLDER, "")),
+            Pair(DIR_DATABASE, Pair(FILE_KEEP_PLACEHOLDER, "")),
+//            Pair(DIR_GNSS_DATA_LOGS, Pair(FILE_KEEP_PLACEHOLDER, ""))
+        )
     }
 }
