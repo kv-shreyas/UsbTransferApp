@@ -460,7 +460,8 @@ class UsbCommandProcessor @Inject constructor(
             if (name.startsWith(".")) continue
             val child = File(dir, name)
             val isDir = try { child.isDirectory } catch (_: Exception) { false }
-            items.add(Triple(isDir, 0L, name.toByteArray(Charsets.UTF_8)))
+            val size = if (!isDir) try { child.length() } catch (_: Exception) { 0L } else 0L
+            items.add(Triple(isDir, size, name.toByteArray(Charsets.UTF_8)))
         }
 
         // --- Android 11+ Scoped Storage Navigation Patch ---
