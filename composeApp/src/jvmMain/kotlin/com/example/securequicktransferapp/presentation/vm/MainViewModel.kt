@@ -294,12 +294,30 @@ class MainViewModel(
         watchQueueCompletion(session)
     }
 
-    fun sendFilesToDevices(files: List<File>, targetDeviceIds: Set<String>, targetPath: String) {
+    fun sendFilesToDevices(files: List<File>, targetDeviceIds: Set<String>, defaultTargetPath: String) {
         if (files.isEmpty() || targetDeviceIds.isEmpty()) return
         targetDeviceIds.forEach { deviceId ->
             val session = sessionManager.getSession(deviceId) ?: return@forEach
-            println("$TAG [Multi-Clone] Enqueuing ${files.size} file(s) to send → $targetPath for device $deviceId")
-            session.transferQueue.enqueueSendBatch(files, targetPath)
+            
+            val updateAppFiles = files.filter { it.name == Constants.SmartnavRoot.DIR_APP_UPDATE }
+            val updateOsFiles = files.filter { it.name == Constants.SmartnavRoot.DIR_OS_UPDATE }
+            val standardFiles = files.filter { it.name != Constants.SmartnavRoot.DIR_APP_UPDATE && it.name != Constants.SmartnavRoot.DIR_OS_UPDATE }
+            
+            if (standardFiles.isNotEmpty()) {
+                println("$TAG [Multi-Clone] Enqueuing ${standardFiles.size} standard file(s) to send → $defaultTargetPath for device $deviceId")
+                session.transferQueue.enqueueSendBatch(standardFiles, defaultTargetPath)
+            }
+            
+            if (updateAppFiles.isNotEmpty()) {
+                println("$TAG [Multi-Clone] Enqueuing ${updateAppFiles.size} file(s) to send → /sdcard for device $deviceId")
+                session.transferQueue.enqueueSendBatch(updateAppFiles, Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH)
+            }
+            
+            if (updateOsFiles.isNotEmpty()) {
+                println("$TAG [Multi-Clone] Enqueuing ${updateOsFiles.size} file(s) to send → /sdcard for device $deviceId")
+                session.transferQueue.enqueueSendBatch(updateOsFiles, Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH)
+            }
+
             watchQueueCompletion(session)
         }
     }

@@ -255,10 +255,11 @@ fun SmartNavAndroidDashboard(
         ) {
             val quickFolders = listOf(
                 Pair("Main Root ($selectedBasePath)", selectedBasePath),
-                Pair("Password Dir ($selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"),
+           /*     Pair("Password Dir ($selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"),
                 Pair("Tracks ($selectedBasePath/${Constants.SmartnavRoot.DIR_TRACKS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_TRACKS}"),
                 Pair("Maps Root ($selectedBasePath/${Constants.SmartnavRoot.DIR_MAPS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_MAPS}"),
-                Pair("App Update (${Constants.SmartnavRoot.PATH_APP_UPDATE})", Constants.SmartnavRoot.PATH_APP_UPDATE)
+                Pair("App Update (${Constants.SmartnavRoot.DIR_APP_UPDATE})", Constants.SmartnavRoot.DIR_APP_UPDATE),
+                Pair("OS Update (${Constants.SmartnavRoot.DIR_OS_UPDATE})", Constants.SmartnavRoot.DIR_OS_UPDATE)*/
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for ((label, path) in quickFolders) {
