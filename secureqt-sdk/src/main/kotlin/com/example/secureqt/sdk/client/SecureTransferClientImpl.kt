@@ -448,6 +448,18 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
         }
     }
 
+    override suspend fun sendDeviceId(deviceId: String): Boolean = commandMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val idBytes = deviceId.toByteArray(Charsets.UTF_8)
+            val payload = ByteBuffer.allocate(1 + 4 + idBytes.size)
+                .put(SecureQtSdk.Commands.CMD_SET_DEVICE_ID)
+                .putInt(idBytes.size)
+                .put(idBytes)
+                .array()
+            channel.sendSecure(payload)
+        }
+    }
+
     override suspend fun sendDisconnect() {
         withContext(Dispatchers.IO) {
             channel.sendSecure(byteArrayOf(SecureQtSdk.Commands.CMD_DISCONNECT))

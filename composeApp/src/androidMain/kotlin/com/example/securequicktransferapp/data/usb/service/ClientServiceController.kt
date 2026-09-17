@@ -220,6 +220,11 @@ class ClientServiceController @Inject constructor(
                                 usbLogger.i(TAG, "Disconnected command received from remote Host. Entering instant standby...")
                                 clientUiState.value = UsbUiState.Success("Standby: Ready for instant connection...")
                                 onStatusUpdate("Standby: Ready for instant connection...")
+                            },
+                            onSetDeviceId = { deviceId ->
+                                usbLogger.i(TAG, "Host set Device ID to: $deviceId")
+                                clientUiState.value = UsbUiState.Success("Connected to Host ($deviceId)")
+                                onStatusUpdate("Connected to Host: $deviceId")
                             }
                         )
                     } else {

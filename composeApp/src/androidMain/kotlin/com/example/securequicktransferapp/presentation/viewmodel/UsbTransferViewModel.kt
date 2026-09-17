@@ -41,6 +41,7 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
+import kotlin.time.Duration.Companion.milliseconds
 
 @HiltViewModel
 class UsbTransferViewModel @Inject constructor(
@@ -305,14 +306,14 @@ class UsbTransferViewModel @Inject constructor(
                     usbLogger.d(TAG, "requestPermissionAndConnect: Requesting permission for device ${device.deviceId}")
                     _uiState.value = UsbUiState.RequestingPermission
                     usbManagerWrapper.requestPermission(device)
-                    val granted = withTimeoutOrNull(60_000) {
+                    val granted = withTimeoutOrNull(60_000.milliseconds) {
                         var isGranted = false
                         while (isActive) {
                             if (usbManagerWrapper.hasPermission(device)) {
                                 isGranted = true
                                 break
                             }
-                            val event = withTimeoutOrNull(250) { UsbPermissionBus.flow.firstOrNull() }
+                            val event = withTimeoutOrNull(250.milliseconds) { UsbPermissionBus.flow.firstOrNull() }
                             if (event is UsbPermissionEvent.DeviceGranted && event.device.deviceId == device.deviceId) {
                                 isGranted = true
                                 break
@@ -339,14 +340,14 @@ class UsbTransferViewModel @Inject constructor(
                     usbLogger.d(TAG, "requestPermissionAndConnect: Requesting permission for accessory ${accessory.model}")
                     _uiState.value = UsbUiState.RequestingPermission
                     usbManagerWrapper.requestPermission(accessory)
-                    val granted = withTimeoutOrNull(60_000) {
+                    val granted = withTimeoutOrNull(60_000.milliseconds) {
                         var isGranted = false
                         while (isActive) {
                             if (usbManagerWrapper.hasPermission(accessory)) {
                                 isGranted = true
                                 break
                             }
-                            val event = withTimeoutOrNull(250) { UsbPermissionBus.flow.firstOrNull() }
+                            val event = withTimeoutOrNull(250.milliseconds) { UsbPermissionBus.flow.firstOrNull() }
                             if (event is UsbPermissionEvent.AccessoryGranted && event.accessory.model == accessory.model && event.accessory.manufacturer == accessory.manufacturer) {
                                 isGranted = true
                                 break

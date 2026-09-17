@@ -85,7 +85,11 @@ class UsbRepositoryImpl(
         // Perform Desktop-side handshake sequence using the unified channel protocol
         try {
             return kotlinx.coroutines.runBlocking {
-                channel.performHandshake(isInitiator = true)
+                val handshakeSuccess = channel.performHandshake(isInitiator = true)
+                if (handshakeSuccess) {
+                    transferClient.sendDeviceId(targetDeviceId ?: "UnknownDevice")
+                }
+                handshakeSuccess
             }
         } catch (e: Exception) {
             logger.e(TAG, "Handshake failed", e)

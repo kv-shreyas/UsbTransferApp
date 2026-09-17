@@ -50,6 +50,11 @@ interface ISecureTransferClient {
     suspend fun createFolder(remotePath: String): Boolean
 
     /**
+     * Sends the host-assigned device ID to the client.
+     */
+    suspend fun sendDeviceId(deviceId: String): Boolean
+
+    /**
      * Sends a disconnect command and closes the channel.
      */
     suspend fun sendDisconnect()

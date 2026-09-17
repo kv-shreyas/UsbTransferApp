@@ -38,7 +38,8 @@ class UsbCommandProcessor @Inject constructor(
         onReceiveFinished: () -> Unit = {},
         onReceiveCancelled: () -> Unit = {},
         onReceiveError: (String) -> Unit = {},
-        onDisconnectReceived: () -> Unit = {}
+        onDisconnectReceived: () -> Unit = {},
+        onSetDeviceId: ((String) -> Unit)? = null
     ) = withContext(Dispatchers.IO) {
         usbLogger.d(TAG, "Command loop started - Sending periodic READY signals")
         try {
@@ -58,7 +59,7 @@ class UsbCommandProcessor @Inject constructor(
                 try {
                     val raw = dataSource.receiveSecure() ?: break
                     ackJob.cancel()
-                    if (!processCommand(raw, onReceiveStarted, onReceiveProgress, onReceiveFinished, onReceiveCancelled, onReceiveError, onDisconnectReceived)) break
+                    if (!processCommand(raw, onReceiveStarted, onReceiveProgress, onReceiveFinished, onReceiveCancelled, onReceiveError, onDisconnectReceived, onSetDeviceId)) break
                 } catch (e: UsbDataSource.TransferCancelledException) {
                     usbLogger.w(TAG, "Transfer cancelled by remote. Aborting current transfer job.")
                     transferJob?.cancel()
@@ -79,7 +80,8 @@ class UsbCommandProcessor @Inject constructor(
         onReceiveFinished: () -> Unit,
         onReceiveCancelled: () -> Unit,
         onReceiveError: (String) -> Unit,
-        onDisconnectReceived: () -> Unit
+        onDisconnectReceived: () -> Unit,
+        onSetDeviceId: ((String) -> Unit)?
     ): Boolean {
         if (data.isEmpty()) return true
         val buffer = ByteBuffer.wrap(data)
@@ -145,6 +147,18 @@ class UsbCommandProcessor @Inject constructor(
             }
             8.toByte() -> {
                 try { handleCreateFolder(buffer) } catch(e: Exception) { usbLogger.e(TAG, "Create Folder error", e) }
+            }
+            9.toByte() -> {
+                try {
+                    val idLen = buffer.getInt()
+                    val idBytes = ByteArray(idLen)
+                    buffer.get(idBytes)
+                    val deviceId = String(idBytes)
+                    usbLogger.d(TAG, "Received Host Device ID: $deviceId")
+                    withContext(Dispatchers.Main) { onSetDeviceId?.invoke(deviceId) }
+                } catch(e: Exception) {
+                    usbLogger.e(TAG, "Set Device ID error", e)
+                }
             }
             else -> usbLogger.e(TAG, "Unknown command type: $commandType")
         }

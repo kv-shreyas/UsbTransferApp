@@ -404,8 +404,10 @@ fun StateContent(
                         color = AppTheme.colors.surfaceVariant,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Column(modifier = Modifier.padding(16.dp)) {
+                        Column(modifier = Modifier.padding(10.dp)) {
                             Text("✅ Device is ready (Client Mode)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = SuccessColor)
+                            Spacer(Modifier.height(4.dp))
+                            Text(state.message, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = AppTheme.colors.primary)
                             Spacer(Modifier.height(4.dp))
                             Text("Waiting for commands from the connected Host device.", style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
                         }
