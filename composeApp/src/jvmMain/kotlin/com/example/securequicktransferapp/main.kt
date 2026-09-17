@@ -25,7 +25,10 @@ fun main() {
             height = (screenSize.height*0.8).dp
         )
         Window(
-            onCloseRequest = ::exitApplication,
+            onCloseRequest = {
+                vm.disconnectAll()
+                exitApplication()
+            },
             state = state,
             title = "Secure Quick Transfer"
         ) {

@@ -233,6 +233,25 @@ class MainViewModel(
         }
     }
 
+    fun disconnectAll() {
+        println("$TAG Force disconnecting all connected devices...")
+        val sessions = sessionManager.getActiveSessions().values
+        for (session in sessions) {
+            val id = session.deviceId
+            // Avoid async TYPE_CANCEL racing with synchronous CMD_DISCONNECT during app teardown
+            queueWatchers.remove(id)?.cancel()
+            try {
+                // Must be synchronous or blocking to ensure it finishes before exit, 
+                // but we can't runBlocking easily in all environments, so we'll just runBlocking here
+                kotlinx.coroutines.runBlocking {
+                    session.disconnect()
+                }
+            } catch (e: Exception) {
+                println("$TAG Disconnect all error for $id: ${e.message}")
+            }
+        }
+    }
+
     fun refreshRemoteFiles() {
         val session = selectedSession() ?: return
         scope.launch {

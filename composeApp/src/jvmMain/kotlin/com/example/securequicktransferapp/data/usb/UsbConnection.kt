@@ -209,7 +209,11 @@ class UsbConnection {
         return null
     }
 
+    private val readLock = Any()
+    private val writeLock = Any()
+
     fun bulkRead(): ByteArray? {
+        synchronized(readLock) {
         if (handle == null) {
             println("[UsbConnection] Error: bulkRead failed - handle is null.")
             return null
@@ -248,6 +252,7 @@ class UsbConnection {
         readBuffer.get(data, 0, size)
 
         return data
+        }
     }
 
     fun clearInputBuffer() {
@@ -263,6 +268,7 @@ class UsbConnection {
     }
 
     fun bulkWrite(data: ByteArray): Boolean {
+        synchronized(writeLock) {
         if (handle == null) {
             println("[UsbConnection] Error: bulkWrite failed - handle is null.")
             return false
@@ -314,10 +320,13 @@ class UsbConnection {
         }
 
         return true
+        }
     }
 
     fun close() {
-        handle?.let {
+        synchronized(writeLock) {
+            synchronized(readLock) {
+                handle?.let {
             try {
                 LibUsb.releaseInterface(it, currentInterface)
             } catch (e: Exception) {}
@@ -331,6 +340,8 @@ class UsbConnection {
             } catch (e: Exception) {}
         }
         handle = null
+            }
+        }
     }
 
     fun resetPort() {

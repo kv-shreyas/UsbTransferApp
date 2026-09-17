@@ -11,6 +11,7 @@ import com.example.securequicktransferapp.data.logging.ConsoleLogger
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.channelFlow
 import java.io.File
+import kotlin.time.Duration.Companion.milliseconds
 
 class UsbRepositoryImpl(
     private val deviceManager: UsbDeviceManager,
@@ -99,7 +100,10 @@ class UsbRepositoryImpl(
 
     override fun disconnect() {
         try {
-            kotlinx.coroutines.runBlocking { transferClient.sendDisconnect() }
+            kotlinx.coroutines.runBlocking { 
+                transferClient.sendDisconnect()
+                kotlinx.coroutines.delay(100.milliseconds) // Allow time for packet to traverse USB and be read by Android
+            }
         } catch (e: Exception) {
             logger.w(TAG, "Error sending disconnect signal: ${e.message}")
         }
