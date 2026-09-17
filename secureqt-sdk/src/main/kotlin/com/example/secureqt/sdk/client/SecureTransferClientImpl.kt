@@ -35,11 +35,11 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
 
             if (!channel.sendSecure(payload)) return@withContext emptyList()
 
-            val countData = withTimeoutOrNull(5000) { channel.receiveSecure() } ?: return@withContext emptyList()
+            val countData = channel.receiveSecure() ?: return@withContext emptyList()
             if (countData.size == 4) {
                 val count = ByteBuffer.wrap(countData).int
                 for (i in 0 until count) {
-                    val itemData = withTimeoutOrNull(10000) { channel.receiveSecure() } ?: break
+                    val itemData = channel.receiveSecure() ?: break
                     val buffer = ByteBuffer.wrap(itemData)
                     if (buffer.remaining() < 1 + 8 + 4) break
                     val isDir = buffer.get().toInt() == 1
@@ -237,13 +237,11 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
 
             if (!channel.sendSecure(header)) return@withContext false
 
-            val fileInfoData = withTimeoutOrNull(5000) { channel.receiveSecure() } ?: return@withContext false
+            val fileInfoData = channel.receiveSecure() ?: return@withContext false
+            if (fileInfoData.size < 8) return@withContext false // Must have at least 8 bytes for size
             val buffer = ByteBuffer.wrap(fileInfoData)
             val totalSize = buffer.long
-            val nameLen = buffer.int
-            val nameBytes = ByteArray(nameLen)
-            buffer.get(nameBytes)
-            val fileName = String(nameBytes, Charsets.UTF_8)
+            val fileName = remotePath.substringAfterLast('/')
 
             if (!localSaveDir.exists()) localSaveDir.mkdirs()
             val saveFile = File(localSaveDir, fileName)
@@ -296,6 +294,8 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
             }
 
             if (!success && saveFile.exists()) saveFile.delete()
+            receiveJob.cancel()
+            decryptJob.cancel()
             success
         }
     }
@@ -311,13 +311,11 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
 
             if (!channel.sendSecure(header)) return@withContext false
 
-            val fileInfoData = withTimeoutOrNull(5000) { channel.receiveSecure() } ?: return@withContext false
+            val fileInfoData = channel.receiveSecure() ?: return@withContext false
+            if (fileInfoData.size < 8) return@withContext false // Must have at least 8 bytes for size
             val buffer = ByteBuffer.wrap(fileInfoData)
             val totalSize = buffer.long
-            val nameLen = buffer.int
-            val nameBytes = ByteArray(nameLen)
-            buffer.get(nameBytes)
-            val dirName = String(nameBytes, Charsets.UTF_8)
+            val dirName = remotePath.substringAfterLast('/')
 
             if (!localSaveDir.exists()) localSaveDir.mkdirs()
             val targetDir = File(localSaveDir, dirName)
@@ -399,6 +397,8 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
             }
 
             if (!success) targetDir.deleteRecursively()
+            receiveJob.cancel()
+            decryptJob.cancel()
             success
         }
     }
@@ -412,7 +412,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                 .put(pathBytes)
                 .array()
             if (!channel.sendSecure(payload)) return@withContext false
-            val response = kotlinx.coroutines.withTimeoutOrNull(5000) { channel.receiveSecure() }
+            val response = channel.receiveSecure()
             response?.firstOrNull() == 1.toByte()
         }
     }
@@ -429,7 +429,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                 .put(nameBytes)
                 .array()
             if (!channel.sendSecure(payload)) return@withContext false
-            val response = kotlinx.coroutines.withTimeoutOrNull(5000) { channel.receiveSecure() }
+            val response = channel.receiveSecure()
             response?.firstOrNull() == 1.toByte()
         }
     }
@@ -443,7 +443,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                 .put(pathBytes)
                 .array()
             if (!channel.sendSecure(payload)) return@withContext false
-            val response = kotlinx.coroutines.withTimeoutOrNull(5000) { channel.receiveSecure() }
+            val response = channel.receiveSecure()
             response?.firstOrNull() == 1.toByte()
         }
     }

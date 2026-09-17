@@ -226,16 +226,22 @@ class UsbConnection {
             20000 // 20s
         )
 
+        val size = transferredBuffer.get(0)
+        
         if (result != LibUsb.SUCCESS) {
-            println("[UsbConnection] Error: bulkRead failed. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointIn)}")
-            if (result == LibUsb.ERROR_NO_DEVICE || result == LibUsb.ERROR_IO || result == LibUsb.ERROR_PIPE) {
-                close()
+            if (result == LibUsb.ERROR_TIMEOUT && size > 0) {
+                // We received data despite the timeout! Don't discard it.
+                println("[UsbConnection] Warning: bulkRead timed out but transferred $size bytes.")
+            } else {
+                println("[UsbConnection] Error: bulkRead failed. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointIn)}")
+                if (result == LibUsb.ERROR_NO_DEVICE || result == LibUsb.ERROR_IO || result == LibUsb.ERROR_PIPE) {
+                    close()
+                }
+                return null
             }
-            return null
         }
 
-        val size = transferredBuffer.get(0)
-        if (size < 0) return null
+        if (size <= 0) return null
         
         val data = ByteArray(size)
         readBuffer.rewind()

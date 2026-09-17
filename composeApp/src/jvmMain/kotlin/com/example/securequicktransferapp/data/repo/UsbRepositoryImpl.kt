@@ -124,19 +124,27 @@ class UsbRepositoryImpl(
     }
 
     override fun fetchFile(remotePath: String, localFile: File): Flow<Int> = channelFlow {
-        transferClient.fetchFile(remotePath, localFile.parentFile) { sent, total ->
+        val success = transferClient.fetchFile(remotePath, localFile.parentFile) { sent, total ->
             val progress = if (total > 0) ((sent.toFloat() / total) * 100).toInt() else 0
             trySend(progress)
         }
-        trySend(100)
+        if (success) {
+            trySend(100)
+        } else {
+            error("Failed to fetch file from device: $remotePath")
+        }
     }
 
     override fun fetchDirectory(remotePath: String, localFile: File): Flow<Int> = channelFlow {
-        transferClient.fetchRemoteDirectory(remotePath, localFile.parentFile) { sent, total ->
+        val success = transferClient.fetchRemoteDirectory(remotePath, localFile.parentFile) { sent, total ->
             val progress = if (total > 0) ((sent.toFloat() / total) * 100).toInt() else 0
             trySend(progress)
         }
-        trySend(100)
+        if (success) {
+            trySend(100)
+        } else {
+            error("Failed to fetch directory from device: $remotePath")
+        }
     }
 
     override suspend fun deleteFile(remotePath: String): Boolean = transferClient.deleteFile(remotePath)

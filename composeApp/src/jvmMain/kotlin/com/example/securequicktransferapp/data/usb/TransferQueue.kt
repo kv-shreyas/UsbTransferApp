@@ -54,12 +54,13 @@ class TransferQueue(
     /**
      * Enqueues a single file/directory for sending (Host → Device).
      */
-    fun enqueueSend(file: File, destinationPath: String, isDirectory: Boolean = file.isDirectory) {
+    fun enqueueSend(file: File, destinationPath: String, isDirectory: Boolean = file.isDirectory, overwrite: Boolean = false) {
         val item = TransferQueueItem(
             type = TransferType.SEND,
             localFile = file,
             destinationPath = destinationPath,
-            isDirectory = isDirectory
+            isDirectory = isDirectory,
+            overwrite = overwrite
         )
         _queue.value = _queue.value + item
         println("$TAG Enqueued SEND: ${file.name} → $destinationPath")

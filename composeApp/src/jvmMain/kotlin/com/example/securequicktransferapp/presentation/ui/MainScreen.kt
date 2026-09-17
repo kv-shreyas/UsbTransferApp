@@ -110,11 +110,21 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
     var showCreateTextFileDialog by remember { mutableStateOf(false) }
     var newTextFileName by remember { mutableStateOf("") }
     var newTextFileContent by remember { mutableStateOf("") }
+    var selectedFiles by remember { mutableStateOf(setOf<RemoteFile>()) }
+    val editingFileName by vm.editingFileName.collectAsState()
+    val editingFileContent by vm.editingFileContent.collectAsState()
+    var currentEditContent by remember { mutableStateOf("") }
+
+    LaunchedEffect(editingFileContent) {
+        if (editingFileContent != null) {
+            currentEditContent = editingFileContent ?: ""
+        }
+    }
 
     val isConnected = state == "Ready"
 
     LaunchedEffect(isConnected) {
-        if (!isConnected) {
+        if (!isConnected) {isQueueProcessing
             currentScreen = "explorer"
         }
     }
@@ -277,15 +287,48 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
                     )
                 }
 
+                if (editingFileName != null && editingFileContent != null) {
+                    AlertDialog(
+                        onDismissRequest = { vm.cancelEditing() },
+                        title = { Text("Edit ${editingFileName}") },
+                        text = {
+                            OutlinedTextField(
+                                value = currentEditContent,
+                                onValueChange = { currentEditContent = it },
+                                label = { Text("Content") },
+                                modifier = Modifier.fillMaxWidth().height(300.dp)
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                vm.saveEditedFile(editingFileName!!, currentEditContent, currentPath)
+                                selectedFiles = emptySet()
+                            }) {
+                                Text("Save")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                vm.cancelEditing()
+                            }) {
+                                Text("Cancel")
+                            }
+                        }
+                    )
+                }
+
                 Spacer(Modifier.height(24.dp))
 
                 FileList(
                     files = remoteFiles,
+                    selectedFiles = selectedFiles,
+                    onSelectedFilesChange = { selectedFiles = it },
                     modifier = Modifier.weight(1f),
                     onFolderClick = { if (!isQueueProcessing) vm.navigateTo(it) },
                     onFilesFetch = { if (!isQueueProcessing) vm.fetchFiles(it) },
                     onFilesDelete = { files -> if (!isQueueProcessing) files.forEach { vm.deleteFile(it) } },
-                    onFileRename = { file, newName -> if (!isQueueProcessing) vm.renameFile(file, newName) }
+                    onFileRename = { file, newName -> if (!isQueueProcessing) vm.renameFile(file, newName) },
+                    onFileEdit = { if (!isQueueProcessing) vm.openFileForEditing(it) }
                 )
 
                 Spacer(Modifier.height(16.dp))
@@ -638,14 +681,15 @@ fun Header(
 @Composable
 fun FileList(
     files: List<RemoteFile>, 
+    selectedFiles: Set<RemoteFile>,
+    onSelectedFilesChange: (Set<RemoteFile>) -> Unit,
     modifier: Modifier = Modifier,
     onFolderClick: (RemoteFile) -> Unit, 
     onFilesFetch: (List<RemoteFile>) -> Unit,
     onFilesDelete: (List<RemoteFile>) -> Unit,
-    onFileRename: (RemoteFile, String) -> Unit
+    onFileRename: (RemoteFile, String) -> Unit,
+    onFileEdit: (RemoteFile) -> Unit
 ) {
-    var selectedFiles by androidx.compose.runtime.remember { mutableStateOf(setOf<RemoteFile>()) }
-    
     Surface(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
@@ -670,7 +714,7 @@ fun FileList(
                         Text("${selectedFiles.size} items selected", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold, color = AppTheme.colors.onPrimaryContainer)
                         Button(onClick = { 
                             onFilesFetch(selectedFiles.toList())
-                            selectedFiles = emptySet()
+                            onSelectedFilesChange(emptySet())
                         }) {
                             Icon(Icons.Default.Download, null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
@@ -680,7 +724,7 @@ fun FileList(
                         Button(
                             onClick = { 
                                 onFilesDelete(selectedFiles.toList())
-                                selectedFiles = emptySet()
+                                onSelectedFilesChange(emptySet())
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
                         ) {
@@ -696,12 +740,13 @@ fun FileList(
                             file = file, 
                             isSelected = selectedFiles.contains(file),
                             onSelectionChange = { selected -> 
-                                if (selected) selectedFiles += file else selectedFiles -= file
+                                onSelectedFilesChange(if (selected) selectedFiles + file else selectedFiles - file)
                             },
                             onFolderClick = onFolderClick, 
                             onFileFetch = { onFilesFetch(listOf(it)) }, 
                             onFileDelete = { onFilesDelete(listOf(it)) },
-                            onFileRename = onFileRename
+                            onFileRename = onFileRename,
+                            onFileEdit = onFileEdit
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = AppTheme.colors.outlineVariant)
                     }
@@ -719,7 +764,8 @@ fun FileRow(
     onFolderClick: (RemoteFile) -> Unit, 
     onFileFetch: (RemoteFile) -> Unit,
     onFileDelete: (RemoteFile) -> Unit,
-    onFileRename: (RemoteFile, String) -> Unit
+    onFileRename: (RemoteFile, String) -> Unit,
+    onFileEdit: (RemoteFile) -> Unit
 ) {
     var showRenameDialog by remember { mutableStateOf(false) }
     var renameText by remember(file.name, showRenameDialog) { mutableStateOf(file.name) }
@@ -833,6 +879,16 @@ fun FileRow(
                     },
                     leadingIcon = { Icon(Icons.Default.Edit, "Rename") }
                 )
+                if (!file.isDirectory && file.name.endsWith(".txt")) {
+                    androidx.compose.material3.DropdownMenuItem(
+                        text = { Text("Edit") },
+                        onClick = {
+                            showContextMenu = false
+                            onFileEdit(file)
+                        },
+                        leadingIcon = { Icon(Icons.Default.EditNote, "Edit") }
+                    )
+                }
                 androidx.compose.material3.DropdownMenuItem(
                     text = { Text("Delete") },
                     onClick = {

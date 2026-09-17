@@ -245,6 +245,7 @@ class UsbCommandProcessor @Inject constructor(
             if (zipSize <= 0L || zipPath == null) {
                 usbLogger.w(TAG, "handleFetchDir: Remote zip failed or empty for $path")
                 dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
+                dataSource.sendRawPacket(Packet.TYPE_EOF, ByteArray(0))
                 return
             }
             usbLogger.d(TAG, "handleFetchDir: Sending SmartNav ZIP of $zipSize bytes from $zipPath")
@@ -304,6 +305,7 @@ class UsbCommandProcessor @Inject constructor(
         if (!dir.exists() || !dir.isDirectory) {
             usbLogger.w(TAG, "handleFetchDir: Dir not found or is file: ${dir.absolutePath}")
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
+            dataSource.sendRawPacket(Packet.TYPE_EOF, ByteArray(0))
             return
         }
         
@@ -724,6 +726,7 @@ class UsbCommandProcessor @Inject constructor(
                 if (!directFile.exists() || directFile.isDirectory) {
                     usbLogger.w(TAG, "handleFetch: File not found or is directory: $path")
                     dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
+                    dataSource.sendRawPacket(Packet.TYPE_EOF, ByteArray(0))
                     return@coroutineScope
                 }
                 length = directFile.length()
@@ -737,6 +740,7 @@ class UsbCommandProcessor @Inject constructor(
             if (!file.exists() || file.isDirectory) {
                 usbLogger.w(TAG, "handleFetch: File not found or is directory: ${file.absolutePath}")
                 dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
+                dataSource.sendRawPacket(Packet.TYPE_EOF, ByteArray(0))
                 return@coroutineScope
             }
             length = file.length()
@@ -746,6 +750,7 @@ class UsbCommandProcessor @Inject constructor(
         if (input == null) {
             usbLogger.w(TAG, "handleFetch: Failed to open InputStream for $path")
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0).array())
+            dataSource.sendRawPacket(Packet.TYPE_EOF, ByteArray(0))
             return@coroutineScope
         }
         

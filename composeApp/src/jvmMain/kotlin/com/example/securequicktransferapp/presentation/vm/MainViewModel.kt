@@ -410,15 +410,60 @@ class MainViewModel(
         }
     }
 
-    fun sendTextAsRemoteFile(fileName: String, content: String, targetFolder: String) {
+    fun sendTextAsRemoteFile(fileName: String, content: String, targetFolder: String, overwrite: Boolean = false) {
         val session = selectedSession() ?: return
         println("[ViewModel] sendTextAsRemoteFile: Enqueuing $fileName to $targetFolder for device ${session.deviceId}...")
         val tempDir = java.nio.file.Files.createTempDirectory("smartnav_").toFile()
         val tempFile = File(tempDir, fileName)
         tempFile.writeText(content)
         val destinationPath = targetFolder.trimEnd('/')
-        session.transferQueue.enqueueSend(tempFile, destinationPath, isDirectory = false)
+        session.transferQueue.enqueueSend(tempFile, destinationPath, isDirectory = false, overwrite = overwrite)
         watchQueueCompletion(session)
+    }
+
+    private val _editingFileContent = MutableStateFlow<String?>(null)
+    val editingFileContent: StateFlow<String?> = _editingFileContent
+
+    private val _editingFileName = MutableStateFlow<String?>(null)
+    val editingFileName: StateFlow<String?> = _editingFileName
+
+    fun openFileForEditing(remoteFile: RemoteFile) {
+        val session = selectedSession() ?: return
+        scope.launch {
+            try {
+                val tempDir = java.nio.file.Files.createTempDirectory("edit_").toFile()
+                tempDir.deleteOnExit()
+                val dummyLocalFile = File(tempDir, remoteFile.name)
+                
+                session.sessionMutex.withLock {
+                    session.repository.fetchFile(remoteFile.path, dummyLocalFile).collect { progress ->
+                        if (progress == 100) {
+                            val downloadedFile = File(tempDir, remoteFile.name)
+                            if (downloadedFile.exists()) {
+                                val content = downloadedFile.readText()
+                                _editingFileName.value = remoteFile.name
+                                _editingFileContent.value = content
+                            } else {
+                                println("$TAG Error: Downloaded file not found at ${downloadedFile.absolutePath}")
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                println("$TAG Error opening file for editing: ${e.message ?: e.toString()}")
+            }
+        }
+    }
+
+    fun saveEditedFile(fileName: String, content: String, targetFolder: String) {
+        sendTextAsRemoteFile(fileName, content, targetFolder, overwrite = true)
+        _editingFileName.value = null
+        _editingFileContent.value = null
+    }
+
+    fun cancelEditing() {
+        _editingFileName.value = null
+        _editingFileContent.value = null
     }
 
     fun prepareLocalSmartNavStaging(stagingDir: File, onComplete: () -> Unit) {
