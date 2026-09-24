@@ -82,20 +82,20 @@ import com.example.securequicktransferapp.domain.model.TransferType
 import com.example.securequicktransferapp.domain.model.UsbSessionState
 import com.example.securequicktransferapp.presentation.theme.SuccessColor
 import com.example.securequicktransferapp.presentation.theme.WarningColor
-import com.example.securequicktransferapp.presentation.vm.MainViewModel
+import com.example.securequicktransferapp.presentation.vm.TransferQueueDashboardViewModel
+import org.koin.java.KoinJavaComponent.getKoin
 
 /**
  * Full-screen Transfer Queue Dashboard showing transfer details for ALL connected devices.
  */
 @Composable
 fun TransferQueueDashboard(
-    vm: MainViewModel,
+    vm: TransferQueueDashboardViewModel = getKoin().get(),
     onBack: () -> Unit,
     onShowHistory: () -> Unit
 ) {
     val sessions by vm.sessionsState.collectAsState()
-    val selectedDeviceId by vm.selectedDeviceId.collectAsState()
-    var expandedDeviceId by remember { mutableStateOf<String?>(selectedDeviceId) }
+    var expandedDeviceId by remember { mutableStateOf<String?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // --- Header ---
@@ -144,7 +144,6 @@ fun TransferQueueDashboard(
                                 expandedDeviceId = null
                             } else {
                                 expandedDeviceId = deviceId
-                                vm.selectDevice(deviceId)
                             }
                         }
                     )
@@ -200,7 +199,7 @@ private fun DashboardHeader(onBack: () -> Unit, onShowHistory: () -> Unit) {
  */
 @Composable
 private fun DeviceQueueSection(
-    vm: MainViewModel,
+    vm: TransferQueueDashboardViewModel,
     deviceId: String,
     sessionState: UsbSessionState,
     isExpanded: Boolean,
@@ -278,14 +277,11 @@ private fun DeviceQueueSection(
                     )
                 }
 
-
-
                 // Cancel all / Clear finished buttons
                 if (isProcessing) {
                     OutlinedButton(
                         onClick = {
-                            vm.selectDevice(deviceId)
-                            vm.cancelTransfer()
+                            vm.cancelAll(deviceId)
                         },
                         shape = RoundedCornerShape(8.dp),
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = AppTheme.colors.error)
@@ -299,8 +295,7 @@ private fun DeviceQueueSection(
                     Spacer(Modifier.width(8.dp))
                     TextButton(
                         onClick = {
-                            vm.selectDevice(deviceId)
-                            vm.clearFinishedQueue()
+                            vm.clearFinishedQueue(deviceId)
                         }
                     ) {
                         Icon(Icons.Default.ClearAll, null, modifier = Modifier.size(14.dp))
@@ -457,29 +452,25 @@ private fun DeviceQueueSection(
                                     Column(modifier = Modifier.padding(12.dp)) {
                                         Text("File already exists: ${activeConflict.displayName}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WarningColor)
                                         Spacer(Modifier.height(8.dp))
-                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                             Button(onClick = { 
-                                                vm.selectDevice(deviceId)
-                                                vm.resolveConflict(activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP) 
+                                                vm.resolveConflict(deviceId, activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP) 
                                             }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
                                                 Text("Skip", fontSize = 10.sp)
                                             }
                                             Button(onClick = { 
-                                                vm.selectDevice(deviceId)
-                                                vm.resolveConflict(activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE) 
+                                                vm.resolveConflict(deviceId, activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE) 
                                             }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)) {
                                                 Text("Overwrite", fontSize = 10.sp, color = Color.White)
                                             }
                                             Spacer(Modifier.width(8.dp))
                                             Button(onClick = { 
-                                                vm.selectDevice(deviceId)
-                                                vm.resolveConflict(activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL) 
+                                                vm.resolveConflict(deviceId, activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL) 
                                             }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.surfaceVariant, contentColor = AppTheme.colors.onSurfaceVariant)) {
                                                 Text("Skip All", fontSize = 10.sp)
                                             }
                                             Button(onClick = { 
-                                                vm.selectDevice(deviceId)
-                                                vm.resolveConflict(activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL) 
+                                                vm.resolveConflict(deviceId, activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL) 
                                             }, modifier = Modifier.height(28.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp), colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error.copy(alpha = 0.7f))) {
                                                 Text("Overwrite All", fontSize = 10.sp, color = Color.White)
                                             }
@@ -499,20 +490,16 @@ private fun DeviceQueueSection(
                                 item = item,
                                 index = index + 1,
                                 onCancel = {
-                                    vm.selectDevice(deviceId)
-                                    vm.cancelQueueItem(item.id)
+                                    vm.cancelQueueItem(deviceId, item.id)
                                 },
                                 onMoveToFront = {
-                                    vm.selectDevice(deviceId)
-                                    vm.moveQueueItemToFront(item.id)
+                                    vm.moveQueueItemToFront(deviceId, item.id)
                                 },
                                 onRetry = {
-                                    vm.selectDevice(deviceId)
-                                    vm.retryQueueItem(item.id)
+                                    vm.retryQueueItem(deviceId, item.id)
                                 },
                                 onResolveConflict = { resolution ->
-                                    vm.selectDevice(deviceId)
-                                    vm.resolveConflict(item.id, resolution)
+                                    vm.resolveConflict(deviceId, item.id, resolution)
                                 }
                             )
                         }

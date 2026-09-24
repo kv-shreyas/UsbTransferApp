@@ -1,6 +1,14 @@
 package com.example.securequicktransferapp.domain.constants
 
 object Constants {
+    object Screens {
+        const val EXPLORER = "explorer"
+        const val SETTINGS = "settings"
+        const val TRANSFERS = "transfers"
+        const val TRANSFER_HISTORY = "transfer_history"
+        const val SMARTNAV = "smartnav"
+    }
+
     object Tools {
         const val HANDHELD_OS_FLASH_STATION_EXE_PATH = "tools/HandheldOSFlashStation-EXE"
     }

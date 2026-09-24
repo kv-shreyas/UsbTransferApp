@@ -100,7 +100,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: () -> Unit = {}) {
-    var currentScreen by remember { mutableStateOf("explorer") }
+    var currentScreen by remember { mutableStateOf(Constants.Screens.EXPLORER) }
     val state by vm.state.collectAsState()
     val remoteFiles by vm.remoteFiles.collectAsState()
     val currentPath by vm.currentRemotePath.collectAsState()
@@ -127,8 +127,8 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
     val isConnected = state == "Ready"
 
     LaunchedEffect(isConnected) {
-        if (!isConnected) {isQueueProcessing
-            currentScreen = "explorer"
+        if (!isConnected) {
+            currentScreen = Constants.Screens.EXPLORER
         }
     }
 
@@ -148,21 +148,20 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
 
         // Main Content
         Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(24.dp)) {
-            if (currentScreen == "settings") {
+            if (currentScreen == Constants.Screens.SETTINGS) {
                 SettingsScreen(
                     isDarkTheme = isDarkTheme,
                     onThemeToggle = onThemeToggle,
-                    onBack = { currentScreen = "explorer" }
+                    onBack = { currentScreen = Constants.Screens.EXPLORER }
                 )
-            } else if (currentScreen == "transfer_history") {
+            } else if (currentScreen == Constants.Screens.TRANSFER_HISTORY) {
                 TransferHistoryScreen(
-                    onBack = { currentScreen = "transfers" }
+                    onBack = { currentScreen = Constants.Screens.TRANSFERS }
                 )
-            } else if (currentScreen == "transfers") {
+            } else if (currentScreen == Constants.Screens.TRANSFERS) {
                 TransferQueueDashboard(
-                    vm = vm,
-                    onBack = { currentScreen = "explorer" },
-                    onShowHistory = { currentScreen = "transfer_history" }
+                    onBack = { currentScreen = Constants.Screens.EXPLORER },
+                    onShowHistory = { currentScreen = Constants.Screens.TRANSFER_HISTORY }
                 )
             } else if (!isConnected) {
                 DesktopNotConnectedView(
@@ -171,11 +170,11 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
                     physicalDeviceName = sessions.values.firstOrNull()?.deviceName,
                     onConnect = { vm.connect() }
                 )
-            } else if (currentScreen == "smartnav") {
+            } else if (currentScreen == Constants.Screens.SMARTNAV) {
                 SmartNavDesktopDashboard(
                     vm = vm,
                     onNavigateToExplorerPath = { targetPath ->
-                        currentScreen = "explorer"
+                        currentScreen = Constants.Screens.EXPLORER
                         val dummyFolder = RemoteFile(name = targetPath.substringAfterLast('/'), isDirectory = true, size = 0, path = targetPath)
                         vm.navigateTo(dummyFolder)
                     }
@@ -374,9 +373,9 @@ fun Sidebar(
             Spacer(Modifier.height(24.dp))
 
             if (isConnected) {
-                NavigationItem("File Explorer", Icons.Default.Folder, currentScreen == "explorer") { onNavigate("explorer") }
+                NavigationItem("File Explorer", Icons.Default.Folder, currentScreen == Constants.Screens.EXPLORER) { onNavigate(Constants.Screens.EXPLORER) }
                 Spacer(Modifier.height(8.dp))
-                NavigationItem("SmartNav Option", Icons.Default.Explore, currentScreen == "smartnav") { onNavigate("smartnav") }
+                NavigationItem("SmartNav Option", Icons.Default.Explore, currentScreen == Constants.Screens.SMARTNAV) { onNavigate(Constants.Screens.SMARTNAV) }
                 Spacer(Modifier.height(24.dp))
             } else {
                 Surface(
@@ -392,9 +391,9 @@ fun Sidebar(
                 }
             }
 
-            NavigationItem("Settings", Icons.Default.Settings, currentScreen == "settings") { onNavigate("settings") }
+            NavigationItem("Settings", Icons.Default.Settings, currentScreen == Constants.Screens.SETTINGS) { onNavigate(Constants.Screens.SETTINGS) }
             Spacer(Modifier.height(8.dp))
-            NavigationItem("Transfers", Icons.Default.Sync, currentScreen == "transfers") { onNavigate("transfers") }
+            NavigationItem("Transfers", Icons.Default.Sync, currentScreen == Constants.Screens.TRANSFERS) { onNavigate(Constants.Screens.TRANSFERS) }
             var flashStationProcess by remember { mutableStateOf<java.lang.Process?>(null) }
             var isFlashStationRunning by remember { mutableStateOf(false) }
 

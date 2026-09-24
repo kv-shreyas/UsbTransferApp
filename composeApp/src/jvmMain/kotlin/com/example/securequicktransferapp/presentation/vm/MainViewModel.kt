@@ -148,47 +148,7 @@ class MainViewModel(
         return sessionManager.getSession(id)
     }
 
-    // --- Transfer Queue management ---
 
-    fun dismissProgress() {
-        val session = selectedSession() ?: return
-        session.updateProgress(TransferProgress())
-    }
-
-    fun cancelTransfer() {
-        val session = selectedSession() ?: return
-        val id = session.deviceId
-        println("$TAG Cancelling all queued transfers for device $id...")
-        session.transferQueue.cancelAll()
-        session.updateProgress(TransferProgress())
-        session.updateStatus(DeviceSessionStatus.Ready)
-        println("$TAG All transfers cancelled for device $id.")
-    }
-
-    fun cancelQueueItem(itemId: String) {
-        val session = selectedSession() ?: return
-        session.transferQueue.cancelItem(itemId)
-    }
-
-    fun retryQueueItem(itemId: String) {
-        val session = selectedSession() ?: return
-        session.transferQueue.retry(itemId)
-    }
-
-    fun resolveConflict(itemId: String, resolution: com.example.securequicktransferapp.data.usb.ConflictResolution) {
-        val session = selectedSession() ?: return
-        session.transferQueue.resolveConflict(itemId, resolution)
-    }
-
-    fun clearFinishedQueue() {
-        val session = selectedSession() ?: return
-        session.transferQueue.clearFinished()
-    }
-
-    fun moveQueueItemToFront(itemId: String) {
-        val session = selectedSession() ?: return
-        session.transferQueue.moveToFront(itemId)
-    }
 
     /** Get the TransferQueue for a specific device (used by DeviceCard for inline progress) */
     fun getDeviceQueue(deviceId: String): TransferQueue? {

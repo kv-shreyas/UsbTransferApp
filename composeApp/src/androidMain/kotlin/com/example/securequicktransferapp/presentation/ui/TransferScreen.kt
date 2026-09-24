@@ -50,9 +50,6 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkThem
     val state by viewModel.uiState.collectAsState()
     val isCableConnected by viewModel.isCablePhysicallyConnected.collectAsState()
     val role by viewModel.usbRole.collectAsState()
-    val remoteFiles by viewModel.remoteFiles.collectAsState()
-    val currentRemotePath by viewModel.currentRemotePath.collectAsState()
-    val isRemoteLoading by viewModel.isRemoteLoading.collectAsState()
     val progressState by viewModel.progressState.collectAsState()
     val logLines by viewModel.logLines.collectAsState()
     val logFilePath = viewModel.getLogFilePath()
@@ -135,32 +132,8 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkThem
                         state = targetState,
                         role = role,
                         isCableConnected = isCableConnected,
-                        remoteFiles = remoteFiles,
-                        currentRemotePath = currentRemotePath,
-                        isRemoteLoading = isRemoteLoading,
                         onConnect = { viewModel.requestPermissionAndConnect() },
                         onSelectRole = { viewModel.selectRoleAndConnect(it) },
-                        onNavigateDir = { viewModel.fetchRemoteFiles(it) },
-                        onRefreshDir = { viewModel.fetchRemoteFiles(it, forceRefresh = true) },
-                        onFetchFile = { remotePath, isDir ->
-                            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                            if (isDir) {
-                                viewModel.fetchRemoteDirectory(remotePath, downloadDir)
-                            } else {
-                                viewModel.fetchRemoteFile(remotePath, downloadDir)
-                            }
-                        },
-                        onDeleteFile = { viewModel.deleteRemoteFile(it) },
-                        onUploadUris = { uris ->
-                            viewModel.sendRemoteUris(context, uris, currentRemotePath)
-                        },
-                        onFetchBatch = { files ->
-                            val downloadDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS)
-                            viewModel.fetchRemoteFilesBatch(files, downloadDir)
-                        },
-                        onRenameFile = { oldPath, newName ->
-                            viewModel.renameRemoteFile(oldPath, newName)
-                        },
                         viewModel = viewModel
                     )
                 }
@@ -254,15 +227,15 @@ fun StateContent(
     state: UsbUiState,
     role: UsbRole?,
     isCableConnected: Boolean,
-    remoteFiles: List<RemoteFile>,
-    currentRemotePath: String,
-    isRemoteLoading: Boolean,
+    remoteFiles: List<RemoteFile> = emptyList(),
+    currentRemotePath: String = "",
+    isRemoteLoading: Boolean = false,
     onConnect: () -> Unit,
     onSelectRole: (UsbRole) -> Unit,
-    onNavigateDir: (String) -> Unit,
-    onRefreshDir: (String) -> Unit,
-    onFetchFile: (String, Boolean) -> Unit,
-    onDeleteFile: (String) -> Unit,
+    onNavigateDir: (String) -> Unit = {},
+    onRefreshDir: (String) -> Unit = {},
+    onFetchFile: (String, Boolean) -> Unit = { _, _ -> },
+    onDeleteFile: (String) -> Unit = {},
     onUploadUris: (List<Uri>) -> Unit = {},
     onFetchBatch: (List<RemoteFile>) -> Unit = {},
     onRenameFile: (String, String) -> Unit = { _, _ -> },
@@ -381,19 +354,7 @@ fun StateContent(
             }
             is UsbUiState.Success -> {
                 if (role is UsbRole.Host) {
-                    HostModeDashboard(
-                        remoteFiles = remoteFiles,
-                        currentRemotePath = currentRemotePath,
-                        isRemoteLoading = isRemoteLoading,
-                        onNavigateDir = onNavigateDir,
-                        onRefreshDir = onRefreshDir,
-                        onFetchFile = onFetchFile,
-                        onFetchBatch = onFetchBatch,
-                        onUploadUris = onUploadUris,
-                        onDeleteFile = onDeleteFile,
-                        onRenameFile = onRenameFile,
-                        viewModel = viewModel
-                    )
+                    HostModeDashboard()
                 } else {
                     BigIcon(Icons.Default.CheckCircle, SuccessColor)
                     Text("Ready & Secure", style = MaterialTheme.typography.headlineSmall)
@@ -752,16 +713,16 @@ fun DebugLogsViewer(
 
 @Composable
 fun HostModeDashboard(
-    remoteFiles: List<RemoteFile>,
-    currentRemotePath: String,
+    remoteFiles: List<RemoteFile> = emptyList(),
+    currentRemotePath: String = "",
     isRemoteLoading: Boolean = false,
-    onNavigateDir: (String) -> Unit,
-    onRefreshDir: (String) -> Unit,
-    onFetchFile: (String, Boolean) -> Unit,
-    onFetchBatch: (List<RemoteFile>) -> Unit,
-    onUploadUris: (List<Uri>) -> Unit,
-    onDeleteFile: (String) -> Unit,
-    onRenameFile: (String, String) -> Unit,
+    onNavigateDir: ((String) -> Unit)? = null,
+    onRefreshDir: (String) -> Unit = {},
+    onFetchFile: (String, Boolean) -> Unit = { _, _ -> },
+    onFetchBatch: (List<RemoteFile>) -> Unit = {},
+    onUploadUris: (List<Uri>) -> Unit = {},
+    onDeleteFile: (String) -> Unit = {},
+    onRenameFile: (String, String) -> Unit = { _, _ -> },
     viewModel: UsbTransferViewModel? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -813,507 +774,24 @@ fun HostModeDashboard(
         }
 
         Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-            if (selectedOption == "smartnav" && viewModel != null) {
+            if (selectedOption == "smartnav") {
                 SmartNavAndroidDashboard(
-                    viewModel = viewModel,
                     onSwitchToFileManagerAndNavigate = { targetPath ->
                         selectedOption = "fileManager"
-                        onNavigateDir(targetPath)
+                        onNavigateDir?.invoke(targetPath)
                     }
                 )
             } else {
                 RemoteFileManager(
-                    remoteFiles = remoteFiles,
-                    currentRemotePath = currentRemotePath,
-                    isRemoteLoading = isRemoteLoading,
-                    onNavigateDir = onNavigateDir,
-                    onRefreshDir = onRefreshDir,
-                    onFetchFile = onFetchFile,
-                    onFetchBatch = onFetchBatch,
-                    onUploadUris = onUploadUris,
-                    onDeleteFile = onDeleteFile,
-                    onRenameFile = onRenameFile,
-                    onCreateFolder = { folderName -> viewModel?.createFolder(folderName) },
-                    onCreateTextFile = { fileName, content -> 
-                        if (viewModel != null && context != null) {
-                            viewModel.sendTextAsRemoteFile(context, fileName, content, currentRemotePath)
-                        }
-                    }
+                    onNavigateDir = onNavigateDir
                 )
             }
         }
     }
 }
 
-@Composable
-fun RemoteFileManager(
-    remoteFiles: List<RemoteFile>,
-    currentRemotePath: String,
-    isRemoteLoading: Boolean = false,
-    onNavigateDir: (String) -> Unit,
-    onRefreshDir: (String) -> Unit = onNavigateDir,
-    onFetchFile: (String, Boolean) -> Unit,
-    onFetchBatch: (List<RemoteFile>) -> Unit,
-    onUploadUris: (List<Uri>) -> Unit,
-    onDeleteFile: (String) -> Unit,
-    onRenameFile: (String, String) -> Unit,
-    onCreateFolder: (String) -> Unit,
-    onCreateTextFile: (String, String) -> Unit
-) {
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenMultipleDocuments()
-    ) { uris ->
-        if (uris.isNotEmpty()) {
-            onUploadUris(uris)
-        }
-    }
-    
-    var showCreateFolderDialog by remember { mutableStateOf(false) }
-    var newFolderName by remember { mutableStateOf("") }
-    
-    var showCreateTextFileDialog by remember { mutableStateOf(false) }
-    var newTextFileName by remember { mutableStateOf("") }
-    var newTextFileContent by remember { mutableStateOf("") }
 
-    Column(modifier = Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            IconButton(
-                onClick = {
-                    val parent = when {
-                        currentRemotePath == "/sdcard" || currentRemotePath == "/" || currentRemotePath.isEmpty() -> "/sdcard"
-                        else -> currentRemotePath.substringBeforeLast('/', "/sdcard").ifEmpty { "/sdcard" }
-                    }
-                    onNavigateDir(parent)
-                },
-                enabled = currentRemotePath != "/sdcard" && currentRemotePath != "/" && currentRemotePath.isNotEmpty()
-            ) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
-            }
-            Text(
-                text = "Remote: $currentRemotePath",
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.weight(1f),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            IconButton(onClick = { showCreateFolderDialog = true }) {
-                Icon(Icons.Default.Add, contentDescription = "Create Folder")
-            }
-            IconButton(onClick = { showCreateTextFileDialog = true }) {
-                Icon(Icons.Default.EditNote, contentDescription = "Create File")
-            }
-            IconButton(onClick = { onRefreshDir(currentRemotePath) }) {
-                Icon(Icons.Default.Refresh, contentDescription = "Refresh")
-            }
-        }
-        
-        if (showCreateFolderDialog) {
-            AlertDialog(
-                onDismissRequest = { showCreateFolderDialog = false },
-                title = { Text("Create Folder") },
-                text = {
-                    OutlinedTextField(
-                        value = newFolderName,
-                        onValueChange = { newFolderName = it },
-                        label = { Text("Folder Name") },
-                        singleLine = true
-                    )
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (newFolderName.isNotBlank()) {
-                            onCreateFolder(newFolderName)
-                        }
-                        newFolderName = ""
-                        showCreateFolderDialog = false
-                    }) {
-                        Text("Create")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        newFolderName = ""
-                        showCreateFolderDialog = false
-                    }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
 
-        if (showCreateTextFileDialog) {
-            AlertDialog(
-                onDismissRequest = { showCreateTextFileDialog = false },
-                title = { Text("Create File") },
-                text = {
-                    Column {
-                        OutlinedTextField(
-                            value = newTextFileName,
-                            onValueChange = { newTextFileName = it },
-                            label = { Text("File Name with extension (e.g. note.txt, data.json)") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedTextField(
-                            value = newTextFileContent,
-                            onValueChange = { newTextFileContent = it },
-                            label = { Text("Content") },
-                            modifier = Modifier.fillMaxWidth().height(150.dp)
-                        )
-                    }
-                },
-                confirmButton = {
-                    TextButton(onClick = {
-                        if (newTextFileName.isNotBlank()) {
-                            val name = newTextFileName
-                            onCreateTextFile(name, newTextFileContent)
-                        }
-                        newTextFileName = ""
-                        newTextFileContent = ""
-                        showCreateTextFileDialog = false
-                    }) {
-                        Text("Save & Upload")
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = {
-                        newTextFileName = ""
-                        newTextFileContent = ""
-                        showCreateTextFileDialog = false
-                    }) {
-                        Text("Cancel")
-                    }
-                }
-            )
-        }
-
-        // Action Bar for uploading files to current directory
-        AndroidActionBar(
-            currentPath = currentRemotePath,
-            onSendFile = {
-                filePickerLauncher.launch(arrayOf("*/*"))
-            }
-        )
-
-        Spacer(Modifier.height(8.dp))
-
-        if (isRemoteLoading) {
-            Box(modifier = Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator(color = AppTheme.colors.primary)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Text("Loading folder contents...", color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), fontSize = 14.sp)
-                }
-            }
-        } else {
-            AndroidFileList(
-                files = remoteFiles,
-                modifier = Modifier.weight(1f),
-                onFolderClick = { onNavigateDir(it.path) },
-                onFilesFetch = { files ->
-                    if (files.size == 1) {
-                        onFetchFile(files.first().path, files.first().isDirectory)
-                    } else {
-                        onFetchBatch(files)
-                    }
-                },
-                onFileDelete = { onDeleteFile(it.path) },
-                onFileRename = { file, newName -> onRenameFile(file.path, newName) }
-            )
-        }
-    }
-}
-
-@Composable
-fun AndroidActionBar(currentPath: String, onSendFile: () -> Unit) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = AppTheme.colors.primaryContainer.copy(alpha = 0.35f),
-        shape = RoundedCornerShape(12.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(Icons.Default.CloudUpload, null, tint = AppTheme.colors.primary, modifier = Modifier.size(24.dp))
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Upload to Android Client", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                Text(
-                    "Destination: $currentPath",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AppTheme.colors.secondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            Spacer(Modifier.width(8.dp))
-            Button(
-                onClick = onSendFile,
-                contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp)
-            ) {
-                Icon(Icons.Default.Upload, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Upload", fontSize = 12.sp, fontWeight = FontWeight.Bold)
-            }
-        }
-    }
-}
-
-@Composable
-fun AndroidFileList(
-    files: List<RemoteFile>,
-    modifier: Modifier = Modifier,
-    onFolderClick: (RemoteFile) -> Unit,
-    onFilesFetch: (List<RemoteFile>) -> Unit,
-    onFileDelete: (RemoteFile) -> Unit,
-    onFileRename: (RemoteFile, String) -> Unit
-) {
-    var selectedFiles by remember { mutableStateOf(setOf<RemoteFile>()) }
-
-    Surface(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
-        color = AppTheme.colors.surface
-    ) {
-        if (files.isEmpty()) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(48.dp), tint = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.4f))
-                    Spacer(Modifier.height(8.dp))
-                    Text("Directory is empty", color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-                }
-            }
-        } else {
-            Column(modifier = Modifier.fillMaxSize()) {
-                if (selectedFiles.isNotEmpty()) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().background(AppTheme.colors.primaryContainer).padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            "${selectedFiles.size} items selected",
-                            modifier = Modifier.weight(1f),
-                            fontWeight = FontWeight.Bold,
-                            color = AppTheme.colors.onPrimaryContainer,
-                            fontSize = 13.sp
-                        )
-                        Button(
-                            onClick = {
-                                onFilesFetch(selectedFiles.toList())
-                                selectedFiles = emptySet()
-                            },
-                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
-                        ) {
-                            Icon(Icons.Default.Download, null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Fetch Selected", fontSize = 12.sp)
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        TextButton(onClick = { selectedFiles = emptySet() }) {
-                            Text("Clear", fontSize = 12.sp, color = AppTheme.colors.onPrimaryContainer)
-                        }
-                    }
-                }
-                LazyColumn(modifier = Modifier.weight(1f)) {
-                    items(files) { file ->
-                        AndroidFileRow(
-                            file = file,
-                            isSelected = selectedFiles.contains(file),
-                            onSelectionChange = { selected ->
-                                if (selected) selectedFiles += file else selectedFiles -= file
-                            },
-                            onFolderClick = onFolderClick,
-                            onFileFetch = { onFilesFetch(listOf(it)) },
-                            onFileDelete = onFileDelete,
-                            onFileRename = onFileRename
-                        )
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), thickness = 0.5.dp, color = AppTheme.colors.outlineVariant)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun AndroidFileRow(
-    file: RemoteFile,
-    isSelected: Boolean,
-    onSelectionChange: (Boolean) -> Unit,
-    onFolderClick: (RemoteFile) -> Unit,
-    onFileFetch: (RemoteFile) -> Unit,
-    onFileDelete: (RemoteFile) -> Unit,
-    onFileRename: (RemoteFile, String) -> Unit
-) {
-    var showRenameDialog by remember { mutableStateOf(false) }
-    var showDeleteConfirmDialog by remember { mutableStateOf(false) }
-    var showContextMenu by remember { mutableStateOf(false) }
-
-    if (showRenameDialog) {
-        RenameDialog(
-            file = file,
-            onConfirm = { newName ->
-                onFileRename(file, newName)
-                showRenameDialog = false
-            },
-            onDismiss = { showRenameDialog = false }
-        )
-    }
-
-    if (showDeleteConfirmDialog) {
-        DeleteConfirmDialog(
-            file = file,
-            onConfirm = {
-                onFileDelete(file)
-                showDeleteConfirmDialog = false
-            },
-            onDismiss = { showDeleteConfirmDialog = false }
-        )
-    }
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { if (file.isDirectory) onFolderClick(file) }
-            .padding(horizontal = 12.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Checkbox(
-            checked = isSelected,
-            onCheckedChange = onSelectionChange
-        )
-        Spacer(Modifier.width(8.dp))
-        Icon(
-            imageVector = if (file.isDirectory) Icons.Default.Folder else Icons.AutoMirrored.Filled.InsertDriveFile,
-            contentDescription = null,
-            tint = if (file.isDirectory) WarningColor else AppTheme.colors.primary,
-            modifier = Modifier.size(28.dp)
-        )
-        Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.weight(1f)) {
-            Text(file.name, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-            Text(
-                if (file.isDirectory) "Directory" else SecureQtSdk.Utils.formatSize(file.size),
-                style = MaterialTheme.typography.bodySmall,
-                color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f)
-            )
-        }
-
-        IconButton(onClick = { onFileFetch(file) }) {
-            Icon(
-                Icons.Default.Download,
-                contentDescription = if (file.isDirectory) "Download Directory (ZIP)" else "Download File",
-                tint = AppTheme.colors.primary
-            )
-        }
-
-        Box {
-            IconButton(onClick = { showContextMenu = true }) {
-                Icon(Icons.Default.MoreVert, contentDescription = "More Options")
-            }
-            DropdownMenu(
-                expanded = showContextMenu,
-                onDismissRequest = { showContextMenu = false }
-            ) {
-                DropdownMenuItem(
-                    text = { Text(if (file.isDirectory) "Download as ZIP" else "Download") },
-                    onClick = {
-                        showContextMenu = false
-                        onFileFetch(file)
-                    },
-                    leadingIcon = { Icon(Icons.Default.Download, null) }
-                )
-                DropdownMenuItem(
-                    text = { Text("Rename") },
-                    onClick = {
-                        showContextMenu = false
-                        showRenameDialog = true
-                    },
-                    leadingIcon = { Icon(Icons.Default.Edit, null) }
-                )
-                DropdownMenuItem(
-                    text = { Text("Delete", color = AppTheme.colors.error) },
-                    onClick = {
-                        showContextMenu = false
-                        showDeleteConfirmDialog = true
-                    },
-                    leadingIcon = { Icon(Icons.Default.Delete, null, tint = AppTheme.colors.error) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun RenameDialog(
-    file: RemoteFile,
-    onConfirm: (String) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var renameText by remember(file.name) { mutableStateOf(file.name) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Rename Item") },
-        text = {
-            OutlinedTextField(
-                value = renameText,
-                onValueChange = { renameText = it },
-                label = { Text("New Name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-        },
-        confirmButton = {
-            Button(onClick = {
-                if (renameText.isNotBlank() && renameText != file.name) {
-                    onConfirm(renameText)
-                } else {
-                    onDismiss()
-                }
-            }) {
-                Text("Rename")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
-
-@Composable
-fun DeleteConfirmDialog(
-    file: RemoteFile,
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Confirm Deletion") },
-        text = { Text("Are you sure you want to permanently delete '${file.name}' from the remote Android device?") },
-        confirmButton = {
-            Button(
-                onClick = onConfirm,
-                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
-            ) {
-                Text("Delete")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
-            }
-        }
-    )
-}
 
 @Composable
 fun AndroidTransferProgressDialog(

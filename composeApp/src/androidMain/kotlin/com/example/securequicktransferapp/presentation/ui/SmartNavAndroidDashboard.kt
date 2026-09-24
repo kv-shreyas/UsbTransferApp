@@ -12,6 +12,8 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,17 +24,21 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.securequicktransferapp.domain.constants.Constants
 import com.example.securequicktransferapp.presentation.theme.AppTheme
 import com.example.securequicktransferapp.presentation.theme.SuccessColor
 import com.example.securequicktransferapp.presentation.theme.WarningColor
-import com.example.securequicktransferapp.presentation.viewmodel.UsbTransferViewModel
+import com.example.securequicktransferapp.presentation.viewmodel.SmartNavDashboardViewModel
 
 @Composable
 fun SmartNavAndroidDashboard(
-    viewModel: UsbTransferViewModel,
+    viewModel: SmartNavDashboardViewModel = hiltViewModel(),
     onSwitchToFileManagerAndNavigate: (String) -> Unit
 ) {
+    val isProcessing by viewModel.isProcessing.collectAsState()
+    val statusMessage by viewModel.statusMessage.collectAsState()
+
     val context = androidx.compose.ui.platform.LocalContext.current
     var stagingDirPath by remember { mutableStateOf(java.io.File(context.getExternalFilesDir(null), "SmartNavStaging").absolutePath) }
     val stagingDir = java.io.File(stagingDirPath)
@@ -59,6 +65,13 @@ fun SmartNavAndroidDashboard(
             .padding(vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        // Operation Status Card
+        ProcessingStatusCard(
+            isProcessing = isProcessing,
+            statusMessage = statusMessage,
+            onDismiss = { viewModel.clearStatusMessage() }
+        )
+
         // Top Info Banner
         Surface(
             shape = RoundedCornerShape(16.dp),
@@ -85,11 +98,11 @@ fun SmartNavAndroidDashboard(
                 // Base Path Selection
                 Spacer(Modifier.height(4.dp))
                 Text("Target Base Directory:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = AppTheme.colors.onPrimaryContainer)
-                    FilterChip(
-                        selected = selectedBasePath == Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH,
-                        onClick = { selectedBasePath = Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH },
-                        label = { Text(Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH, fontSize = 11.sp) }
-                    )
+                FilterChip(
+                    selected = selectedBasePath == Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH,
+                    onClick = { selectedBasePath = Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH },
+                    label = { Text(Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH, fontSize = 11.sp) }
+                )
             }
         }
 
@@ -106,21 +119,28 @@ fun SmartNavAndroidDashboard(
                 label = { Text("Local Workspace Directory", fontSize = 11.sp) },
                 modifier = Modifier.fillMaxWidth(),
                 singleLine = true,
+                enabled = !isProcessing,
                 shape = RoundedCornerShape(12.dp)
             )
             Spacer(Modifier.height(12.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FilledTonalButton(
                     onClick = { viewModel.prepareLocalSmartNavStaging(stagingDir) { refreshStaging() } },
+                    enabled = !isProcessing,
                     modifier = Modifier.weight(1.5f).height(48.dp),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Icon(Icons.Default.Build, null, modifier = Modifier.size(18.dp), tint = AppTheme.colors.primary)
+                    if (isProcessing) {
+                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp, color = AppTheme.colors.primary)
+                    } else {
+                        Icon(Icons.Default.Build, null, modifier = Modifier.size(18.dp), tint = AppTheme.colors.primary)
+                    }
                     Spacer(Modifier.width(8.dp))
                     Text("Generate Base", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
                 FilledTonalButton(
                     onClick = { refreshStaging() },
+                    enabled = !isProcessing,
                     modifier = Modifier.weight(1f).height(48.dp),
                     shape = RoundedCornerShape(10.dp)
                 ) {
@@ -139,12 +159,13 @@ fun SmartNavAndroidDashboard(
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Select Folders to Receive", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppTheme.colors.onSurface)
-                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable {
+                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable(enabled = !isProcessing) {
                                 selectedStagingDirs = if (selectedStagingDirs.size == stagingDirectories.size) emptySet() else stagingDirectories.toSet()
                             }) {
                                 Checkbox(
                                     checked = selectedStagingDirs.size == stagingDirectories.size && stagingDirectories.isNotEmpty(),
-                                    onCheckedChange = null, // handled by row click
+                                    onCheckedChange = null,
+                                    enabled = !isProcessing,
                                     colors = CheckboxDefaults.colors(checkedColor = AppTheme.colors.primary)
                                 )
                                 Text("Select All", fontSize = 13.sp, fontWeight = FontWeight.Medium)
@@ -160,7 +181,7 @@ fun SmartNavAndroidDashboard(
                             stagingDirectories.forEach { dir ->
                                 val isSelected = selectedStagingDirs.contains(dir)
                                 Surface(
-                                    modifier = Modifier.clickable {
+                                    modifier = Modifier.clickable(enabled = !isProcessing) {
                                         selectedStagingDirs = if (isSelected) selectedStagingDirs - dir else selectedStagingDirs + dir
                                     },
                                     color = if (isSelected) AppTheme.colors.primaryContainer.copy(alpha = 0.3f) else AppTheme.colors.surface,
@@ -187,15 +208,19 @@ fun SmartNavAndroidDashboard(
                         Button(
                             onClick = { 
                                 if (selectedStagingDirs.isNotEmpty()) {
-                                    // viewModel.receiveFiles(...) // implementation needed
+                                    viewModel.sendMultipleFiles(selectedStagingDirs.toList(), selectedBasePath)
                                 }
                             },
-                            enabled = selectedStagingDirs.isNotEmpty(),
+                            enabled = selectedStagingDirs.isNotEmpty() && !isProcessing,
                             colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary),
                             modifier = Modifier.fillMaxWidth().height(52.dp),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(20.dp))
+                            if (isProcessing) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp, color = AppTheme.colors.onPrimary)
+                            } else {
+                                Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(20.dp))
+                            }
                             Spacer(Modifier.width(10.dp))
                             Text("Receive ${selectedStagingDirs.size} Folders", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
                         }
@@ -215,6 +240,7 @@ fun SmartNavAndroidDashboard(
             PasswordFileRow(
                 fileName = Constants.SmartnavRoot.FILE_PASSWORD,
                 value = passwordInput,
+                isProcessing = isProcessing,
                 onValueChange = { passwordInput = it },
                 onPush = {
                     viewModel.sendTextAsRemoteFile(context, Constants.SmartnavRoot.FILE_PASSWORD, passwordInput, "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}")
@@ -227,6 +253,7 @@ fun SmartNavAndroidDashboard(
             PasswordFileRow(
                 fileName = Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD,
                 value = maintenancePasswordInput,
+                isProcessing = isProcessing,
                 onValueChange = { maintenancePasswordInput = it },
                 onPush = {
                     viewModel.sendTextAsRemoteFile(context, Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, maintenancePasswordInput, "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}")
@@ -239,6 +266,7 @@ fun SmartNavAndroidDashboard(
             PasswordFileRow(
                 fileName = Constants.SmartnavRoot.FILE_KMM_PASSWORD,
                 value = kmmPasswordInput,
+                isProcessing = isProcessing,
                 onValueChange = { kmmPasswordInput = it },
                 onPush = {
                     viewModel.sendTextAsRemoteFile(context, Constants.SmartnavRoot.FILE_KMM_PASSWORD, kmmPasswordInput, "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}")
@@ -255,11 +283,6 @@ fun SmartNavAndroidDashboard(
         ) {
             val quickFolders = listOf(
                 Pair("Main Root ($selectedBasePath)", selectedBasePath),
-           /*     Pair("Password Dir ($selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"),
-                Pair("Tracks ($selectedBasePath/${Constants.SmartnavRoot.DIR_TRACKS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_TRACKS}"),
-                Pair("Maps Root ($selectedBasePath/${Constants.SmartnavRoot.DIR_MAPS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_MAPS}"),
-                Pair("App Update (${Constants.SmartnavRoot.DIR_APP_UPDATE})", Constants.SmartnavRoot.DIR_APP_UPDATE),
-                Pair("OS Update (${Constants.SmartnavRoot.DIR_OS_UPDATE})", Constants.SmartnavRoot.DIR_OS_UPDATE)*/
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 for ((label, path) in quickFolders) {
@@ -279,6 +302,106 @@ fun SmartNavAndroidDashboard(
                         }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+fun ProcessingStatusCard(
+    isProcessing: Boolean,
+    statusMessage: String?,
+    onDismiss: () -> Unit
+) {
+    if (!isProcessing && statusMessage.isNullOrBlank()) return
+
+    val isError = statusMessage?.startsWith("Error", ignoreCase = true) == true
+    val containerColor = when {
+        isError -> MaterialTheme.colorScheme.errorContainer
+        isProcessing -> AppTheme.colors.primaryContainer
+        else -> AppTheme.colors.secondaryContainer
+    }
+    val contentColor = when {
+        isError -> MaterialTheme.colorScheme.onErrorContainer
+        isProcessing -> AppTheme.colors.onPrimaryContainer
+        else -> AppTheme.colors.onSecondaryContainer
+    }
+
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(12.dp),
+        color = containerColor,
+        border = BorderStroke(1.dp, contentColor.copy(alpha = 0.2f))
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    if (isProcessing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.5.dp,
+                            color = contentColor
+                        )
+                    } else if (isError) {
+                        Icon(
+                            imageVector = Icons.Default.ErrorOutline,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = SuccessColor,
+                            modifier = Modifier.size(22.dp)
+                        )
+                    }
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Text(
+                        text = statusMessage ?: "Processing request...",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = contentColor
+                    )
+                }
+
+                if (!isProcessing && statusMessage != null) {
+                    IconButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.size(28.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = contentColor,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            }
+
+            if (isProcessing) {
+                Spacer(Modifier.height(10.dp))
+                LinearProgressIndicator(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(4.dp)
+                        .clip(RoundedCornerShape(2.dp)),
+                    color = AppTheme.colors.primary,
+                    trackColor = AppTheme.colors.primary.copy(alpha = 0.2f)
+                )
             }
         }
     }
@@ -325,6 +448,7 @@ fun SmartNavSectionCard(
 fun PasswordFileRow(
     fileName: String,
     value: String,
+    isProcessing: Boolean = false,
     onValueChange: (String) -> Unit,
     onPush: () -> Unit
 ) {
@@ -336,14 +460,20 @@ fun PasswordFileRow(
                 onValueChange = onValueChange,
                 label = { Text("Password Content", fontSize = 11.sp) },
                 modifier = Modifier.weight(1f),
-                singleLine = true
+                singleLine = true,
+                enabled = !isProcessing
             )
             Button(
                 onClick = onPush,
+                enabled = !isProcessing && value.isNotBlank(),
                 colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary),
                 modifier = Modifier.height(56.dp)
             ) {
-                Icon(Icons.Default.UploadFile, null, modifier = Modifier.size(16.dp))
+                if (isProcessing) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = AppTheme.colors.onPrimary)
+                } else {
+                    Icon(Icons.Default.UploadFile, null, modifier = Modifier.size(16.dp))
+                }
                 Spacer(Modifier.width(6.dp))
                 Text("Create & Push", fontSize = 12.sp)
             }

@@ -4,6 +4,7 @@ import com.example.securequicktransferapp.data.usb.UsbConnection
 import com.example.securequicktransferapp.data.usb.UsbDeviceManager
 import com.example.securequicktransferapp.data.usb.UsbSessionManager
 import com.example.securequicktransferapp.presentation.vm.MainViewModel
+import com.example.securequicktransferapp.presentation.vm.TransferQueueDashboardViewModel
 import org.koin.dsl.module
 
 val appModule = module {
@@ -11,4 +12,5 @@ val appModule = module {
     single { UsbSessionManager(get()) }
     factory { UsbConnection() }
     single { MainViewModel(get()) }
+    single { TransferQueueDashboardViewModel(get()) }
 }
