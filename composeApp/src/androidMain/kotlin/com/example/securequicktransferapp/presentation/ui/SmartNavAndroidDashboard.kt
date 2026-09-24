@@ -44,12 +44,12 @@ fun SmartNavAndroidDashboard(
     val stagingDir = java.io.File(stagingDirPath)
     
     var stagingDirectories by remember { mutableStateOf(stagingDir.listFiles()?.filter { it.isDirectory } ?: emptyList()) }
-    var selectedStagingDirs by remember { mutableStateOf(stagingDirectories.toSet()) }
+    var selectedStagingDirs by remember { mutableStateOf(emptySet<java.io.File>()) }
     
     fun refreshStaging() {
         val newDirs = stagingDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
         stagingDirectories = newDirs
-        selectedStagingDirs = newDirs.toSet()
+        selectedStagingDirs = selectedStagingDirs.intersect(newDirs.toSet())
     }
 
     var selectedBasePath by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH) }
