@@ -1,6 +1,10 @@
 package com.example.securequicktransferapp.domain.constants
 
 object Constants {
+    object Tools {
+        const val HANDHELD_OS_FLASH_STATION_EXE_PATH = "tools/HandheldOSFlashStation-EXE"
+    }
+
     object SmartnavRoot {
         // Base / Root folder names
         const val ROOT_FOLDER_NAME = "SmartNavV3"

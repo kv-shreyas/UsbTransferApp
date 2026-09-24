@@ -1,6 +1,7 @@
 package com.example.securequicktransferapp.presentation.ui
 
 import androidx.compose.foundation.background
+import com.example.securequicktransferapp.domain.constants.Constants
 import com.example.securequicktransferapp.presentation.theme.AppTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -47,6 +48,7 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.UsbOff
 import androidx.compose.material.icons.filled.Verified
@@ -94,6 +96,7 @@ import com.example.securequicktransferapp.domain.model.TransferQueueItem
 import com.example.securequicktransferapp.domain.model.UsbSessionState
 import com.example.securequicktransferapp.presentation.vm.MainViewModel
 import javax.swing.JFileChooser
+import kotlin.time.Duration.Companion.milliseconds
 
 @Composable
 fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: () -> Unit = {}) {
@@ -392,6 +395,51 @@ fun Sidebar(
             NavigationItem("Settings", Icons.Default.Settings, currentScreen == "settings") { onNavigate("settings") }
             Spacer(Modifier.height(8.dp))
             NavigationItem("Transfers", Icons.Default.Sync, currentScreen == "transfers") { onNavigate("transfers") }
+            var flashStationProcess by remember { mutableStateOf<java.lang.Process?>(null) }
+            var isFlashStationRunning by remember { mutableStateOf(false) }
+
+            LaunchedEffect(flashStationProcess) {
+                val p = flashStationProcess
+                if (p != null) {
+                    isFlashStationRunning = true
+                    while (p.isAlive) {
+                        kotlinx.coroutines.delay(1000.milliseconds)
+                    }
+                    isFlashStationRunning = false
+                    flashStationProcess = null
+                }
+            }
+
+            NavigationItem(
+                label = if (isFlashStationRunning) "OS Flash Station (Running)" else "OS Flash Station",
+                icon = Icons.Default.SystemUpdate, 
+                selected = false
+            ) {
+                try {
+                    if (isFlashStationRunning) {
+                        val pid = flashStationProcess?.pid()
+                        if (pid != null) {
+                            // On Linux, xdotool or wmctrl is needed to bring to front. If they aren't available, we at least avoid duplicate launches.
+                            val bringToFrontCmd = arrayOf(
+                                "bash", "-c", 
+                                "xdotool windowactivate \$(xdotool search --pid $pid | tail -1) || wmctrl -a 'HandheldOSFlashStation' || notify-send 'OS Flash Station' 'Application is already running in the background.'"
+                            )
+                            java.lang.Runtime.getRuntime().exec(bringToFrontCmd)
+                        }
+                    } else {
+                        val exeFile = java.io.File(Constants.Tools.HANDHELD_OS_FLASH_STATION_EXE_PATH).let { file ->
+                            if (file.exists()) file else java.io.File(System.getProperty("user.dir"), Constants.Tools.HANDHELD_OS_FLASH_STATION_EXE_PATH)
+                        }
+                        if (exeFile.exists()) {
+                            flashStationProcess = java.lang.Runtime.getRuntime().exec(arrayOf(exeFile.absolutePath))
+                        } else {
+                            println("Executable not found at ${exeFile.absolutePath}")
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
             Spacer(Modifier.height(24.dp))
 
             // --- Multi-Device Section ---
