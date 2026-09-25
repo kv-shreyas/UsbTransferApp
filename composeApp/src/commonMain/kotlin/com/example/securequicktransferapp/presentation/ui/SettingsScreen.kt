@@ -1,13 +1,13 @@
 package com.example.securequicktransferapp.presentation.ui
 
 import androidx.compose.foundation.clickable
+import com.example.securequicktransferapp.domain.constants.Constants
 import com.example.securequicktransferapp.presentation.theme.AppTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material.icons.filled.DarkMode
-import androidx.compose.material.icons.filled.ExitToApp
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material3.*
@@ -77,8 +77,46 @@ fun SettingsScreen(
                 }
             }
 
+            Spacer(Modifier.height(24.dp))
+            Text("About Application", style = MaterialTheme.typography.titleLarge, color = AppTheme.colors.primary, fontWeight = FontWeight.Bold)
+            Spacer(Modifier.height(16.dp))
+
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                color = AppTheme.colors.surfaceVariant,
+                shape = MaterialTheme.shapes.medium
+            ) {
+                Row(
+                    modifier = Modifier.padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Info,
+                        contentDescription = "App Info",
+                        tint = AppTheme.colors.onSurfaceVariant
+                    )
+                    Spacer(Modifier.width(16.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(Constants.App.NAME, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                        Text("Package Version", style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
+                    }
+                    Surface(
+                        color = AppTheme.colors.primaryContainer,
+                        shape = MaterialTheme.shapes.small
+                    ) {
+                        Text(
+                            text = "v${Constants.App.PACKAGE_VERSION}",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = AppTheme.colors.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
             if (onShowAbout != null || onExitApp != null) {
-                Spacer(Modifier.height(32.dp))
+                Spacer(Modifier.height(24.dp))
                 Text("System", style = MaterialTheme.typography.titleLarge, color = AppTheme.colors.primary, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.height(16.dp))
                 
@@ -96,9 +134,9 @@ fun SettingsScreen(
                                     .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(androidx.compose.material.icons.Icons.Default.Info, contentDescription = "About", tint = AppTheme.colors.onSurfaceVariant)
+                                Icon(Icons.Default.Info, contentDescription = "About", tint = AppTheme.colors.onSurfaceVariant)
                                 Spacer(Modifier.width(16.dp))
-                                Text("About Application", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
+                                Text("About Application Details", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium)
                             }
                         }
                         if (onShowAbout != null && onExitApp != null) {
@@ -112,7 +150,7 @@ fun SettingsScreen(
                                     .padding(16.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Icon(androidx.compose.material.icons.Icons.Default.ExitToApp, contentDescription = "Exit App", tint = AppTheme.colors.error)
+                                Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Exit App", tint = AppTheme.colors.error)
                                 Spacer(Modifier.width(16.dp))
                                 Text("Exit Application", style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = AppTheme.colors.error)
                             }

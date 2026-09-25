@@ -12,6 +12,14 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val appVersion = file("src/commonMain/kotlin/com/example/securequicktransferapp/domain/constants/Constants.kt")
+    .useLines { lines ->
+        lines.firstOrNull { it.contains("PACKAGE_VERSION =") }
+            ?.substringAfter("PACKAGE_VERSION =")
+            ?.trim()
+            ?.removeSurrounding("\"")
+    } ?: "1.0.0"
+
 kotlin {
     androidTarget {
         compilerOptions {
@@ -22,12 +30,6 @@ kotlin {
     jvm()
     
     sourceSets {
-        androidMain.dependencies {
-            implementation(libs.compose.uiToolingPreview)
-            implementation(libs.androidx.activity.compose)
-            implementation(libs.androidx.hilt.navigation.compose)
-            implementation(libs.hilt.android)
-        }
         commonMain.dependencies {
             implementation(project(":secureqt-sdk"))
             implementation(libs.compose.runtime)
@@ -36,13 +38,18 @@ kotlin {
             implementation(libs.compose.ui)
             implementation(libs.compose.components.resources)
             implementation(libs.compose.uiToolingPreview)
-//            implementation(libs.compose.material.icons.extended)
             implementation(compose.materialIconsExtended)
             implementation(libs.androidx.lifecycle.viewmodelCompose)
             implementation(libs.androidx.lifecycle.runtimeCompose)
             
             // ConstraintLayout Multiplatform
             implementation(libs.constraintlayout.compose)
+        }
+        androidMain.dependencies {
+            implementation(libs.compose.uiToolingPreview)
+            implementation(libs.androidx.activity.compose)
+            implementation(libs.androidx.hilt.navigation.compose)
+            implementation(libs.hilt.android)
         }
         commonTest.dependencies {
             implementation(libs.kotlin.test)
@@ -74,7 +81,7 @@ android {
         minSdk = libs.versions.android.minSdk.get().toInt()
         targetSdk = libs.versions.android.targetSdk.get().toInt()
         versionCode = 1
-        versionName = "1.0"
+        versionName = appVersion
     }
     packaging {
         resources {
@@ -96,7 +103,7 @@ android {
     applicationVariants.all {
         val variant = this
         val appName = "SecureQuickTransferApp"
-        val versionName = variant.versionName ?: "1.0.0"
+        val versionName = variant.versionName ?: appVersion
         val buildTypeName = variant.buildType.name
 
         variant.outputs.all {
@@ -124,16 +131,11 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
             packageName = "SecureQuickTransferApp"
-            packageVersion = "1.0.0"
+            packageVersion = appVersion
             includeAllModules = true
             windows {
                 console = true
             }
-/*
-            proguard {
-                isEnabled.set(true)
-                configurationFiles.from(files("proguard-rules.pro"))
-            }*/
         }
     }
 }
