@@ -8,7 +8,7 @@ on:
 
 jobs:
   build-windows:
-    name: Build Windows MSI
+    name: Build Windows MSI & EXE
     runs-on: windows-latest
     steps:
       - name: Checkout Repository
@@ -19,22 +19,25 @@ jobs:
         with:
           distribution: 'zulu'
           java-version: '17'
-          # Disabled cache on Windows to prevent tar.exe error
 
-      - name: Build Windows Installer (MSI)
-        run: ./gradlew.bat :composeApp:packageReleaseMsi
+      - name: Build Windows Installers (MSI & EXE)
+        run: ./gradlew.bat :composeApp:packageReleaseMsi :composeApp:packageReleaseExe
 
-      - name: Rename MSI file
+      - name: Rename Windows Installer files
         run: |
           cd composeApp/build/compose/binaries/main-release/msi/
           mv *.msi SecureQuickTransfer-Setup.msi
+          cd ../exe/
+          mv *.exe SecureQuickTransfer-Setup.exe
         shell: bash
 
-      - name: Upload Windows MSI Artifact
+      - name: Upload Windows Installers Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SecureQuickTransfer
-          path: composeApp/build/compose/binaries/main-release/msi/SecureQuickTransfer-Setup.msi
+          name: SecureQuickTransfer-Windows
+          path: |
+            composeApp/build/compose/binaries/main-release/msi/SecureQuickTransfer-Setup.msi
+            composeApp/build/compose/binaries/main-release/exe/SecureQuickTransfer-Setup.exe
           retention-days: 7
 
   build-linux:
@@ -57,7 +60,7 @@ jobs:
       - name: Build Linux Installer (DEB)
         run: ./gradlew :composeApp:packageReleaseDeb
 
-      - name: Rename DEB file
+      - name: Rename Linux files
         run: |
           cd composeApp/build/compose/binaries/main-release/deb/
           mv *.deb SecureQuickTransfer-Setup.deb
@@ -69,3 +72,33 @@ jobs:
           name: SecureQuickTransfer-Linux
           path: composeApp/build/compose/binaries/main-release/deb/SecureQuickTransfer-Setup.deb
           retention-days: 7
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [build-windows, build-linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SecureQuickTransfer-Windows
+          path: ./artifacts/windows
+
+      - name: Download Linux Artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: SecureQuickTransfer-Linux
+          path: ./artifacts/linux
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: |
+            ./artifacts/windows/SecureQuickTransfer-Setup.msi
+            ./artifacts/windows/SecureQuickTransfer-Setup.exe
+            ./artifacts/linux/SecureQuickTransfer-Setup.deb
+          draft: false
+          prerelease: false

@@ -414,29 +414,28 @@ fun Sidebar(
                 icon = Icons.Default.SystemUpdate, 
                 selected = false
             ) {
-                try {
-                    if (isFlashStationRunning) {
-                        val pid = flashStationProcess?.pid()
-                        if (pid != null) {
-                            // On Linux, xdotool or wmctrl is needed to bring to front. If they aren't available, we at least avoid duplicate launches.
-                            val bringToFrontCmd = arrayOf(
-                                "bash", "-c", 
-                                "xdotool windowactivate \$(xdotool search --pid $pid | tail -1) || wmctrl -a 'HandheldOSFlashStation' || notify-send 'OS Flash Station' 'Application is already running in the background.'"
-                            )
+                if (isFlashStationRunning) {
+                    val pid = flashStationProcess?.pid()
+                    if (pid != null) {
+                        val bringToFrontCmd = arrayOf(
+                            "bash", "-c", 
+                            "xdotool windowactivate \$(xdotool search --pid $pid | tail -1) || wmctrl -a 'HandheldOSFlashStation' || notify-send 'OS Flash Station' 'Application is already running in the background.'"
+                        )
+                        try {
                             java.lang.Runtime.getRuntime().exec(bringToFrontCmd)
+                        } catch (_: Exception) {}
+                    }
+                } else {
+                    val exeFile = resolveFlashStationExecutable()
+                    if (exeFile != null && exeFile.exists()) {
+                        try {
+                            flashStationProcess = java.lang.Runtime.getRuntime().exec(arrayOf(exeFile.absolutePath))
+                        } catch (e: Exception) {
+                            e.printStackTrace()
                         }
                     } else {
-                        val exeFile = java.io.File(Constants.Tools.HANDHELD_OS_FLASH_STATION_EXE_PATH).let { file ->
-                            if (file.exists()) file else java.io.File(System.getProperty("user.dir"), Constants.Tools.HANDHELD_OS_FLASH_STATION_EXE_PATH)
-                        }
-                        if (exeFile.exists()) {
-                            flashStationProcess = java.lang.Runtime.getRuntime().exec(arrayOf(exeFile.absolutePath))
-                        } else {
-                            println("Executable not found at ${exeFile.absolutePath}")
-                        }
+                        println("OS Flash Station executable not found.")
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
             }
             Spacer(Modifier.height(24.dp))
@@ -1123,4 +1122,57 @@ fun StepRow(step: String, text: String) {
         }
         Text(text, fontSize = 13.sp, color = AppTheme.colors.onSurfaceVariant, modifier = Modifier.weight(1f))
     }
+}
+
+private fun resolveFlashStationExecutable(): java.io.File? {
+    val relPath = Constants.Tools.HANDHELD_OS_FLASH_STATION_EXE_PATH
+    val filename = "HandheldOSFlashStation-EXE"
+
+    val candidate1 = java.io.File(relPath)
+    if (candidate1.exists()) {
+        candidate1.setExecutable(true)
+        return candidate1
+    }
+
+    val candidate2 = java.io.File(System.getProperty("user.dir"), relPath)
+    if (candidate2.exists()) {
+        candidate2.setExecutable(true)
+        return candidate2
+    }
+
+    try {
+        val classLoader = object {}.javaClass.classLoader
+        val codeSourceLocation = object {}.javaClass.protectionDomain?.codeSource?.location?.toURI()?.path
+        val appDir = if (codeSourceLocation != null) java.io.File(codeSourceLocation).parentFile else null
+        if (appDir != null) {
+            val candidate3 = java.io.File(appDir, relPath)
+            if (candidate3.exists()) {
+                candidate3.setExecutable(true)
+                return candidate3
+            }
+            val candidate4 = java.io.File(appDir.parentFile, relPath)
+            if (candidate4.exists()) {
+                candidate4.setExecutable(true)
+                return candidate4
+            }
+        }
+    } catch (_: Exception) {}
+
+    val loader = object {}.javaClass
+    val resourceStream = loader.getResourceAsStream("/$relPath")
+        ?: loader.getResourceAsStream("/tools/$filename")
+        ?: loader.getResourceAsStream("/$filename")
+        ?: loader.classLoader?.getResourceAsStream(relPath)
+    if (resourceStream != null) {
+        val tempDir = java.io.File(System.getProperty("java.io.tmpdir"), "securequicktransfer_tools")
+        tempDir.mkdirs()
+        val tempFile = java.io.File(tempDir, filename)
+        if (!tempFile.exists() || tempFile.length() == 0L) {
+            tempFile.outputStream().use { out -> resourceStream.copyTo(out) }
+        }
+        tempFile.setExecutable(true)
+        return tempFile
+    }
+
+    return null
 }

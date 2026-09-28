@@ -12,9 +12,20 @@ open class UsbDeviceManager {
 
     private val context = Context()
     private val usbLock = Any()
+    private var isInitialized = false
 
     init {
-        LibUsb.init(context)
+        try {
+            val result = LibUsb.init(context)
+            if (result == LibUsb.SUCCESS) {
+                isInitialized = true
+            } else {
+                println("[UsbDeviceManager] LibUsb.init returned error code: $result")
+            }
+        } catch (t: Throwable) {
+            println("[UsbDeviceManager] Warning: Failed to initialize LibUsb native library: ${t.message}")
+            isInitialized = false
+        }
     }
 
     private val knownAndroidVids = setOf(
@@ -31,7 +42,24 @@ open class UsbDeviceManager {
         0x0BB4, // HTC
         0x19D2, // ZTE
         0x05C6, // Qualcomm
-        0x0E8D  // MediaTek
+        0x0E8D, // MediaTek
+        0x12D1, // Huawei
+        0x0B05, // Asus
+        0x17EF, // Lenovo
+        0x0489, // Foxconn / Acer
+        0x10A9, // Pantech
+        0x0408, // Smartisan
+        0x29D1, // Transsion (Tecno / Infinix / Itel)
+        0x3170, // Nothing
+        0x1949, // Lab126 / Amazon
+        0x2207, // Rockchip
+        0x1F3A, // Allwinner
+        0x0502, // Acer
+        0x0414, // GigaByte
+        0x2080, // Nook
+        0x0930, // Toshiba
+        0x0482, // Kyocera
+        0x1705  // Generic MTK
     )
 
     /**
@@ -62,6 +90,7 @@ open class UsbDeviceManager {
      * Callers must invoke [releaseDevice] on device handles when finished.
      */
     open fun discoverDevices(): List<DiscoveredUsbDevice> = synchronized(usbLock) {
+        if (!isInitialized) return emptyList()
         val list = DeviceList()
         val result = LibUsb.getDeviceList(context, list)
         if (result < 0) {
@@ -113,6 +142,7 @@ open class UsbDeviceManager {
      * Returns a retained Device pointer (+1 ref count) or null if not found.
      */
     open fun findDeviceById(hardwareId: String, requireAccessory: Boolean = false): Device? = synchronized(usbLock) {
+        if (!isInitialized) return null
         val list = DeviceList()
         val result = LibUsb.getDeviceList(context, list)
         if (result < 0) return null
@@ -148,6 +178,7 @@ open class UsbDeviceManager {
      * Returns a Pair of Boolean (connected) and String (friendly device name or null).
      */
     open fun isDevicePhysicallyConnected(hardwareId: String): Pair<Boolean, String?> = synchronized(usbLock) {
+        if (!isInitialized) return Pair(false, null)
         val list = DeviceList()
         val result = LibUsb.getDeviceList(context, list)
         if (result < 0) return Pair(false, null)
@@ -217,13 +248,21 @@ open class UsbDeviceManager {
      * Releases a retained device reference count (-1).
      */
     open fun releaseDevice(device: Device) {
-        LibUsb.unrefDevice(device)
+        if (isInitialized) {
+            try {
+                LibUsb.unrefDevice(device)
+            } catch (_: Throwable) {}
+        }
     }
 
     /**
      * Deinitializes the libusb context on shutdown.
      */
     open fun cleanup() {
-        LibUsb.exit(context)
+        if (isInitialized) {
+            try {
+                LibUsb.exit(context)
+            } catch (_: Throwable) {}
+        }
     }
 }

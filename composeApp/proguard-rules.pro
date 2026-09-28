@@ -69,17 +69,21 @@
 -keepclassmembers enum * { *; }
 
 ########################################
-# ✅ JNI (Native)
+# ✅ JNI (Native) & usb4java
 ########################################
 -keepclasseswithmembernames class * {
     native <methods>;
 }
+-keep class org.usb4java.** { *; }
+-dontwarn org.usb4java.**
 
 ########################################
 # ✅ Usb Communication & SDK Data models
 ########################################
 -keep class com.example.securequicktransferapp.domain.model.** { *; }
--keep class com.example.secureqt.sdk.protocol.** { *; }
+-keep class com.example.securequicktransferapp.data.usb.** { *; }
+-keep class com.example.secureqt.sdk.** { *; }
+-keep class android.hardware.usb.** { *; }
 
 # Gson / Serialization Safety Rules (Standard)
 -keepattributes Signature

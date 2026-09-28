@@ -129,10 +129,14 @@ compose.desktop {
     application {
         mainClass = "com.example.securequicktransferapp.MainKt"
         nativeDistributions {
-            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Deb)
+            targetFormats(TargetFormat.Dmg, TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Deb, TargetFormat.AppImage)
             packageName = "SecureQuickTransferApp"
             packageVersion = appVersion
             includeAllModules = true
+            buildTypes.release.proguard {
+                isEnabled.set(false)
+                configurationFiles.from(file("proguard-rules.pro"))
+            }
             windows {
                 console = true
             }
