@@ -14,6 +14,7 @@ import com.example.securequicktransferapp.domain.model.UsbSessionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -28,6 +29,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MainViewModel(
@@ -273,10 +275,90 @@ class MainViewModel(
         watchQueueCompletion(session)
     }
 
-    fun sendFilesToDevices(files: List<File>, targetDeviceIds: Set<String>, defaultTargetPath: String) {
+    fun checkCloneConflicts(
+        files: List<File>, 
+        targetDeviceIds: Set<String>, 
+        defaultTargetPath: String, 
+        onResult: (List<DeviceConflictInfo>) -> Unit
+    ) {
+        scope.launch(Dispatchers.IO) {
+            val conflictingDetails = mutableListOf<DeviceConflictInfo>()
+            
+            // 1. Gather all local files and their expected remote parent directories ONCE
+            val allLocalFiles = mutableListOf<Pair<File, String>>()
+            fun flatten(file: File, remoteParent: String) {
+                if (file.isDirectory) {
+                    val remoteDir = if (remoteParent.endsWith("/")) remoteParent + file.name else "$remoteParent/${file.name}"
+                    file.listFiles()?.forEach { flatten(it, remoteDir) }
+                } else {
+                    allLocalFiles.add(file to remoteParent)
+                }
+            }
+
+            val updateAppFiles = files.filter { it.name == Constants.SmartnavRoot.DIR_APP_UPDATE }
+            val updateOsFiles = files.filter { it.name == Constants.SmartnavRoot.DIR_OS_UPDATE }
+            val standardFiles = files.filter { it.name != Constants.SmartnavRoot.DIR_APP_UPDATE && it.name != Constants.SmartnavRoot.DIR_OS_UPDATE }
+
+            standardFiles.forEach { flatten(it, defaultTargetPath) }
+            updateAppFiles.forEach { flatten(it, Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH) }
+            updateOsFiles.forEach { flatten(it, Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH) }
+
+            val groupedByDir = allLocalFiles.groupBy { it.second }
+            println("$TAG checkCloneConflicts: Found ${allLocalFiles.size} total files across ${groupedByDir.size} remote directories to check.")
+
+            // 2. Check each target device
+            for (deviceId in targetDeviceIds) {
+                val session = sessionManager.getSession(deviceId) ?: continue
+                val deviceName = session.discoveredDevice.deviceName.take(20)
+                val deviceFolders = mutableListOf<FolderConflictInfo>()
+                
+                session.sessionMutex.withLock {
+                    for ((remoteDir, localFiles) in groupedByDir) {
+                        try {
+                            // Add a small delay to prevent overwhelming the Android AOA accessory
+                            delay(100.milliseconds)
+                            println("$TAG checkCloneConflicts: Listing remote directory $remoteDir for device $deviceId")
+                            val remoteList = session.repository.listDirectory(remoteDir)
+                            val folderConflicts = mutableListOf<String>()
+                            for ((localFile, _) in localFiles) {
+                                if (remoteList.any { !it.isDirectory && it.name == localFile.name }) {
+                                    folderConflicts.add(localFile.name)
+                                }
+                            }
+                            if (folderConflicts.isNotEmpty()) {
+                                deviceFolders.add(FolderConflictInfo(remoteDir, folderConflicts))
+                            }
+                        } catch (e: Exception) {
+                            println("$TAG checkCloneConflicts: Error listing $remoteDir for device $deviceId: ${e.message}")
+                        }
+                    }
+                }
+                
+                if (deviceFolders.isNotEmpty()) {
+                    conflictingDetails.add(DeviceConflictInfo(deviceName, deviceFolders))
+                }
+            }
+            
+            println("$TAG checkCloneConflicts: Check complete. Total conflicts found: ${conflictingDetails.size}")
+            withContext(Dispatchers.Main) {
+                onResult(conflictingDetails)
+            }
+        }
+    }
+
+    fun sendFilesToDevices(
+        files: List<File>, 
+        targetDeviceIds: Set<String>, 
+        defaultTargetPath: String,
+        conflictResolution: com.example.securequicktransferapp.data.usb.ConflictResolution? = null
+    ) {
         if (files.isEmpty() || targetDeviceIds.isEmpty()) return
         targetDeviceIds.forEach { deviceId ->
             val session = sessionManager.getSession(deviceId) ?: return@forEach
+            
+            if (conflictResolution != null) {
+                session.transferQueue.globalConflictResolution = conflictResolution
+            }
             
             val updateAppFiles = files.filter { it.name == Constants.SmartnavRoot.DIR_APP_UPDATE }
             val updateOsFiles = files.filter { it.name == Constants.SmartnavRoot.DIR_OS_UPDATE }
@@ -483,3 +565,5 @@ class MainViewModel(
         }
     }
 }
+data class FolderConflictInfo(val folderPath: String, val files: List<String>)
+data class DeviceConflictInfo(val deviceName: String, val folders: List<FolderConflictInfo>)

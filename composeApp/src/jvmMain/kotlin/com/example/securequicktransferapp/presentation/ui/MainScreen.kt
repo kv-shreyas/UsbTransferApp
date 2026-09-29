@@ -128,7 +128,7 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
 
     LaunchedEffect(isConnected) {
         if (!isConnected) {
-            currentScreen = Constants.Screens.EXPLORER
+            currentScreen = Constants.Screens.SMARTNAV
         }
     }
 
@@ -154,11 +154,11 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
                     onThemeToggle = onThemeToggle,
                     onBack = { currentScreen = Constants.Screens.EXPLORER }
                 )
-            } else if (currentScreen == Constants.Screens.TRANSFER_HISTORY) {
+            } /*else if (currentScreen == Constants.Screens.TRANSFER_HISTORY) {
                 TransferHistoryScreen(
                     onBack = { currentScreen = Constants.Screens.TRANSFERS }
                 )
-            } else if (currentScreen == Constants.Screens.TRANSFERS) {
+            }*/ else if (currentScreen == Constants.Screens.TRANSFERS) {
                 TransferQueueDashboard(
                     onBack = { currentScreen = Constants.Screens.EXPLORER },
                     onShowHistory = { currentScreen = Constants.Screens.TRANSFER_HISTORY }
@@ -179,7 +179,8 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
                         vm.navigateTo(dummyFolder)
                     }
                 )
-            } else {
+            }
+            else if (currentScreen == Constants.Screens.EXPLORER){
                 Header(
                     "Remote File System", 
                     currentPath, 
@@ -371,11 +372,12 @@ fun Sidebar(
         Column(modifier = Modifier.padding(20.dp)) {
             Text("Control Panel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = AppTheme.colors.onSurfaceVariant)
             Spacer(Modifier.height(24.dp))
-
             if (isConnected) {
                 NavigationItem("File Explorer", Icons.Default.Folder, currentScreen == Constants.Screens.EXPLORER) { onNavigate(Constants.Screens.EXPLORER) }
                 Spacer(Modifier.height(8.dp))
                 NavigationItem("SmartNav Option", Icons.Default.Explore, currentScreen == Constants.Screens.SMARTNAV) { onNavigate(Constants.Screens.SMARTNAV) }
+                Spacer(Modifier.height(24.dp))
+                NavigationItem("Transfers", Icons.Default.Sync, currentScreen == Constants.Screens.TRANSFERS) { onNavigate(Constants.Screens.TRANSFERS) }
                 Spacer(Modifier.height(24.dp))
             } else {
                 Surface(
@@ -393,7 +395,7 @@ fun Sidebar(
 
             NavigationItem("Settings", Icons.Default.Settings, currentScreen == Constants.Screens.SETTINGS) { onNavigate(Constants.Screens.SETTINGS) }
             Spacer(Modifier.height(8.dp))
-            NavigationItem("Transfers", Icons.Default.Sync, currentScreen == Constants.Screens.TRANSFERS) { onNavigate(Constants.Screens.TRANSFERS) }
+
             var flashStationProcess by remember { mutableStateOf<java.lang.Process?>(null) }
             var isFlashStationRunning by remember { mutableStateOf(false) }
 

@@ -21,8 +21,8 @@ fun main() {
         val vm: MainViewModel = getKoin().get()
         val screenSize = java.awt.Toolkit.getDefaultToolkit().screenSize
         val state = androidx.compose.ui.window.rememberWindowState(
-            width = (screenSize.width *0.85).dp,
-            height = (screenSize.height*0.8).dp
+            width = screenSize.width.dp,
+            height = screenSize.height.dp
         )
         Window(
             onCloseRequest = {

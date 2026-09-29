@@ -112,7 +112,12 @@ open class UsbDeviceManager {
                     if (isAndroidVid || isAoa) {
                         val (id, busNumber, portNumber) = getHardwareIdentifier(device)
                         val modeStr = if (isAoa) "[ACCESSORY/AOA]" else "[NORMAL/MTP]"
-                        val deviceName = "Android Device ($id, VID:${String.format("%04X", vid)}, PID:${String.format("%04X", pid)}) $modeStr"
+                        val rawName = "Android Device ($id, VID:${String.format("%04X", vid)}, PID:${String.format("%04X", pid)}) $modeStr"
+                        val deviceName = rawName
+                            .replace("Android Device (", "")
+                            .replace(")", "")
+                            .substringBefore(",")
+                            .trim()
 
                         // Retain reference (+1) for returned device handle
                         LibUsb.refDevice(device)
@@ -197,7 +202,12 @@ open class UsbDeviceManager {
                         val (id, _, _) = getHardwareIdentifier(device)
                         if (id == hardwareId) {
                             val modeStr = if (isAoa) "[ACCESSORY/AOA]" else "[NORMAL/MTP]"
-                            val deviceName = "Android Device ($id, VID:${String.format("%04X", vid)}, PID:${String.format("%04X", pid)}) $modeStr"
+                            val rawName = "Android Device ($id, VID:${String.format("%04X", vid)}, PID:${String.format("%04X", pid)}) $modeStr"
+                            val deviceName = rawName
+                                .replace("Android Device (", "")
+                                .replace(")", "")
+                                .substringBefore(",")
+                                .trim()
                             return Pair(true, deviceName)
                         }
                     }

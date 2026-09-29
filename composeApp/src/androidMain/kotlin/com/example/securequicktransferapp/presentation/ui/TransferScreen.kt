@@ -134,7 +134,6 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkThem
                         isCableConnected = isCableConnected,
                         onConnect = { viewModel.requestPermissionAndConnect() },
                         onSelectRole = { viewModel.selectRoleAndConnect(it) },
-                        viewModel = viewModel
                     )
                 }
             }
@@ -227,19 +226,8 @@ fun StateContent(
     state: UsbUiState,
     role: UsbRole?,
     isCableConnected: Boolean,
-    remoteFiles: List<RemoteFile> = emptyList(),
-    currentRemotePath: String = "",
-    isRemoteLoading: Boolean = false,
     onConnect: () -> Unit,
     onSelectRole: (UsbRole) -> Unit,
-    onNavigateDir: (String) -> Unit = {},
-    onRefreshDir: (String) -> Unit = {},
-    onFetchFile: (String, Boolean) -> Unit = { _, _ -> },
-    onDeleteFile: (String) -> Unit = {},
-    onUploadUris: (List<Uri>) -> Unit = {},
-    onFetchBatch: (List<RemoteFile>) -> Unit = {},
-    onRenameFile: (String, String) -> Unit = { _, _ -> },
-    viewModel: UsbTransferViewModel? = null
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -713,17 +701,7 @@ fun DebugLogsViewer(
 
 @Composable
 fun HostModeDashboard(
-    remoteFiles: List<RemoteFile> = emptyList(),
-    currentRemotePath: String = "",
-    isRemoteLoading: Boolean = false,
     onNavigateDir: ((String) -> Unit)? = null,
-    onRefreshDir: (String) -> Unit = {},
-    onFetchFile: (String, Boolean) -> Unit = { _, _ -> },
-    onFetchBatch: (List<RemoteFile>) -> Unit = {},
-    onUploadUris: (List<Uri>) -> Unit = {},
-    onDeleteFile: (String) -> Unit = {},
-    onRenameFile: (String, String) -> Unit = { _, _ -> },
-    viewModel: UsbTransferViewModel? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var selectedOption by remember { mutableStateOf("fileManager") }
