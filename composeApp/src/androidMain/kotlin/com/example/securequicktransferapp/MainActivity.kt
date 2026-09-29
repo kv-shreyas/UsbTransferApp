@@ -29,10 +29,10 @@ class MainActivity : ComponentActivity() {
         checkStoragePermissions()
 
         setContent {
-            var isDarkTheme by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+            val isDarkTheme = com.example.securequicktransferapp.presentation.theme.ThemeManager.isDarkTheme
             
             SecureTransferTheme(darkTheme = isDarkTheme) {
-                TransferScreen(viewModel = viewModel, isDarkTheme = isDarkTheme, onThemeToggle = { isDarkTheme = !isDarkTheme })
+                TransferScreen(viewModel = viewModel, isDarkTheme = isDarkTheme, onThemeToggle = { com.example.securequicktransferapp.presentation.theme.ThemeManager.toggleTheme() })
             }
         }
     }

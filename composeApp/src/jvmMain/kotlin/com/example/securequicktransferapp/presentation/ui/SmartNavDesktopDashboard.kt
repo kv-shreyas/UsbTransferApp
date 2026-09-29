@@ -256,42 +256,9 @@ fun SmartNavDesktopDashboard(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+            .padding(horizontal = 32.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
- /*       // Top Info Banner
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = AppTheme.colors.primaryContainer,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.Explore, contentDescription = null, tint = AppTheme.colors.onPrimaryContainer, modifier = Modifier.size(26.dp))
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        text = "SmartNav Management Suite (Desktop Host)",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = AppTheme.colors.onPrimaryContainer
-                    )
-                }
-                Text(
-                    text = "Manage and clone the complete SmartNav V3 directory architecture on the connected device over USB. Based directly on SmartNavRoot.kt specifications.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = AppTheme.colors.onPrimaryContainer.copy(alpha = 0.9f)
-                )
-
-                Spacer(Modifier.height(4.dp))
-                Text("Target Base Directory:", fontWeight = FontWeight.SemiBold, fontSize = 12.sp, color = AppTheme.colors.onPrimaryContainer)
-                    FilterChip(
-                        selected = selectedBasePath == Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH,
-                        onClick = { selectedBasePath = Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH },
-                        label = { Text(Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        border = BorderStroke(2.dp, AppTheme.colors.primary)
-                    )
-            }
-        }*/
 
         // Package Initialization & Clone Section
         DesktopSectionCard(
@@ -413,25 +380,25 @@ fun SmartNavDesktopDashboard(
                                     ),
                                     shape = RoundedCornerShape(12.dp),
                                     border = BorderStroke(2.dp, if (isSelected) AppTheme.colors.primary else AppTheme.colors.outlineVariant),
-                                    modifier = Modifier.width(150.dp).height(110.dp)
+                                    modifier = Modifier.width(200.dp).height(140.dp)
                                 ) {
                                     Column(
-                                        modifier = Modifier.fillMaxSize().padding(14.dp),
+                                        modifier = Modifier.fillMaxSize().padding(18.dp),
                                         verticalArrangement = Arrangement.SpaceBetween
                                     ) {
                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                                            Icon(Icons.Default.Folder, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(32.dp))
+                                            Icon(Icons.Default.Folder, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(48.dp))
                                             Icon(
                                                 if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                                                 contentDescription = null,
                                                 tint = if (isSelected) AppTheme.colors.primary else Color.Gray.copy(alpha = 0.5f),
-                                                modifier = Modifier.size(22.dp)
+                                                modifier = Modifier.size(28.dp)
                                             )
                                         }
                                         Text(
                                             text = dir.name, 
-                                            fontSize = 14.sp, 
-                                            fontWeight = FontWeight.Bold, 
+                                            fontSize = 16.sp, 
+                                            fontWeight = FontWeight.ExtraBold, 
                                             color = AppTheme.colors.onSurface, 
                                             maxLines = 1,
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -463,19 +430,19 @@ fun SmartNavDesktopDashboard(
                                         ),
                                         shape = RoundedCornerShape(12.dp),
                                         border = BorderStroke(2.dp, if (isSelected) SuccessColor else AppTheme.colors.outlineVariant),
-                                        modifier = Modifier.width(150.dp).height(110.dp)
+                                        modifier = Modifier.width(200.dp).height(140.dp)
                                     ) {
                                         Column(
-                                            modifier = Modifier.fillMaxSize().padding(14.dp),
+                                            modifier = Modifier.fillMaxSize().padding(18.dp),
                                             verticalArrangement = Arrangement.SpaceBetween
                                         ) {
                                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Top) {
-                                                Icon(Icons.Default.Smartphone, contentDescription = null, tint = SuccessColor, modifier = Modifier.size(32.dp))
+                                                Icon(Icons.Default.Smartphone, contentDescription = null, tint = SuccessColor, modifier = Modifier.size(48.dp))
                                                 Icon(
                                                     if (isSelected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
                                                     contentDescription = null,
                                                     tint = if (isSelected) SuccessColor else Color.Gray.copy(alpha = 0.5f),
-                                                    modifier = Modifier.size(22.dp)
+                                                    modifier = Modifier.size(28.dp)
                                                 )
                                             }
                                             val shortName = deviceName
@@ -485,8 +452,8 @@ fun SmartNavDesktopDashboard(
                                                 .trim()
                                             Text(
                                                 text = shortName,
-                                                fontSize = 14.sp, 
-                                                fontWeight = FontWeight.Bold, 
+                                                fontSize = 16.sp, 
+                                                fontWeight = FontWeight.ExtraBold, 
                                                 color = AppTheme.colors.onSurface, 
                                                 maxLines = 1,
                                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -521,17 +488,17 @@ fun SmartNavDesktopDashboard(
                             },
                             enabled = selectedStagingDirs.isNotEmpty() && selectedTargetDevices.isNotEmpty() && !isCheckingConflicts,
                             colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary),
-                            modifier = Modifier.fillMaxWidth().height(52.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.fillMaxWidth().height(64.dp),
+                            shape = RoundedCornerShape(16.dp)
                         ) {
                             if (isCheckingConflicts) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = AppTheme.colors.onPrimary, strokeWidth = 2.dp)
-                                Spacer(Modifier.width(10.dp))
-                                Text("Checking for conflicts...", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp), color = AppTheme.colors.onPrimary, strokeWidth = 2.dp)
+                                Spacer(Modifier.width(12.dp))
+                                Text("Checking for conflicts...", fontWeight = FontWeight.Bold, fontSize = 18.sp)
                             } else {
-                                Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(20.dp))
-                                Spacer(Modifier.width(10.dp))
-                                Text("Clone ${selectedStagingDirs.size} Folders to ${selectedTargetDevices.size} Device(s)", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp)
+                                Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(24.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Text("Clone ${selectedStagingDirs.size} Folders to ${selectedTargetDevices.size} Device(s)", fontWeight = FontWeight.ExtraBold, fontSize = 18.sp)
                             }
                         }
                     }

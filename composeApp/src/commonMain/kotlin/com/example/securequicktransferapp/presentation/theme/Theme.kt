@@ -133,7 +133,14 @@ fun SecureTransferTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val appColors = if (darkTheme) DarkAppColors else LightAppColors
+    val baseAppColors = if (darkTheme) DarkAppColors else LightAppColors
+    val seedColor = ThemeManager.seedColor
+    val appColors = baseAppColors.copy(
+        primary = seedColor,
+        primaryContainer = seedColor.copy(alpha = if (darkTheme) 0.3f else 0.15f),
+        onPrimary = Color.White,
+        tertiary = seedColor
+    )
     
     // Map to MaterialTheme for backward compatibility with standard components
     val colorScheme = if (darkTheme) {

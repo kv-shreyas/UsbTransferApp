@@ -1,7 +1,5 @@
 package com.example.securequicktransferapp
 
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import com.example.securequicktransferapp.presentation.vm.MainViewModel
 import androidx.compose.ui.window.Window
@@ -32,10 +30,10 @@ fun main() {
             state = state,
             title = "Secure Quick Transfer"
         ) {
-            var isDarkTheme by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(true) }
+            val isDarkTheme = com.example.securequicktransferapp.presentation.theme.ThemeManager.isDarkTheme
             
             SecureTransferTheme(darkTheme = isDarkTheme) {
-                MainScreen(vm = vm, isDarkTheme = isDarkTheme, onThemeToggle = { isDarkTheme = !isDarkTheme })
+                MainScreen(vm = vm, isDarkTheme = isDarkTheme, onThemeToggle = { com.example.securequicktransferapp.presentation.theme.ThemeManager.toggleTheme() })
             }
         }
     }
