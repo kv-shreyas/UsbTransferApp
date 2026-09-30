@@ -35,6 +35,9 @@ object SmartNavStorageResolver {
         if (path.startsWith("content://$SMARTNAV_AUTHORITY")) {
             return Uri.parse(path)
         }
+        if (path.startsWith("/")) {
+            return Uri.parse("$SMARTNAV_CONTENT_URI_BASE/?path=" + Uri.encode(path))
+        }
         val clean = path.trim()
             .removePrefix("smartnav://")
             .removePrefix("/sdcard/")

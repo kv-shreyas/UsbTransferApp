@@ -1,5 +1,8 @@
 package com.example.securequicktransferapp.presentation.ui
-
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.foundation.BorderStroke
 import com.example.securequicktransferapp.presentation.theme.AppTheme
 import androidx.compose.foundation.background
@@ -33,6 +36,7 @@ import com.example.securequicktransferapp.domain.model.DeviceSessionStatus
 @Composable
 fun SmartNavDesktopDashboard(
     vm: MainViewModel,
+    onNavigateToManagement: () -> Unit,
     onNavigateToExplorerPath: (String) -> Unit
 ) {
     var stagingDirPath by remember { mutableStateOf(java.io.File(System.getProperty("user.home"), "Downloads/SmartNavStaging").absolutePath) }
@@ -49,9 +53,6 @@ fun SmartNavDesktopDashboard(
 
     var selectedBasePath by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH) }
 
-    var passwordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_PASSWORD_VALUE) }
-    var maintenancePasswordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_MAINTENANCE_PASSWORD_VALUE) }
-    var kmmPasswordInput by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_KMM_PASSWORD_VALUE) }
 
     val sessionsState by vm.sessionsState.collectAsState()
     val connectedDevices = sessionsState.filter { it.value.status is DeviceSessionStatus.Ready }.keys.toList()
@@ -260,26 +261,34 @@ fun SmartNavDesktopDashboard(
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
 
-        // Package Initialization & Clone Section
-        DesktopSectionCard(
-            title = "Dynamic SmartNav Package Clone",
-            subtitle = "Prepare staging folders locally, edit them, and select which to clone.",
-            icon = Icons.Default.CreateNewFolder,
-            iconColor = SuccessColor
+        var isControlPanelExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+
+        OutlinedCard(
+            modifier = Modifier.fillMaxWidth().clickable { onNavigateToManagement() },
+            shape = RoundedCornerShape(16.dp),
+            border = BorderStroke(1.dp, AppTheme.colors.primary.copy(alpha = 0.5f)),
+            colors = CardDefaults.outlinedCardColors(containerColor = AppTheme.colors.primaryContainer.copy(alpha = 0.1f))
         ) {
-            OutlinedCard(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(16.dp),
-                border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
-                colors = CardDefaults.outlinedCardColors(containerColor = AppTheme.colors.surface)
+            Row(
+                modifier = Modifier.padding(24.dp).fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Settings, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(20.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Workspace Configuration", fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = AppTheme.colors.onSurface)
-                    }
-                    Spacer(Modifier.height(16.dp))
+                Icon(Icons.Default.AdminPanelSettings, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(40.dp))
+                Spacer(Modifier.width(20.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("SmartNav Advanced Management", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = AppTheme.colors.primary)
+                    Spacer(Modifier.height(4.dp))
+                    Text("Interactive Password Creator & Asset Uploader (Maps, Firmware, OS, App Updates)", fontSize = 13.sp, color = AppTheme.colors.onSurfaceVariant)
+                }
+                Icon(Icons.Default.ChevronRight, contentDescription = null, tint = AppTheme.colors.primary)
+            }
+        }
+
+        CollapsibleControlPanel(
+            isExpanded = isControlPanelExpanded,
+            onToggle = { isControlPanelExpanded = !isControlPanelExpanded }
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
                     OutlinedTextField(
                         value = stagingDirPath,
                         onValueChange = { stagingDirPath = it },
@@ -504,159 +513,64 @@ fun SmartNavDesktopDashboard(
                     }
                 }
             }
-        }
 
-/*        // Interactive Password Files Creator Section
-        DesktopSectionCard(
-            title = "Password Files Creator",
-            subtitle = "Create & push password files into \$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}/",
-            icon = Icons.Default.VpnKey,
-            iconColor = WarningColor
-        ) {
-            DesktopPasswordFileRow(
-                fileName = Constants.SmartnavRoot.FILE_PASSWORD,
-                value = passwordInput,
-                onValueChange = { passwordInput = it },
-                onPush = {
-                    val target = "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"
-                    handlePush(Constants.SmartnavRoot.FILE_PASSWORD, target) {
-                        vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_PASSWORD, passwordInput, target)
-                    }
-                }
-            )
 
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = AppTheme.colors.outlineVariant)
 
-            DesktopPasswordFileRow(
-                fileName = Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD,
-                value = maintenancePasswordInput,
-                onValueChange = { maintenancePasswordInput = it },
-                onPush = {
-                    val target = "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"
-                    handlePush(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, target) {
-                        vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_MAINTENANCE_PASSWORD, maintenancePasswordInput, target)
-                    }
-                }
-            )
-
-            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp), color = AppTheme.colors.outlineVariant)
-
-            DesktopPasswordFileRow(
-                fileName = Constants.SmartnavRoot.FILE_KMM_PASSWORD,
-                value = kmmPasswordInput,
-                onValueChange = { kmmPasswordInput = it },
-                onPush = {
-                    val target = "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"
-                    handlePush(Constants.SmartnavRoot.FILE_KMM_PASSWORD, target) {
-                        vm.sendTextAsRemoteFile(Constants.SmartnavRoot.FILE_KMM_PASSWORD, kmmPasswordInput, target)
-                    }
-                }
-            )
-        }*/
-
-     /*   // Quick Jump & Inspection Shortcuts
-        DesktopSectionCard(
-            title = "Quick Directory Navigation",
-            subtitle = "Jump directly inside the File Explorer to inspect SmartNav folders",
-            icon = Icons.Default.FolderSpecial,
-            iconColor = AppTheme.colors.primary
-        ) {
-            val quickFolders = listOf(
-                Pair("Main Root ($selectedBasePath)", selectedBasePath),
-*//*                Pair("Password Dir ($selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_PASSWORD}"),
-                Pair("Tracks ($selectedBasePath/${Constants.SmartnavRoot.DIR_TRACKS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_TRACKS}"),
-                Pair("Maps Root ($selectedBasePath/${Constants.SmartnavRoot.DIR_MAPS})", "$selectedBasePath/${Constants.SmartnavRoot.DIR_MAPS}"),
-                Pair("App Update (${Constants.SmartnavRoot.DIR_APP_UPDATE})", Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH+ "/"+ Constants.SmartnavRoot.DIR_APP_UPDATE),
-                Pair("OS Update (${Constants.SmartnavRoot.DIR_OS_UPDATE})",Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH+ "/"+  Constants.SmartnavRoot.DIR_OS_UPDATE)*//*
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                for ((label, path) in quickFolders) {
-                    OutlinedCard(
-                        onClick = { onNavigateToExplorerPath(path) },
-                        modifier = Modifier.fillMaxWidth(),
-                        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(Icons.Default.Folder, null, tint = WarningColor, modifier = Modifier.size(20.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Text(label, fontWeight = FontWeight.Medium, fontSize = 13.sp, modifier = Modifier.weight(1f))
-                            Icon(Icons.Default.ArrowForward, null, tint = Color.Gray, modifier = Modifier.size(14.dp))
-                        }
-                    }
-                }
-            }
-        }*/
-    }
+         }
 }
 
 @Composable
-fun DesktopSectionCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    iconColor: Color,
-    content: @Composable ColumnScope.() -> Unit
+fun CollapsibleControlPanel(
+    isExpanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit
 ) {
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth().animateContentSize().padding(vertical = 8.dp),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.elevatedCardColors(containerColor = AppTheme.colors.surface),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp)
+        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
+        colors = CardDefaults.outlinedCardColors(containerColor = AppTheme.colors.surface)
     ) {
-        Column(modifier = Modifier.padding(24.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(iconColor.copy(alpha = 0.1f)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
-                }
-                Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(title, fontWeight = FontWeight.ExtraBold, fontSize = 17.sp, color = AppTheme.colors.onSurface)
-                    Spacer(Modifier.height(4.dp))
-                    Text(subtitle, fontSize = 13.sp, color = AppTheme.colors.onSurfaceVariant)
-                }
-            }
-            Spacer(Modifier.height(20.dp))
-            HorizontalDivider(color = AppTheme.colors.outlineVariant.copy(alpha = 0.4f))
-            Spacer(Modifier.height(20.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-fun DesktopPasswordFileRow(
-    fileName: String,
-    value: String,
-    onValueChange: (String) -> Unit,
-    onPush: () -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("File: $fileName", fontWeight = FontWeight.SemiBold, fontSize = 13.sp, fontFamily = FontFamily.Monospace)
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = value,
-                onValueChange = onValueChange,
-                label = { Text("Password Content", fontSize = 11.sp) },
-                modifier = Modifier.weight(1f),
-                singleLine = true
-            )
-            Button(
-                onClick = onPush,
-                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary),
-                modifier = Modifier.height(56.dp)
+        Column {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { onToggle() }
+                    .padding(20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Icon(Icons.Default.UploadFile, null, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(6.dp))
-                Text("Create & Push", fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(AppTheme.colors.primary.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(Icons.Default.Settings, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(24.dp))
+                    }
+                    Spacer(Modifier.width(16.dp))
+                    Column {
+                        Text("Workspace Configuration", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = AppTheme.colors.onSurface)
+                        Spacer(Modifier.height(4.dp))
+                        Text("Workspace configuration and staging directories", fontSize = 13.sp, color = AppTheme.colors.onSurfaceVariant)
+                    }
+                }
+                Icon(
+                    if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    tint = AppTheme.colors.primary,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+            
+            AnimatedVisibility(visible = isExpanded) {
+                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp).padding(bottom = 8.dp)) {
+                    HorizontalDivider(color = AppTheme.colors.outlineVariant.copy(alpha = 0.5f), thickness = 1.dp)
+                    Spacer(Modifier.height(20.dp))
+                    content()
+                }
             }
         }
     }

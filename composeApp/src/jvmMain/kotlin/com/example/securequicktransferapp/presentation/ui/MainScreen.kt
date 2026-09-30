@@ -1,8 +1,14 @@
 package com.example.securequicktransferapp.presentation.ui
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
-import com.example.securequicktransferapp.domain.constants.Constants
-import com.example.securequicktransferapp.presentation.theme.AppTheme
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -25,11 +31,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
-import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Devices
@@ -40,10 +42,11 @@ import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.MenuOpen
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
@@ -60,13 +63,11 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.Card
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -88,12 +89,13 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.secureqt.sdk.SecureQtSdk
+import com.example.securequicktransferapp.domain.constants.Constants
 import com.example.securequicktransferapp.domain.model.DeviceSessionStatus
 import com.example.securequicktransferapp.domain.model.RemoteFile
 import com.example.securequicktransferapp.domain.model.TransferItemStatus
-import com.example.securequicktransferapp.domain.model.TransferProgress
 import com.example.securequicktransferapp.domain.model.TransferQueueItem
 import com.example.securequicktransferapp.domain.model.UsbSessionState
+import com.example.securequicktransferapp.presentation.theme.AppTheme
 import com.example.securequicktransferapp.presentation.vm.MainViewModel
 import javax.swing.JFileChooser
 import kotlin.time.Duration.Companion.milliseconds
@@ -173,11 +175,17 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
             } else if (currentScreen == Constants.Screens.SMARTNAV) {
                 SmartNavDesktopDashboard(
                     vm = vm,
+                    onNavigateToManagement = { currentScreen = Constants.Screens.SMARTNAV_MANAGEMENT },
                     onNavigateToExplorerPath = { targetPath ->
                         currentScreen = Constants.Screens.EXPLORER
                         val dummyFolder = RemoteFile(name = targetPath.substringAfterLast('/'), isDirectory = true, size = 0, path = targetPath)
                         vm.navigateTo(dummyFolder)
                     }
+                )
+            } else if (currentScreen == Constants.Screens.SMARTNAV_MANAGEMENT) {
+                SmartNavManagementScreen(
+                    vm = vm,
+                    onBack = { currentScreen = Constants.Screens.SMARTNAV }
                 )
             }
             else if (currentScreen == Constants.Screens.EXPLORER){
@@ -363,37 +371,93 @@ fun Sidebar(
     onNavigate: (String) -> Unit,
     onDisconnect: () -> Unit
 ) {
+    var isExpanded by remember { mutableStateOf(true) }
+    
+    val sidebarWidth by animateDpAsState(
+        targetValue = if (isExpanded) 280.dp else 80.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessLow)
+    )
+    val horizontalPadding by animateDpAsState(
+        targetValue = if (isExpanded) 20.dp else 12.dp,
+        animationSpec = spring(stiffness = Spring.StiffnessLow)
+    )
+
     Surface(
-        modifier = Modifier.width(280.dp).fillMaxHeight(),
+        modifier = Modifier.width(sidebarWidth).fillMaxHeight(),
         color = AppTheme.colors.surfaceVariant.copy(alpha = 0.5f),
         contentColor = AppTheme.colors.onSurfaceVariant,
         tonalElevation = 1.dp
     ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text("Control Panel", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = AppTheme.colors.onSurfaceVariant)
-            Spacer(Modifier.height(24.dp))
+        Column(modifier = Modifier.padding(vertical = 24.dp, horizontal = horizontalPadding)) {
+            // Header with collapse toggle
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = if (isExpanded) 0.dp else 4.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AnimatedVisibility(
+                    visible = isExpanded,
+                    enter = fadeIn() + expandHorizontally(),
+                    exit = fadeOut() + shrinkHorizontally()
+                ) {
+                    Text(
+                        text = "Secure Transfer", 
+                        style = MaterialTheme.typography.titleLarge, 
+                        fontWeight = FontWeight.ExtraBold, 
+                        color = AppTheme.colors.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+                IconButton(onClick = { isExpanded = !isExpanded }) {
+                    Icon(
+                        if (isExpanded) Icons.Default.MenuOpen else Icons.Default.Menu,
+                        contentDescription = "Toggle Sidebar",
+                        tint = AppTheme.colors.primary,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            }
+            
+            Spacer(Modifier.height(32.dp))
+
             if (isConnected) {
-                NavigationItem("File Explorer", Icons.Default.Folder, currentScreen == Constants.Screens.EXPLORER) { onNavigate(Constants.Screens.EXPLORER) }
+                NavigationItem("File Explorer", Icons.Default.Folder, currentScreen == Constants.Screens.EXPLORER, isExpanded) { onNavigate(Constants.Screens.EXPLORER) }
                 Spacer(Modifier.height(8.dp))
-                NavigationItem("SmartNav Option", Icons.Default.Explore, currentScreen == Constants.Screens.SMARTNAV) { onNavigate(Constants.Screens.SMARTNAV) }
-                Spacer(Modifier.height(24.dp))
-                NavigationItem("Transfers", Icons.Default.Sync, currentScreen == Constants.Screens.TRANSFERS) { onNavigate(Constants.Screens.TRANSFERS) }
+                NavigationItem("SmartNav Setup", Icons.Default.Explore, currentScreen == Constants.Screens.SMARTNAV, isExpanded) { onNavigate(Constants.Screens.SMARTNAV) }
+                Spacer(Modifier.height(8.dp))
+                NavigationItem("Transfers", Icons.Default.Sync, currentScreen == Constants.Screens.TRANSFERS, isExpanded) { onNavigate(Constants.Screens.TRANSFERS) }
                 Spacer(Modifier.height(24.dp))
             } else {
-                Surface(
-                    color = AppTheme.colors.surfaceVariant,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                AnimatedVisibility(
+                    visible = isExpanded,
+                    enter = fadeIn() + expandHorizontally(),
+                    exit = fadeOut() + shrinkHorizontally()
                 ) {
-                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Lock, null, tint = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("Connect a device to unlock File Explorer & SmartNav.", fontSize = 11.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
+                    Surface(
+                        color = AppTheme.colors.surfaceVariant,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Lock, null, tint = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("Connect a device to unlock tools.", fontSize = 13.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.8f))
+                        }
+                    }
+                }
+                AnimatedVisibility(
+                    visible = !isExpanded,
+                    enter = fadeIn(),
+                    exit = fadeOut()
+                ) {
+                    Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        Icon(Icons.Default.Lock, null, tint = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(24.dp).padding(bottom = 16.dp))
                     }
                 }
             }
 
-            NavigationItem("Settings", Icons.Default.Settings, currentScreen == Constants.Screens.SETTINGS) { onNavigate(Constants.Screens.SETTINGS) }
+            NavigationItem("Settings", Icons.Default.Settings, currentScreen == Constants.Screens.SETTINGS, isExpanded) { onNavigate(Constants.Screens.SETTINGS) }
             Spacer(Modifier.height(8.dp))
 
             var flashStationProcess by remember { mutableStateOf<java.lang.Process?>(null) }
@@ -414,7 +478,8 @@ fun Sidebar(
             NavigationItem(
                 label = if (isFlashStationRunning) "OS Flash Station (Running)" else "OS Flash Station",
                 icon = Icons.Default.SystemUpdate, 
-                selected = false
+                selected = false,
+                isExpanded = isExpanded
             ) {
                 if (isFlashStationRunning) {
                     val pid = flashStationProcess?.pid()
@@ -442,62 +507,102 @@ fun Sidebar(
             }
             Spacer(Modifier.height(24.dp))
 
-            // --- Multi-Device Section ---
-            Text(
-                "Connected Devices (${sessions.size})",
-                style = MaterialTheme.typography.labelLarge,
-                color = AppTheme.colors.primary,
-                fontWeight = FontWeight.Bold
-            )
-            Spacer(Modifier.height(8.dp))
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = fadeIn() + expandHorizontally(),
+                exit = fadeOut() + shrinkHorizontally()
+            ) {
+                Column {
+                    // --- Multi-Device Section ---
+                    Text(
+                        "Connected Devices (${sessions.size})",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = AppTheme.colors.primary,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(Modifier.height(8.dp))
 
-            if (sessions.isEmpty()) {
-                Surface(
-                    color = AppTheme.colors.surfaceVariant,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.UsbOff, null, tint = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(8.dp))
-                        Text("No devices detected.\nPlug in an Android device via USB.", fontSize = 11.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
+                    if (sessions.isEmpty()) {
+                        Surface(
+                            color = AppTheme.colors.surfaceVariant,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.UsbOff, null, tint = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.5f), modifier = Modifier.size(20.dp))
+                                Spacer(Modifier.width(12.dp))
+                                Text("No devices detected. Plug in an Android device via USB.", fontSize = 12.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.8f))
+                            }
+                        }
+                    } else {
+                        androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
+                            items(sessions.entries.toList()) { (deviceId, sessionState) ->
+                                // Collect queue items for this specific device
+                                val deviceQueue = vm.getDeviceQueue(deviceId)
+                                val queueItems = deviceQueue?.queue?.collectAsState()?.value ?: emptyList()
+                                val isProcessing = deviceQueue?.isProcessing?.collectAsState()?.value ?: false
+
+                                DeviceCard(
+                                    deviceId = deviceId,
+                                    sessionState = sessionState,
+                                    isSelected = deviceId == selectedDeviceId,
+                                    queueItems = queueItems,
+                                    isQueueProcessing = isProcessing,
+                                    onSelect = { onSelectDevice(deviceId) },
+                                    onConnect = {
+                                        onSelectDevice(deviceId)
+                                        vm.connect()
+                                    },
+                                    onDisconnect = {
+                                        onSelectDevice(deviceId)
+                                        onDisconnect()
+                                    }
+                                )
+                                Spacer(Modifier.height(8.dp))
+                            }
+                        }
                     }
                 }
-            } else {
-                LazyColumn(modifier = Modifier.heightIn(max = 300.dp)) {
-                    items(sessions.entries.toList()) { (deviceId, sessionState) ->
-                        // Collect queue items for this specific device
-                        val deviceQueue = vm.getDeviceQueue(deviceId)
-                        val queueItems = deviceQueue?.queue?.collectAsState()?.value ?: emptyList()
-                        val isProcessing = deviceQueue?.isProcessing?.collectAsState()?.value ?: false
+            }
 
-                        DeviceCard(
-                            deviceId = deviceId,
-                            sessionState = sessionState,
-                            isSelected = deviceId == selectedDeviceId,
-                            queueItems = queueItems,
-                            isQueueProcessing = isProcessing,
-                            onSelect = { onSelectDevice(deviceId) },
-                            onConnect = {
-                                onSelectDevice(deviceId)
-                                vm.connect()
-                            },
-                            onDisconnect = {
-                                onSelectDevice(deviceId)
-                                onDisconnect()
-                            }
-                        )
-                        Spacer(Modifier.height(8.dp))
+            AnimatedVisibility(
+                visible = !isExpanded,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                // Minimized multi-device indication
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.BadgedBox(
+                        badge = { if (sessions.isNotEmpty()) androidx.compose.material3.Badge { Text(sessions.size.toString()) } }
+                    ) {
+                        Icon(Icons.Default.Usb, null, tint = AppTheme.colors.primary, modifier = Modifier.size(24.dp))
                     }
                 }
             }
 
             Spacer(Modifier.weight(1f))
-            SecurityInfo()
+            
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = fadeIn() + expandHorizontally(),
+                exit = fadeOut() + shrinkHorizontally()
+            ) {
+                SecurityInfo()
+            }
+            AnimatedVisibility(
+                visible = !isExpanded,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                Box(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Default.Verified, null, tint = Color(0xFF4CAF50), modifier = Modifier.size(20.dp))
+                }
+            }
         }
     }
 }
-
 @Composable
 fun DeviceCard(
     deviceId: String,
@@ -667,19 +772,37 @@ fun DeviceCard(
 }
 
 @Composable
-fun NavigationItem(label: String, icon: ImageVector, selected: Boolean, onClick: () -> Unit) {
+fun NavigationItem(label: String, icon: ImageVector, selected: Boolean, isExpanded: Boolean = true, onClick: () -> Unit) {
     Surface(
-        modifier = Modifier.fillMaxWidth().height(48.dp).clip(RoundedCornerShape(8.dp)).clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().height(52.dp).clip(RoundedCornerShape(12.dp)).clickable(onClick = onClick),
         color = if (selected) AppTheme.colors.primaryContainer else Color.Transparent
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(horizontal = 16.dp)) {
-            Icon(icon, null, tint = if (selected) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-            Spacer(Modifier.width(12.dp))
-            Text(label, color = if (selected) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Start,
+            modifier = Modifier.padding(horizontal = 16.dp)
+        ) {
+            Icon(icon, null, tint = if (selected) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.size(24.dp))
+            AnimatedVisibility(
+                visible = isExpanded,
+                enter = fadeIn() + expandHorizontally(),
+                exit = fadeOut() + shrinkHorizontally()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Spacer(Modifier.width(16.dp))
+                    Text(
+                        text = label, 
+                        color = if (selected) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), 
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium, 
+                        fontSize = 15.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
         }
     }
 }
-
 // ConnectionCard removed — replaced by per-device DeviceCard in Sidebar
 
 

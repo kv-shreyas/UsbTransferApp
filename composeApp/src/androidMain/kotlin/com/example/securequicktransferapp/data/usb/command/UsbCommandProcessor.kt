@@ -265,7 +265,26 @@ class UsbCommandProcessor @Inject constructor(
             usbLogger.d(TAG, "handleFetchDir: Sending SmartNav ZIP of $zipSize bytes from $zipPath")
             dataSource.sendSecure(ByteBuffer.allocate(8).putLong(zipSize).array())
             
-            val input = SmartNavStorageResolver.openInputStream(context, zipPath) ?: FileInputStream(File(zipPath))
+            var input = SmartNavStorageResolver.openInputStream(context, zipPath)
+            if (input == null) {
+                try {
+                    input = java.io.FileInputStream(java.io.File(zipPath))
+                } catch (e: java.io.FileNotFoundException) {
+                    if (e.message?.contains("EACCES") == true || e.message?.contains("Permission denied") == true) {
+                        usbLogger.w(TAG, "Permission denied for FileInputStream, trying root shell fallback for $zipPath")
+                        try {
+                            val process = Runtime.getRuntime().exec(arrayOf("su", "-c", "cat $zipPath"))
+                            input = process.inputStream
+                        } catch (suEx: Exception) {
+                            usbLogger.e(TAG, "Root fallback failed", suEx)
+                            throw e
+                        }
+                    } else {
+                        throw e
+                    }
+                }
+            }
+            
             try {
                 coroutineScope {
                     input.use { stream ->

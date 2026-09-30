@@ -8,6 +8,6 @@ sealed class UsbUiState {
     object Connecting : UsbUiState()
     object Transferring : UsbUiState()
     data class Receiving(val fileName: String, val progress: Float) : UsbUiState()
-    data class Success(val message: String) : UsbUiState()
+    data class Success(val message: String, val deviceId: String? = null) : UsbUiState()
     data class Error(val error: String) : UsbUiState()
 }

@@ -125,6 +125,13 @@ class UsbTransferViewModel @Inject constructor(
             clientServiceController.clientUiState.collect { state ->
                 if (_usbRole.value is UsbRole.Client && clientServiceController.isServiceRunning.value) {
                     _uiState.value = state
+                    if (state is UsbUiState.Success && !state.deviceId.isNullOrBlank()) {
+                        val currentRole = _usbRole.value as UsbRole.Client
+                        if (currentRole.connectedHostName != state.deviceId) {
+                            _usbRole.value = UsbRole.Client(connectedHostName = state.deviceId)
+                            preferencesManager.usbRole = _usbRole.value
+                        }
+                    }
                 }
             }
         }
@@ -192,7 +199,8 @@ class UsbTransferViewModel @Inject constructor(
             usbLogger.i(TAG, "detectDevice: Found USB Accessory - ${accessory.model} (Manufacturer: ${accessory.manufacturer})")
             currentAccessory = accessory
             currentDevice = null
-            _uiState.value = UsbUiState.DeviceDetected(name = accessory.model ?: "USB Accessory")
+            val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "USB Accessory"
+            _uiState.value = UsbUiState.DeviceDetected(name = hostName)
         } else {
             usbLogger.w(TAG, "detectDevice: No USB devices or accessories detected.")
             _uiState.value = UsbUiState.NoDevice
@@ -247,8 +255,9 @@ class UsbTransferViewModel @Inject constructor(
         // 1) It's a UsbAccessory (remote Host already switched us to AOA, so we connect as Client)
         // 2) Or it's a UsbDevice already in AOA mode (remote device already switched and waiting for Host to open endpoints)
         if (accessory != null) {
-            usbLogger.i(TAG, "detectAndConnect: UsbAccessory detected (${accessory.model}). Remote device switched us to AOA mode. Auto-connecting as Client...")
-            _usbRole.value = UsbRole.Client(connectedHostName = accessory.model ?: "USB Host")
+            val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "USB Host"
+            usbLogger.i(TAG, "detectAndConnect: UsbAccessory detected ($hostName). Remote device switched us to AOA mode. Auto-connecting as Client...")
+            _usbRole.value = UsbRole.Client(connectedHostName = hostName)
             preferencesManager.usbRole = _usbRole.value
             requestPermissionAndConnect()
         } else if (isAlreadyAoa && device != null) {
@@ -396,9 +405,11 @@ class UsbTransferViewModel @Inject constructor(
 
         // When this device detects a UsbDevice, it is the physical USB host controller.
         // Align role to Host so it initiates AOA switch and handshake.
-        if (_usbRole.value !is UsbRole.Host) {
-            usbLogger.i(TAG, "proceedWithDevice: Hardware USB Host detected. Aligning role to Host(connectedDeviceName=${device.productName ?: "Remote Device"})")
-            _usbRole.value = UsbRole.Host(device.productName ?: "Remote Device")
+        // Always update the role to ensure the real connectedDeviceName is populated rather than the hardcoded fallback from UI manual selection.
+        val actualDeviceName = device.productName ?: "Remote Device"
+        if (_usbRole.value !is UsbRole.Host || (_usbRole.value as UsbRole.Host).connectedDeviceName != actualDeviceName) {
+            usbLogger.i(TAG, "proceedWithDevice: Hardware USB Host detected. Aligning role to Host(connectedDeviceName=$actualDeviceName)")
+            _usbRole.value = UsbRole.Host(actualDeviceName)
             preferencesManager.usbRole = _usbRole.value
         }
 
@@ -460,9 +471,10 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     private suspend fun proceedWithAccessory(accessory: UsbAccessory) {
-        usbLogger.d(TAG, "proceedWithAccessory: Starting client foreground service for accessory: ${accessory.model}...")
+        val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "USB Host"
+        usbLogger.d(TAG, "proceedWithAccessory: Starting client foreground service for accessory: $hostName...")
         _uiState.value = UsbUiState.Connecting
-        _usbRole.value = UsbRole.Client(connectedHostName = accessory.model ?: "USB Host")
+        _usbRole.value = UsbRole.Client(connectedHostName = hostName)
         preferencesManager.usbRole = _usbRole.value
         clientServiceController.startService(accessory)
     }

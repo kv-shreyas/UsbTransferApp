@@ -1,27 +1,87 @@
 package com.example.securequicktransferapp.presentation.ui
-import com.example.secureqt.sdk.SecureQtSdk
-import com.example.securequicktransferapp.presentation.theme.AppTheme
 
-import android.net.Uri
-import android.os.Environment
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.*
+import android.util.Log
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.InsertDriveFile
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.filled.Cancel
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.Devices
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Error
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SettingsEthernet
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.Upload
+import androidx.compose.material.icons.filled.Usb
+import androidx.compose.material.icons.filled.UsbOff
+import androidx.compose.material.icons.filled.VerifiedUser
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -36,17 +96,22 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.example.securequicktransferapp.data.UsbRole
-import com.example.securequicktransferapp.domain.model.RemoteFile
-import com.example.securequicktransferapp.domain.model.TransferProgress
 import com.example.securequicktransferapp.data.UsbUiState
+import com.example.securequicktransferapp.domain.model.TransferProgress
+import com.example.securequicktransferapp.presentation.theme.AppTheme
 import com.example.securequicktransferapp.presentation.theme.SuccessColor
 import com.example.securequicktransferapp.presentation.theme.WarningColor
 import com.example.securequicktransferapp.presentation.viewmodel.UsbTransferViewModel
-import java.io.File
 
-@OptIn(ExperimentalMaterial3Api::class)
+
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
-fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkTheme: Boolean = true, onThemeToggle: () -> Unit = {}) {
+fun TransferScreen(
+    viewModel: UsbTransferViewModel = hiltViewModel(),
+    isDarkTheme: Boolean = true,
+    onThemeToggle: () -> Unit = {}
+) {
+    val TAG = "TransferScreen"
     val state by viewModel.uiState.collectAsState()
     val isCableConnected by viewModel.isCablePhysicallyConnected.collectAsState()
     val role by viewModel.usbRole.collectAsState()
@@ -55,13 +120,18 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkThem
     val logFilePath = viewModel.getLogFilePath()
     val context = LocalContext.current
 
-    LaunchedEffect(Unit) {
-        viewModel.detectAndConnect()
+    LaunchedEffect(Unit) { viewModel.detectAndConnect() }
+
+    val connectedNameDialog = (state as? UsbUiState.Success)?.deviceId?.takeIf { it.isNotBlank() } ?: when (role) {
+        is UsbRole.Host -> (role as UsbRole.Host).connectedDeviceName
+        is UsbRole.Client -> (role as UsbRole.Client).connectedHostName
+        null -> null
     }
 
     if (progressState.isVisible) {
         AndroidTransferProgressDialog(
             progress = progressState,
+            connectedName = connectedNameDialog,
             onCancel = { viewModel.cancelTransfer() },
             onDismiss = { viewModel.dismissProgress() }
         )
@@ -90,10 +160,29 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkThem
     Scaffold(
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text("USB Secure Transfer", fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = AppTheme.colors.primaryContainer,
-                    titleContentColor = AppTheme.colors.onPrimaryContainer
+                title = { 
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Secure Transfer", fontWeight = FontWeight.ExtraBold)
+                        val connectedName = (state as? UsbUiState.Success)?.deviceId?.takeIf { it.isNotBlank() } ?: when (role) {
+                            is UsbRole.Host -> (role as UsbRole.Host).connectedDeviceName
+                            is UsbRole.Client -> (role as UsbRole.Client).connectedHostName
+                            null -> null
+                        }
+                        Log.i(TAG, "Connected Name: $connectedName | State: $state")
+                        val isConnectedState = state is UsbUiState.Success || state is UsbUiState.Receiving || state is UsbUiState.Transferring
+                        if (connectedName != null && isConnectedState) {
+                            Text(
+                                text = "Connected: $connectedName",
+                                fontSize = 12.sp,
+                                color = AppTheme.colors.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                },
+                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                    containerColor = Color.Transparent,
+                    titleContentColor = AppTheme.colors.onSurface
                 ),
                 actions = {
                     IconButton(onClick = { showSettingsScreen = true }) {
@@ -106,15 +195,11 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkThem
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(AppTheme.colors.surface)
                 .padding(padding)
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .padding(horizontal = 24.dp, vertical = 8.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            StatusHeader(state)
-
-            UsbPhysicalIndicator(isPhysicallyConnected = isCableConnected)
-
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -125,30 +210,35 @@ fun TransferScreen(viewModel: UsbTransferViewModel = hiltViewModel(), isDarkThem
                     targetState = state,
                     contentKey = { it::class },
                     transitionSpec = {
-                        fadeIn() + scaleIn() togetherWith fadeOut() + scaleOut()
+                        fadeIn() + scaleIn(initialScale = 0.95f) togetherWith fadeOut() + scaleOut(targetScale = 0.95f)
                     }
                 ) { targetState ->
-                    StateContent(
-                        state = targetState,
-                        role = role,
-                        isCableConnected = isCableConnected,
-                        onConnect = { viewModel.requestPermissionAndConnect() },
-                        onSelectRole = { viewModel.selectRoleAndConnect(it) },
-                    )
+                    if (targetState is UsbUiState.Success && role is UsbRole.Host) {
+                        HostModeDashboard(role = role as UsbRole.Host)
+                    } else {
+                        UnifiedStateCard(
+                            state = targetState,
+                            role = role,
+                            isCableConnected = isCableConnected,
+                            onConnect = { viewModel.requestPermissionAndConnect() },
+                            onSelectRole = { viewModel.selectRoleAndConnect(it) }
+                        )
+                    }
                 }
             }
 
-            // Live Diagnostic Logs Viewer (Collapsible / Scrollable)
+            Spacer(Modifier.height(16.dp))
             DebugLogsViewer(
                 logLines = logLines,
                 logFilePath = logFilePath,
                 onClear = { viewModel.clearLogs() }
             )
-
+            Spacer(Modifier.height(16.dp))
             SecurityFooter()
         }
     }
 }
+
 
 @Composable
 fun AboutAppDialog(onDismiss: () -> Unit, onUpdate: () -> Unit) {
@@ -183,425 +273,6 @@ fun AboutAppDialog(onDismiss: () -> Unit, onUpdate: () -> Unit) {
         }
     )
 }
-
-@Composable
-fun StatusHeader(state: UsbUiState) {
-    val (color, text, icon) = when (state) {
-        is UsbUiState.Idle -> Triple(AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f), "Idle", Icons.Default.Info)
-        is UsbUiState.NoDevice -> Triple(AppTheme.colors.error, "Disconnected", Icons.Default.UsbOff)
-        is UsbUiState.DeviceDetected -> Triple(WarningColor, "Device Ready", Icons.Default.Usb)
-        is UsbUiState.RequestingPermission -> Triple(WarningColor, "Authenticating", Icons.Default.Lock)
-        is UsbUiState.Connecting -> Triple(AppTheme.colors.primary, "Connecting", Icons.Default.SettingsEthernet)
-        is UsbUiState.Transferring -> Triple(AppTheme.colors.primary, "Secure Link Active", Icons.Default.Sync)
-        is UsbUiState.Receiving -> Triple(AppTheme.colors.primary, "Transfer in Progress", Icons.Default.Download)
-        is UsbUiState.Success -> Triple(SuccessColor, "Connected & Secure", Icons.Default.VerifiedUser)
-        is UsbUiState.Error -> Triple(AppTheme.colors.error, "Error", Icons.Default.Error)
-    }
-
-    Surface(
-        tonalElevation = 4.dp,
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Icon(icon, contentDescription = null, tint = color)
-            Text(text, fontWeight = FontWeight.SemiBold, fontSize = 18.sp)
-            Spacer(Modifier.weight(1f))
-            Box(
-                modifier = Modifier
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(color)
-            )
-        }
-    }
-}
-
-@Composable
-fun StateContent(
-    state: UsbUiState,
-    role: UsbRole?,
-    isCableConnected: Boolean,
-    onConnect: () -> Unit,
-    onSelectRole: (UsbRole) -> Unit,
-) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
-        modifier = Modifier
-            .fillMaxWidth()
-            .animateContentSize()
-    ) {
-        when (state) {
-            is UsbUiState.Idle -> {
-                RoleSelectionCards(currentRole = role, onSelectRole = onSelectRole)
-                Spacer(Modifier.height(20.dp))
-                Button(
-                    onClick = onConnect,
-                    enabled = role != null,
-                    modifier = Modifier
-                        .height(54.dp)
-                        .widthIn(min = 220.dp)
-                ) {
-                    Icon(Icons.Default.Usb, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Initialize Connection", fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                }
-            }
-            is UsbUiState.NoDevice -> {
-                if (isCableConnected) {
-                    BigIcon(Icons.Default.Usb, AppTheme.colors.primary)
-                    Text("USB Cable Connected", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(8.dp))
-                } else {
-                    BigIcon(Icons.Default.UsbOff, AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-                    Text("USB Connection Setup", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(8.dp))
-                }
-                ConnectionGuideCard(
-                    currentRole = role,
-                    isCableConnected = isCableConnected,
-                    onSelectRole = onSelectRole
-                )
-            }
-            is UsbUiState.DeviceDetected -> {
-                BigIcon(Icons.Default.Devices, AppTheme.colors.primary)
-                Text("USB Device Detected", style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.height(8.dp))
-
-                val isBusyCheck = state.name.contains("Waiting", ignoreCase = true) ||
-                                  state.name.contains("Checking", ignoreCase = true) ||
-                                  state.name.contains("Switching", ignoreCase = true) ||
-                                  state.name.contains("Establishing", ignoreCase = true)
-
-                if (isBusyCheck) {
-                    Surface(
-                        color = AppTheme.colors.tertiaryContainer,
-                        shape = RoundedCornerShape(14.dp),
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(16.dp),
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(40.dp), color = AppTheme.colors.onTertiaryContainer)
-                            Text(
-                                "Negotiating & Verifying Connection...",
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp,
-                                color = AppTheme.colors.onTertiaryContainer
-                            )
-                            Text(
-                                state.name,
-                                textAlign = TextAlign.Center,
-                                fontSize = 12.sp,
-                                color = AppTheme.colors.onTertiaryContainer.copy(alpha = 0.9f)
-                            )
-                        }
-                    }
-                } else {
-                    Text(state.name, color = AppTheme.colors.secondary)
-                    Spacer(Modifier.height(16.dp))
-
-                    if (role != null) {
-                        val roleText = if (role is UsbRole.Host) "Host (Initiating Connection)" else "Client (Receiver)"
-                        Surface(
-                            color = AppTheme.colors.primaryContainer,
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
-                        ) {
-                            Text(
-                                "Role: $roleText",
-                                modifier = Modifier.padding(8.dp),
-                                textAlign = TextAlign.Center,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 13.sp,
-                                color = AppTheme.colors.onPrimaryContainer
-                            )
-                        }
-                        Button(
-                            onClick = onConnect,
-                            contentPadding = PaddingValues(horizontal = 32.dp, vertical = 12.dp),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Link, null)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Initialize Connection")
-                        }
-                    } else {
-                        Text("Select this device's role to proceed:", fontWeight = FontWeight.SemiBold)
-                        Spacer(Modifier.height(12.dp))
-                        RoleSelectionCards(currentRole = null, onSelectRole = onSelectRole)
-                    }
-                }
-            }
-            is UsbUiState.Success -> {
-                if (role is UsbRole.Host) {
-                    HostModeDashboard()
-                } else {
-                    BigIcon(Icons.Default.CheckCircle, SuccessColor)
-                    Text("Ready & Secure", style = MaterialTheme.typography.headlineSmall)
-                    Spacer(Modifier.height(12.dp))
-
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = AppTheme.colors.surfaceVariant,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(modifier = Modifier.padding(10.dp)) {
-                            Text("✅ Device is ready (Client Mode)", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = SuccessColor)
-                            Spacer(Modifier.height(4.dp))
-                            Text(state.message, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = AppTheme.colors.primary)
-                            Spacer(Modifier.height(4.dp))
-                            Text("Waiting for commands from the connected Host device.", style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-                        }
-                    }
-                }
-            }
-            is UsbUiState.Error -> {
-                BigIcon(Icons.Default.Error, AppTheme.colors.error)
-                Text("Connection Failed", style = MaterialTheme.typography.headlineSmall)
-                Text(state.error, color = AppTheme.colors.error, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(16.dp))
-                Button(onClick = onConnect) {
-                    Icon(Icons.Default.Refresh, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Retry")
-                }
-            }
-            is UsbUiState.RequestingPermission -> {
-                CircularProgressIndicator(modifier = Modifier.size(64.dp))
-                Spacer(Modifier.height(16.dp))
-                Text("Awaiting OS Permission...", fontWeight = FontWeight.Medium)
-                Spacer(Modifier.height(8.dp))
-                Text("Please accept the system dialog to proceed.", color = AppTheme.colors.secondary, textAlign = TextAlign.Center)
-            }
-            is UsbUiState.Connecting -> {
-                CircularProgressIndicator(modifier = Modifier.size(64.dp))
-                Spacer(Modifier.height(16.dp))
-                Text("Establishing Connection...", fontWeight = FontWeight.Medium)
-            }
-            is UsbUiState.Transferring -> {
-                CircularProgressIndicator(modifier = Modifier.size(64.dp))
-                Spacer(Modifier.height(16.dp))
-                Text("Handshaking...", fontWeight = FontWeight.Medium)
-            }
-            is UsbUiState.Receiving -> {
-                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(64.dp), tint = AppTheme.colors.primary)
-                Spacer(Modifier.height(24.dp))
-                Text("Transferring...", fontWeight = FontWeight.Medium)
-                Text(state.fileName, color = AppTheme.colors.secondary, textAlign = TextAlign.Center)
-                Spacer(Modifier.height(16.dp))
-                LinearProgressIndicator(
-                    progress = { if (state.progress >= 0) state.progress else 0f },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
-                )
-                if (state.progress >= 0f) {
-                    Spacer(Modifier.height(8.dp))
-                    Text("${(state.progress * 100).toInt()}%", color = AppTheme.colors.primary, fontWeight = FontWeight.Bold)
-                }
-            }
-            else -> {
-                BigIcon(Icons.Default.Usb, AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-                Text("USB Transfer", style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "Plug in the USB cable to get started.\nThe device will be detected automatically.",
-                    color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f),
-                    textAlign = TextAlign.Center,
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun ConnectionGuideCard(
-    currentRole: UsbRole?,
-    isCableConnected: Boolean,
-    onSelectRole: (UsbRole) -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surfaceVariant.copy(alpha = 0.8f)),
-        shape = RoundedCornerShape(14.dp),
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Default.Usb, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(22.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    if (isCableConnected) "USB Role Setup (Cable Connected)" else "USB Connection Setup",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = AppTheme.colors.primary
-                )
-            }
-
-            if (isCableConnected && currentRole is UsbRole.Host) {
-                Surface(
-                    color = Color(0xFFFFF3CD),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFFFFECB5)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Warning, null, tint = Color(0xFF856404), modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Hardware Role Notice", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF856404))
-                        }
-                        Text(
-                            "USB cable is plugged in, but this device's hardware port negotiated the Peripheral role (it cannot act as USB Host with this cable/port state).\n\n" +
-                            "👉 To act as Host from this phone: Flip the USB-C cable ends or use a USB OTG adapter.\n" +
-                            "👉 Or: Select Client role below to connect immediately!",
-                            fontSize = 11.sp,
-                            color = Color(0xFF664D03)
-                        )
-                    }
-                }
-            } else if (isCableConnected && currentRole is UsbRole.Client) {
-                Surface(
-                    color = Color(0xFFD1E7DD),
-                    shape = RoundedCornerShape(10.dp),
-                    border = BorderStroke(1.dp, Color(0xFFBADBCC)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.CheckCircle, null, tint = Color(0xFF0F5132), modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Waiting for Host Device", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = Color(0xFF0F5132))
-                        }
-                        Text(
-                            "USB cable detected in Peripheral mode. Select 'Initialize Connection' on the other Host device to establish secure link.",
-                            fontSize = 11.sp,
-                            color = Color(0xFF0F5132)
-                        )
-                    }
-                }
-            } else if (isCableConnected && currentRole == null) {
-                Surface(
-                    color = AppTheme.colors.primaryContainer.copy(alpha = 0.5f),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(
-                            "USB Cable Detected (Peripheral Port)",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp,
-                            color = AppTheme.colors.onPrimaryContainer
-                        )
-                        Text(
-                            "This phone connected as the Upstream/Peripheral USB port. Select the Client role below so the other Host device can connect.",
-                            fontSize = 11.sp,
-                            color = AppTheme.colors.onPrimaryContainer.copy(alpha = 0.9f)
-                        )
-                    }
-                }
-            } else {
-                Surface(
-                    color = AppTheme.colors.surface,
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text(
-                            "How it works:",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 12.sp,
-                            color = AppTheme.colors.onSurface
-                        )
-                        Text("Step 1: Select a Role below for THIS device.", fontSize = 11.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-                        Text("Step 2: Connect to the other device (Desktop or Android) via USB / OTG cable.", fontSize = 11.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-                        Text("Step 3: Accept any USB permission popup that appears on screen.", fontSize = 11.sp, color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-                    }
-                }
-            }
-
-            Text("Select this device's role to proceed:", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-            RoleSelectionCards(currentRole = currentRole, onSelectRole = onSelectRole)
-
-            if (currentRole != null) {
-                val roleName = if (currentRole is UsbRole.Host) "Host (Initiator)" else "Client (Receiver)"
-                val nextAction = if (currentRole is UsbRole.Host) {
-                    "👉 Now plug the USB cable into both devices. When prompted, tap 'Allow / OK' to initiate the connection and browse/manage files on the remote device."
-                } else {
-                    "👉 Now tap 'Initialize Connection' on the Host device. This device will automatically authenticate and connect."
-                }
-                Surface(
-                    color = if (currentRole is UsbRole.Host) AppTheme.colors.primaryContainer else AppTheme.colors.secondaryContainer,
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(10.dp)) {
-                        Text("Selected Role: $roleName", fontWeight = FontWeight.Bold, fontSize = 12.sp, color = if (currentRole is UsbRole.Host) AppTheme.colors.onPrimaryContainer else AppTheme.colors.onSecondaryContainer)
-                        Spacer(Modifier.height(4.dp))
-                        Text(nextAction, fontSize = 11.sp, color = if (currentRole is UsbRole.Host) AppTheme.colors.onPrimaryContainer else AppTheme.colors.onSecondaryContainer)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun RoleSelectionCards(
-    currentRole: UsbRole?,
-    onSelectRole: (UsbRole) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        val isHostSelected = currentRole is UsbRole.Host
-        Card(
-            onClick = { onSelectRole(UsbRole.Host("Remote Device")) },
-            modifier = Modifier.weight(1f),
-            border = if (isHostSelected) BorderStroke(2.dp, AppTheme.colors.primary) else null,
-            colors = CardDefaults.cardColors(
-                containerColor = if (isHostSelected) AppTheme.colors.primaryContainer else AppTheme.colors.surface
-            )
-        ) {
-            Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Upload, null, tint = AppTheme.colors.primary, modifier = Modifier.size(24.dp))
-                Spacer(Modifier.height(6.dp))
-                Text("Host", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isHostSelected) AppTheme.colors.onPrimaryContainer else AppTheme.colors.onSurface)
-                Spacer(Modifier.height(2.dp))
-                Text("Initiate connection &\nbrowse/manage files", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isHostSelected) AppTheme.colors.onPrimaryContainer.copy(alpha = 0.8f) else AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-            }
-        }
-
-        val isClientSelected = currentRole is UsbRole.Client
-        Card(
-            onClick = { onSelectRole(UsbRole.Client("Remote Host")) },
-            modifier = Modifier.weight(1f),
-            border = if (isClientSelected) BorderStroke(2.dp, AppTheme.colors.secondary) else null,
-            colors = CardDefaults.cardColors(
-                containerColor = if (isClientSelected) AppTheme.colors.secondaryContainer else AppTheme.colors.surface
-            )
-        ) {
-            Column(modifier = Modifier.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                Icon(Icons.Default.Download, null, tint = AppTheme.colors.secondary, modifier = Modifier.size(24.dp))
-                Spacer(Modifier.height(6.dp))
-                Text("Client", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = if (isClientSelected) AppTheme.colors.onSecondaryContainer else AppTheme.colors.onSurface)
-                Spacer(Modifier.height(2.dp))
-                Text("Receive connection &\nallow file transfers", fontSize = 10.sp, textAlign = TextAlign.Center, color = if (isClientSelected) AppTheme.colors.onSecondaryContainer.copy(alpha = 0.8f) else AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f))
-            }
-        }
-    }
-}
-
 @Composable
 fun DebugLogsViewer(
     logLines: List<String>,
@@ -701,12 +372,23 @@ fun DebugLogsViewer(
 
 @Composable
 fun HostModeDashboard(
+    role: UsbRole.Host? = null,
     onNavigateDir: ((String) -> Unit)? = null,
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var selectedOption by remember { mutableStateOf("fileManager") }
 
     Column(modifier = Modifier.fillMaxSize()) {
+        if (role != null) {
+            Text(
+                text = "Connected to ${role.connectedDeviceName}",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = AppTheme.colors.primary,
+                modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth(),
+                textAlign = TextAlign.Center
+            )
+        }
         // Top Option Selector / Tab Bar
         Surface(
             color = AppTheme.colors.surfaceVariant.copy(alpha = 0.5f),
@@ -774,6 +456,7 @@ fun HostModeDashboard(
 @Composable
 fun AndroidTransferProgressDialog(
     progress: TransferProgress,
+    connectedName: String? = null,
     onCancel: () -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -786,6 +469,16 @@ fun AndroidTransferProgressDialog(
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
+                if (connectedName != null) {
+                    Text(
+                        text = "Connected: $connectedName",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = AppTheme.colors.primary,
+                        modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth(),
+                        textAlign = TextAlign.Center
+                    )
+                }
+                val isCancelled = progress.statusMessage.contains("Cancel", ignoreCase = true)
                 val isFetchOrReceive = progress.statusMessage.contains("Fetch", ignoreCase = true) ||
                                        progress.statusMessage.contains("Download", ignoreCase = true) ||
                                        progress.statusMessage.contains("Receiv", ignoreCase = true)
@@ -793,6 +486,7 @@ fun AndroidTransferProgressDialog(
                                progress.statusMessage.contains("Send", ignoreCase = true)
 
                 val titleText = when {
+                    isCancelled -> "Transfer Cancelled"
                     progress.isComplete -> when {
                         isFetchOrReceive -> "Receive Complete"
                         isUpload -> "Upload Complete"
@@ -807,9 +501,18 @@ fun AndroidTransferProgressDialog(
 
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
-                        if (progress.isComplete) Icons.Default.CheckCircle else if (isUpload) Icons.Default.Upload else Icons.Default.Download,
+                        when {
+                            isCancelled -> Icons.Default.Cancel
+                            progress.isComplete -> Icons.Default.CheckCircle
+                            isUpload -> Icons.Default.Upload
+                            else -> Icons.Default.Download
+                        },
                         null,
-                        tint = if (progress.isComplete) SuccessColor else AppTheme.colors.primary,
+                        tint = when {
+                            isCancelled -> AppTheme.colors.error
+                            progress.isComplete -> SuccessColor
+                            else -> AppTheme.colors.primary
+                        },
                         modifier = Modifier.size(36.dp)
                     )
                     Spacer(Modifier.width(16.dp))
@@ -818,7 +521,11 @@ fun AndroidTransferProgressDialog(
                             text = titleText,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (progress.isComplete) SuccessColor else AppTheme.colors.onSurface
+                            color = when {
+                                isCancelled -> AppTheme.colors.error
+                                progress.isComplete -> SuccessColor
+                                else -> AppTheme.colors.onSurface
+                            }
                         )
                         Spacer(Modifier.height(4.dp))
                         val fileLabel = when {
@@ -851,7 +558,12 @@ fun AndroidTransferProgressDialog(
 
                 LinearProgressIndicator(
                     progress = { progress.percentage / 100f },
-                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                    modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                    color = when {
+                        isCancelled -> AppTheme.colors.error
+                        progress.isComplete -> SuccessColor
+                        else -> MaterialTheme.colorScheme.primary
+                    }
                 )
 
                 Spacer(Modifier.height(16.dp))
@@ -942,7 +654,7 @@ fun AndroidTransferProgressDialog(
                             Spacer(Modifier.width(8.dp))
                             Text("Finish")
                         }
-                    } else {
+                    } /*else {
                         TextButton(
                             onClick = onCancel,
                             colors = ButtonDefaults.textButtonColors(contentColor = AppTheme.colors.error)
@@ -951,7 +663,7 @@ fun AndroidTransferProgressDialog(
                             Spacer(Modifier.width(8.dp))
                             Text("Cancel Transfer")
                         }
-                    }
+                    }*/
                 }
 
                 if (!progress.isComplete) {
@@ -1000,44 +712,177 @@ fun SecurityFooter() {
     }
 }
 
-@Composable
-fun UsbPhysicalIndicator(isPhysicallyConnected: Boolean) {
-    val bgColor = if (isPhysicallyConnected) SuccessColor.copy(alpha = 0.15f) else AppTheme.colors.error.copy(alpha = 0.15f)
-    val borderColor = if (isPhysicallyConnected) SuccessColor else AppTheme.colors.error
-    val iconColor = if (isPhysicallyConnected) SuccessColor else AppTheme.colors.error
-    val icon = if (isPhysicallyConnected) Icons.Default.CheckCircle else Icons.Default.UsbOff
-    val title = if (isPhysicallyConnected) "USB Cable Physically Connected" else "USB Cable Unplugged / Not Detected"
-    val subtitle = if (isPhysicallyConnected) "Hardware link active. Ready to initialize secure connection." else "Plug in a USB or OTG cable between your devices to begin."
 
-    Surface(
-        color = bgColor,
-        shape = RoundedCornerShape(12.dp),
-        border = BorderStroke(1.dp, borderColor),
-        modifier = Modifier.fillMaxWidth()
+@Composable
+fun UnifiedStateCard(
+    state: UsbUiState,
+    role: UsbRole?,
+    isCableConnected: Boolean,
+    onConnect: () -> Unit,
+    onSelectRole: (UsbRole) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = AppTheme.colors.surfaceVariant.copy(alpha = 0.5f)),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
+        border = BorderStroke(1.dp, AppTheme.colors.primary.copy(alpha = 0.1f))
     ) {
-        Row(
-            modifier = Modifier.padding(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        Column(
+            modifier = Modifier.padding(32.dp).fillMaxWidth().animateContentSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(28.dp)
-            )
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = title,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp,
-                    color = iconColor
-                )
-                Text(
-                    text = subtitle,
-                    fontSize = 11.sp,
-                    color = iconColor.copy(alpha = 0.8f)
-                )
+            when (state) {
+                is UsbUiState.Idle, is UsbUiState.NoDevice -> {
+                    if (role == null) {
+                        BigIcon(Icons.Default.Devices, AppTheme.colors.primary)
+                        Text("Select Role", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Choose how this device will act.",
+                            color = AppTheme.colors.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        RoleSelectionCards(currentRole = null, onSelectRole = onSelectRole)
+                    } else {
+                        val icon = if (isCableConnected) Icons.Default.Usb else Icons.Default.UsbOff
+                        val color = if (isCableConnected) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant
+                        BigIcon(icon, color)
+                        Text(
+                            if (isCableConnected) "Ready to Connect" else "Plug in Cable", 
+                            style = MaterialTheme.typography.headlineMedium, 
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            if (isCableConnected) "USB detected. Initialize the secure link." else "Connect the USB cable to the remote device.",
+                            color = AppTheme.colors.onSurfaceVariant,
+                            textAlign = TextAlign.Center
+                        )
+                        Spacer(Modifier.height(24.dp))
+                        Button(
+                            onClick = onConnect,
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = RoundedCornerShape(16.dp)
+                        ) {
+                            Text("Initialize Connection", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        TextButton(onClick = { onSelectRole(if (role is UsbRole.Host) UsbRole.Client("Unknown Host") else UsbRole.Host("Remote Device")) }) {
+                            Text("Change Role")
+                        }
+                    }
+                }
+                is UsbUiState.DeviceDetected, is UsbUiState.Connecting, is UsbUiState.Transferring, is UsbUiState.RequestingPermission -> {
+                    CircularProgressIndicator(modifier = Modifier.size(64.dp), color = AppTheme.colors.primary, strokeWidth = 6.dp)
+                    Spacer(Modifier.height(24.dp))
+                    Text(
+                        when (state) {
+                            is UsbUiState.DeviceDetected -> state.name
+                            is UsbUiState.Connecting -> "Connecting"
+                            is UsbUiState.Transferring -> "Transferring"
+                            is UsbUiState.RequestingPermission -> "Requesting Permission"
+                        },
+                        style = MaterialTheme.typography.headlineSmall,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Negotiating secure end-to-end encrypted link...",
+                        color = AppTheme.colors.onSurfaceVariant,
+                        textAlign = TextAlign.Center
+                    )
+                }
+                is UsbUiState.Success -> {
+                    val connectedName = (state as? UsbUiState.Success)?.deviceId?.takeIf { it.isNotBlank() } ?: when (role) {
+                        is UsbRole.Host -> role.connectedDeviceName
+                        is UsbRole.Client -> role.connectedHostName
+                        null -> "Remote Device"
+                    }
+                    BigIcon(Icons.Default.CheckCircle, SuccessColor)
+                    Text("Connected to $connectedName", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = SuccessColor, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(8.dp))
+                    Text(state.message.ifBlank { "Waiting for commands from the Host device." }, color = AppTheme.colors.onSurfaceVariant, textAlign = TextAlign.Center)
+                }
+                is UsbUiState.Receiving -> {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(64.dp), tint = AppTheme.colors.primary)
+                    Spacer(Modifier.height(24.dp))
+                    Text("Receiving File", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.height(8.dp))
+                    Text(state.fileName, color = AppTheme.colors.primary, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(16.dp))
+                    LinearProgressIndicator(
+                        progress = { if (state.progress >= 0) state.progress else 0f },
+                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp))
+                    )
+                }
+                is UsbUiState.Error -> {
+                    BigIcon(Icons.Default.Error, AppTheme.colors.error)
+                    Text("Connection Failed", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = AppTheme.colors.error)
+                    Spacer(Modifier.height(8.dp))
+                    Text(state.error, color = AppTheme.colors.onSurfaceVariant, textAlign = TextAlign.Center)
+                    Spacer(Modifier.height(24.dp))
+                    Button(
+                        onClick = onConnect,
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
+                    ) {
+                        Text("Retry", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    TextButton(onClick = { onSelectRole(if (role is UsbRole.Host) UsbRole.Client("Unknown Host") else UsbRole.Host("Remote Device")) }) {
+                        Text("Change Role")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun RoleSelectionCards(
+    currentRole: UsbRole?,
+    onSelectRole: (UsbRole) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        val isHost = currentRole is UsbRole.Host
+        val isClient = currentRole is UsbRole.Client
+
+        Card(
+            onClick = { onSelectRole(UsbRole.Host("Remote Device")) },
+            modifier = Modifier.fillMaxWidth(),
+            border = if (isHost) BorderStroke(2.dp, AppTheme.colors.primary) else BorderStroke(1.dp, AppTheme.colors.onSurfaceVariant.copy(alpha = 0.2f)),
+            colors = CardDefaults.cardColors(containerColor = if (isHost) AppTheme.colors.primaryContainer.copy(alpha = 0.3f) else AppTheme.colors.surface)
+        ) {
+            Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Devices, null, tint = if (isHost) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant, modifier = Modifier.size(32.dp))
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text("Host (Initiator)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (isHost) AppTheme.colors.primary else AppTheme.colors.onSurface)
+                    Text("Manage files on the remote device", fontSize = 12.sp, color = AppTheme.colors.onSurfaceVariant)
+                }
+            }
+        }
+
+        Card(
+            onClick = { onSelectRole(UsbRole.Client("Unknown Host")) },
+            modifier = Modifier.fillMaxWidth(),
+            border = if (isClient) BorderStroke(2.dp, AppTheme.colors.primary) else BorderStroke(1.dp, AppTheme.colors.onSurfaceVariant.copy(alpha = 0.2f)),
+            colors = CardDefaults.cardColors(containerColor = if (isClient) AppTheme.colors.primaryContainer.copy(alpha = 0.3f) else AppTheme.colors.surface)
+        ) {
+            Row(modifier = Modifier.padding(20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Usb, null, tint = if (isClient) AppTheme.colors.primary else AppTheme.colors.onSurfaceVariant, modifier = Modifier.size(32.dp))
+                Spacer(Modifier.width(16.dp))
+                Column {
+                    Text("Client (Receiver)", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = if (isClient) AppTheme.colors.primary else AppTheme.colors.onSurface)
+                    Text("Wait for Host to connect", fontSize = 12.sp, color = AppTheme.colors.onSurfaceVariant)
+                }
             }
         }
     }

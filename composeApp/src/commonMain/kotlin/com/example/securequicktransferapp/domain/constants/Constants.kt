@@ -12,6 +12,7 @@ object Constants {
         const val TRANSFERS = "transfers"
         const val TRANSFER_HISTORY = "transfer_history"
         const val SMARTNAV = "smartnav"
+        const val SMARTNAV_MANAGEMENT = "smartnav_management"
     }
 
     object Tools {
@@ -49,21 +50,21 @@ object Constants {
         const val FILE_PASSWORD = "password.txt"
         const val FILE_MAINTENANCE_PASSWORD = "maintenancepassword.txt"
         const val FILE_KMM_PASSWORD = "kmmpassword.txt"
-        const val FILE_KMM_NAV_PASSWORD = "kmm_nav_password.txt"
+        const val FILE_SECURITY_ID_PASSWORD = "securityidpassword.txt"
         const val FILE_KEEP_PLACEHOLDER = ".keep"
 
         // Default Password & Counter Values
         const val DEFAULT_PASSWORD_VALUE = "123456"
-        const val DEFAULT_MAINTENANCE_PASSWORD_VALUE = "A@#\$rdDEV"
-        const val DEFAULT_KMM_PASSWORD_VALUE = "123456"
-        const val DEFAULT_KMM_NAV_PASSWORD_VALUE = "123456"
+        const val DEFAULT_MAINTENANCE_PASSWORD_VALUE = "Handheld_123"
+        const val DEFAULT_KMM_PASSWORD_VALUE = "kmm@123"
+        const val DEFAULT_SECURITY_ID_PASSWORD_VALUE = "sec@123"
         const val DEFAULT_LOG_COUNTER_VALUE = "0"
 
         val DEFAULT_FOLDERS_AND_FILES: List<Pair<String, Pair<String, String>>> = listOf(
             Pair(DIR_PASSWORD, Pair(FILE_PASSWORD, DEFAULT_PASSWORD_VALUE)),
             Pair(DIR_PASSWORD, Pair(FILE_MAINTENANCE_PASSWORD, DEFAULT_MAINTENANCE_PASSWORD_VALUE)),
             Pair(DIR_PASSWORD, Pair(FILE_KMM_PASSWORD, DEFAULT_KMM_PASSWORD_VALUE)),
-            Pair(DIR_PASSWORD, Pair(FILE_KMM_NAV_PASSWORD, DEFAULT_KMM_NAV_PASSWORD_VALUE)),
+            Pair(DIR_PASSWORD, Pair(FILE_SECURITY_ID_PASSWORD, DEFAULT_SECURITY_ID_PASSWORD_VALUE)),
 //            Pair("$DIR_TRACKS/$DIR_TRACKS_META", Pair(FILE_KEEP_PLACEHOLDER, "")),
 //            Pair(DIR_TRACE, Pair(FILE_KEEP_PLACEHOLDER, "")),
             Pair(DIR_IMEI, Pair(FILE_KEEP_PLACEHOLDER, "")),

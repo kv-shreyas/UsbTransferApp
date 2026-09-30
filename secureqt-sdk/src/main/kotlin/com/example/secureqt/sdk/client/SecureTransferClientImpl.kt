@@ -19,6 +19,7 @@ import java.io.FileOutputStream
 import java.nio.ByteBuffer
 
 class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTransferClient {
+    @Volatile private var isCancelled = false
 
     private val commandMutex = Mutex()
     private val CHUNK_SIZE = 256 * 1024
@@ -57,6 +58,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
     }
 
     override suspend fun sendFile(localFile: File, remotePath: String, remoteFileName: String?, onProgress: ((Long, Long) -> Unit)?): Boolean = commandMutex.withLock {
+        isCancelled = false
         withContext(Dispatchers.IO + NonCancellable) {
             if (!localFile.exists() || !localFile.isFile) return@withContext false
 
@@ -81,6 +83,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                 try {
                     FileInputStream(localFile).use { stream ->
                         while (isActive) {
+                        if (isCancelled) { break }
                             val buffer = ByteArray(CHUNK_SIZE)
                             val bytesRead = stream.read(buffer)
                             if (bytesRead == -1) break
@@ -106,6 +109,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
             var success = true
             var lastSentTime = 0L
             for (encryptedChunk in encryptedChannel) {
+                if (isCancelled) { success = false; break }
                 if (!channel.sendPrebuiltPacket(encryptedChunk)) {
                     success = false
                     break
@@ -121,6 +125,9 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                     onProgress?.invoke(sentBytes, totalSize)
                 }
             }
+            
+            readJob.cancel()
+            encryptJob.cancel()
 
             if (success) {
                 channel.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
@@ -133,6 +140,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
     }
 
     override suspend fun sendDirectory(localDir: File, remotePath: String, onProgress: ((Long, Long) -> Unit)?): Boolean = commandMutex.withLock {
+        isCancelled = false
         withContext(Dispatchers.IO + NonCancellable) {
             if (!localDir.exists() || !localDir.isDirectory) return@withContext false
 
@@ -177,6 +185,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                     }
 
                     while (isActive) {
+                        if (isCancelled) { break }
                         val buffer = ByteArray(CHUNK_SIZE)
                         val bytesRead = pipedIn.read(buffer)
                         if (bytesRead == -1) break
@@ -202,6 +211,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
             var sentBytes = 0L
             var lastSentTime = 0L
             for (encryptedChunk in encryptedChannel) {
+                if (isCancelled) { success = false; break }
                 if (!channel.sendPrebuiltPacket(encryptedChunk)) {
                     success = false
                     break
@@ -216,6 +226,9 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                     onProgress?.invoke(sentBytes, 0L)
                 }
             }
+            
+            readJob.cancel()
+            encryptJob.cancel()
 
             if (success) {
                 channel.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
@@ -227,6 +240,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
     }
 
     override suspend fun fetchFile(remotePath: String, localSaveDir: File, onProgress: ((Long, Long) -> Unit)?): Boolean = commandMutex.withLock {
+        isCancelled = false
         withContext(Dispatchers.IO + NonCancellable) {
             val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
             val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
@@ -254,6 +268,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
             val receiveJob = launch(Dispatchers.IO) {
                 try {
                     while (isActive) {
+                        if (isCancelled) { success = false; break }
                         val packet = channel.receiveRawPacket() ?: break
                         if (packet.first == SecureQtSdk.Packets.TYPE_EOF) break
                         if (packet.first == SecureQtSdk.Packets.TYPE_CANCEL) {
@@ -301,6 +316,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
     }
 
     override suspend fun fetchRemoteDirectory(remotePath: String, localSaveDir: File, onProgress: ((Long, Long) -> Unit)?): Boolean = commandMutex.withLock {
+        isCancelled = false
         withContext(Dispatchers.IO + NonCancellable) {
             val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
             val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
@@ -329,6 +345,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
             val receiveJob = launch(Dispatchers.IO) {
                 try {
                     while (isActive) {
+                        if (isCancelled) { success = false; break }
                         val packet = channel.receiveRawPacket() ?: break
                         if (packet.first == SecureQtSdk.Packets.TYPE_EOF) break
                         if (packet.first == SecureQtSdk.Packets.TYPE_CANCEL) {
@@ -468,6 +485,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
     }
 
     override fun cancelTransfer() {
+        isCancelled = true
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { 
             channel.sendRawPacket(SecureQtSdk.Packets.TYPE_CANCEL, ByteArray(0)) 
         }

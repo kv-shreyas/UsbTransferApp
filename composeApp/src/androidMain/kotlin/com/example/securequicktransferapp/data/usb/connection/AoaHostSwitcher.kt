@@ -27,7 +27,8 @@ class AoaHostSwitcher @Inject constructor(
         // AOA identification strings - MUST exactly match what Desktop and Android filters expect
         private const val MANUFACTURER = "AndroidOpenAccessory"
         private const val MODEL = "DataTransfer"
-        private const val DESCRIPTION = "Handshake Demo"
+        // Dynamically injected later, but we keep a fallback constant
+        private val DESCRIPTION = android.os.Build.MODEL
         private const val VERSION = "1.0"
         private const val URI = "http://example.com"
         private const val SERIAL = "12345678"

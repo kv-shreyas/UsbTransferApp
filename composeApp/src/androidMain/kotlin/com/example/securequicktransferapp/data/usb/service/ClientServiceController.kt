@@ -44,6 +44,7 @@ class ClientServiceController @Inject constructor(
 
     val isServiceRunning = MutableStateFlow(false)
     val clientUiState = MutableStateFlow<UsbUiState>(UsbUiState.Idle)
+    private var remoteDeviceId: String? = null
     val clientTransferProgress = MutableStateFlow(TransferProgress())
 
     private var clientJob: Job? = null
@@ -124,12 +125,12 @@ class ClientServiceController @Inject constructor(
                 delegatingConnection.setDelegate(aoaManager)
 
                 while (isActive && aoaManager.isConnected()) {
-                    clientUiState.value = UsbUiState.Success("Standby: Waiting for Host...")
+                    clientUiState.value = UsbUiState.Success("Standby: Waiting for Host...", remoteDeviceId)
                     onStatusUpdate("Standby: Waiting for Host...")
 
                     if (dataSource.performHandshake()) {
                         usbLogger.i(TAG, "runClientLoop: Handshake SUCCESS. Secure channel established.")
-                        clientUiState.value = UsbUiState.Success("Secure Channel Established")
+                        clientUiState.value = UsbUiState.Success("Secure Channel Established", remoteDeviceId)
                         onStatusUpdate("Connected as Client: Listening for commands")
 
                         delegatingConnection.clearBuffer()
@@ -182,7 +183,7 @@ class ClientServiceController @Inject constructor(
                                 val elapsedSec = (System.currentTimeMillis() - receiveStartTime) / 1000L
                                 val finalSizeStr = if (currentReceiveFileSize > 0) SecureQtSdk.Utils.formatSize(currentReceiveFileSize) else "Done"
                                 val finalSpeedStr = if (elapsedSec > 0 && currentReceiveFileSize > 0) "${SecureQtSdk.Utils.formatSize(currentReceiveFileSize / elapsedSec)}/s" else "Done"
-                                clientUiState.value = UsbUiState.Success("File Transfer Complete ($currentReceiveFileName)")
+                                clientUiState.value = UsbUiState.Success("File Transfer Complete ($currentReceiveFileName, remoteDeviceId)")
                                 clientTransferProgress.value = TransferProgress(
                                     isVisible = true,
                                     filename = currentReceiveFileName,
@@ -200,7 +201,7 @@ class ClientServiceController @Inject constructor(
                                 onStatusUpdate("Connected as Client: Ready ($currentReceiveFileName received)")
                             },
                             onReceiveCancelled = {
-                                clientUiState.value = UsbUiState.Success("Transfer Cancelled")
+                                clientUiState.value = UsbUiState.Success("Transfer Cancelled", remoteDeviceId)
                                 clientTransferProgress.value = clientTransferProgress.value.copy(
                                     isComplete = true,
                                     statusMessage = "Transfer cancelled ❌"
@@ -218,12 +219,13 @@ class ClientServiceController @Inject constructor(
                             },
                             onDisconnectReceived = {
                                 usbLogger.i(TAG, "Disconnected command received from remote Host. Entering instant standby...")
-                                clientUiState.value = UsbUiState.Success("Standby: Ready for instant connection...")
+                                clientUiState.value = UsbUiState.Success("Standby: Ready for instant connection...", remoteDeviceId)
                                 onStatusUpdate("Standby: Ready for instant connection...")
                             },
                             onSetDeviceId = { deviceId ->
+                                remoteDeviceId = deviceId
                                 usbLogger.i(TAG, "Host set Device ID to: $deviceId")
-                                clientUiState.value = UsbUiState.Success("Connected to Host ($deviceId)")
+                                clientUiState.value = UsbUiState.Success("Connected to Host ($deviceId)", remoteDeviceId)
                                 onStatusUpdate("Connected to Host: $deviceId")
                             }
                         )
@@ -233,7 +235,7 @@ class ClientServiceController @Inject constructor(
                             break
                         }
                         usbLogger.w(TAG, "runClientLoop: Waiting for Host handshake Step 1...")
-                        clientUiState.value = UsbUiState.Success("Standby: Ready for instant connection...")
+                        clientUiState.value = UsbUiState.Success("Standby: Ready for instant connection...", remoteDeviceId)
                         onStatusUpdate("Standby: Ready for instant connection...")
                         kotlinx.coroutines.delay(200)
                     }

@@ -116,13 +116,12 @@ class TransferQueue(
     /**
      * Enqueues multiple remote files for fetching.
      */
-    fun enqueueFetchBatch(remoteFiles: List<RemoteFile>) {
-        val downloadDir = File(System.getProperty("user.home"), "Downloads")
+    fun enqueueFetchBatch(remoteFiles: List<RemoteFile>, destinationDir: File = File(System.getProperty("user.home"), "Downloads")) {
         val items = remoteFiles.map { rf ->
             TransferQueueItem(
                 type = TransferType.FETCH,
                 remoteFile = rf,
-                destinationPath = downloadDir.absolutePath,
+                destinationPath = destinationDir.absolutePath,
                 isDirectory = rf.isDirectory
             )
         }
@@ -144,6 +143,7 @@ class TransferQueue(
             currentItemJob?.cancel()
             repository.cancelTransfer()
             updateItem(itemId) { it.copy(status = TransferItemStatus.CANCELLED) }
+
             println("$TAG Cancelled active transfer: ${item.displayName}")
         } else if (item.status == TransferItemStatus.PENDING) {
             updateItem(itemId) { it.copy(status = TransferItemStatus.CANCELLED) }
@@ -164,6 +164,7 @@ class TransferQueue(
                 else -> item
             }
         }
+
         println("$TAG Cancelled all items")
     }
 

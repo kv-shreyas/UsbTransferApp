@@ -408,10 +408,10 @@ class MainViewModel(
         }
     }
 
-    fun fetchFiles(remoteFiles: List<RemoteFile>) {
+    fun fetchFiles(remoteFiles: List<RemoteFile>, destinationDir: java.io.File = java.io.File(System.getProperty("user.home"), "Downloads")) {
         val session = selectedSession() ?: return
-        println("$TAG Enqueuing ${remoteFiles.size} file(s) to fetch from device ${session.deviceId}")
-        session.transferQueue.enqueueFetchBatch(remoteFiles)
+        println("$TAG Enqueuing ${remoteFiles.size} file(s) to fetch from device ${session.deviceId} to ${destinationDir.absolutePath}")
+        session.transferQueue.enqueueFetchBatch(remoteFiles, destinationDir)
         watchQueueCompletion(session)
     }
 
