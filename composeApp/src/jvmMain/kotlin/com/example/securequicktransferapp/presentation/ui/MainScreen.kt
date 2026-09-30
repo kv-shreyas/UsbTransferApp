@@ -315,7 +315,6 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
             }*/ else if (currentScreen == Constants.Screens.TRANSFERS) {
                 TransferQueueDashboard(
                     onBack = { currentScreen = Constants.Screens.EXPLORER },
-                    onShowHistory = { currentScreen = Constants.Screens.TRANSFER_HISTORY }
                 )
             } else if (!isConnected) {
                 DesktopNotConnectedView(

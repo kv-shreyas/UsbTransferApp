@@ -82,8 +82,14 @@ class UsbSessionManager(
         // 1. Identify and remove disconnected sessions
         val removedIds = activeSessions.keys.filter { id -> 
             val session = activeSessions[id]
-            val isConnecting = session?.sessionState?.value?.status is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Connecting
-            id !in discoveredMap && !isConnecting
+            val status = session?.sessionState?.value?.status
+            val isConnecting = status is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Connecting
+            
+            // If the handle died internally (e.g. from an I/O error dropping the connection), we MUST drop the session so it can be cleanly re-detected and re-initialized.
+            // We only check this if the UI thinks the device is 'Ready', otherwise we might incorrectly drop freshly detected non-AOA devices before the user clicks Connect.
+            val isDisconnectedInternally = status is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Ready && session != null && !session.connection.isOpen()
+            
+            (id !in discoveredMap && !isConnecting) || isDisconnectedInternally
         }
         for (id in removedIds) {
             sessionJobs.remove(id)?.cancel()

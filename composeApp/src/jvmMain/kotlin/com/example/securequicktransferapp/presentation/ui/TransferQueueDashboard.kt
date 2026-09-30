@@ -90,16 +90,16 @@ import org.koin.java.KoinJavaComponent.getKoin
  */
 @Composable
 fun TransferQueueDashboard(
+    showHeader: Boolean = true,
     vm: TransferQueueDashboardViewModel = getKoin().get(),
-    onBack: () -> Unit,
-    onShowHistory: () -> Unit
+    onBack: () -> Unit
 ) {
     val sessions by vm.sessionsState.collectAsState()
     var expandedDeviceId by remember { mutableStateOf<String?>(null) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         // --- Header ---
-        DashboardHeader(onBack = onBack, onShowHistory = onShowHistory)
+        if(showHeader) DashboardHeader(onBack = onBack)
 
         Spacer(Modifier.height(16.dp))
 
@@ -154,7 +154,7 @@ fun TransferQueueDashboard(
 }
 
 @Composable
-private fun DashboardHeader(onBack: () -> Unit, onShowHistory: () -> Unit) {
+private fun DashboardHeader(onBack: () -> Unit) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier.fillMaxWidth()
@@ -176,14 +176,14 @@ private fun DashboardHeader(onBack: () -> Unit, onShowHistory: () -> Unit) {
                 color = AppTheme.colors.onSurfaceVariant.copy(alpha = 0.7f)
             )
         }
-        IconButton(onClick = onShowHistory) {
+       /* IconButton(onClick = onShowHistory) {
             Icon(
                 Icons.Default.History,
                 "Transfer History",
                 tint = AppTheme.colors.primary.copy(alpha = 0.8f),
                 modifier = Modifier.size(24.dp)
             )
-        }
+        }*/
         Spacer(Modifier.width(8.dp))
         Icon(
             Icons.Default.Sync,

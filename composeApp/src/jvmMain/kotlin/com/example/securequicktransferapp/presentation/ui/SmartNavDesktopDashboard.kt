@@ -259,13 +259,15 @@ fun SmartNavDesktopDashboard(
         }
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 32.dp, vertical = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
-    ) {
+    Row(modifier = Modifier.fillMaxSize()) {
+        Column(
+            modifier = Modifier
+                .weight(1.2f)
+                .fillMaxHeight()
+                .verticalScroll(rememberScrollState())
+                .padding(start = 32.dp, top = 24.dp, bottom = 24.dp, end = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
+        ) {
 
 
         OutlinedCard(
@@ -453,6 +455,36 @@ fun SmartNavDesktopDashboard(
 
 
 
-         }
+        }
+        
+        // Right side pane for TransferQueueDashboard
+        Box(
+            modifier = Modifier
+                .weight(1f)
+                .fillMaxHeight()
+                .padding(start = 16.dp, top = 24.dp, bottom = 24.dp, end = 32.dp)
+        ) {
+            OutlinedCard(
+                modifier = Modifier.fillMaxSize(),
+                shape = RoundedCornerShape(16.dp),
+                border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
+                colors = CardDefaults.outlinedCardColors(containerColor = AppTheme.colors.surface)
+            ) {
+                Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(), 
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Active Transfers", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = AppTheme.colors.primary)
+                    }
+                    Spacer(Modifier.height(12.dp))
+                    TransferQueueDashboard(
+                        showHeader = false,
+                        onBack = {}
+                    )
+                }
+            }
+        }
+    }
 }
-
