@@ -39,16 +39,22 @@ fun SmartNavDesktopDashboard(
     onNavigateToManagement: () -> Unit,
     onNavigateToExplorerPath: (String) -> Unit
 ) {
-    var stagingDirPath by remember { mutableStateOf(java.io.File(System.getProperty("user.home"), "Downloads/SmartNavStaging").absolutePath) }
+    val stagingDirPath by vm.stagingDirPath.collectAsState()
     val stagingDir = java.io.File(stagingDirPath)
     
     var stagingDirectories by remember { mutableStateOf(stagingDir.listFiles()?.filter { it.isDirectory } ?: emptyList()) }
-    var selectedStagingDirs by remember { mutableStateOf(emptySet<java.io.File>()) }
+    var selectedStagingDirs by remember { mutableStateOf(stagingDirectories.toSet()) }
     
     fun refreshStaging() {
         val newDirs = stagingDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
         stagingDirectories = newDirs
         selectedStagingDirs = selectedStagingDirs.intersect(newDirs.toSet())
+    }
+    
+    LaunchedEffect(stagingDirPath) {
+        val newDirs = stagingDir.listFiles()?.filter { it.isDirectory } ?: emptyList()
+        stagingDirectories = newDirs
+        selectedStagingDirs = newDirs.toSet()
     }
 
     var selectedBasePath by remember { mutableStateOf(Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH) }
@@ -261,7 +267,6 @@ fun SmartNavDesktopDashboard(
         verticalArrangement = Arrangement.spacedBy(24.dp)
     ) {
 
-        var isControlPanelExpanded by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
 
         OutlinedCard(
             modifier = Modifier.fillMaxWidth().clickable { onNavigateToManagement() },
@@ -284,75 +289,7 @@ fun SmartNavDesktopDashboard(
             }
         }
 
-        CollapsibleControlPanel(
-            isExpanded = isControlPanelExpanded,
-            onToggle = { isControlPanelExpanded = !isControlPanelExpanded }
-        ) {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                    OutlinedTextField(
-                        value = stagingDirPath,
-                        onValueChange = { stagingDirPath = it },
-                        label = { Text("Local Workspace Directory", fontSize = 12.sp) },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        shape = RoundedCornerShape(12.dp),
-                        trailingIcon = {
-                            IconButton(
-                                onClick = {
-                                    val chooser = javax.swing.JFileChooser(stagingDirPath)
-                                    chooser.fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
-                                    chooser.dialogTitle = "Select Workspace Directory"
-                                    if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
-                                        stagingDirPath = chooser.selectedFile.absolutePath
-                                        refreshStaging()
-                                    }
-                                }
-                            ) {
-                                Icon(Icons.Default.FolderOpen, contentDescription = "Browse...", tint = AppTheme.colors.primary)
-                            }
-                        }
-                    )
-                    Spacer(Modifier.height(20.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Button(
-                            onClick = { vm.prepareLocalSmartNavStaging(stagingDir) { refreshStaging() } },
-                            modifier = Modifier.weight(1.5f).height(50.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary)
-                        ) {
-                            Icon(Icons.Default.Build, null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Generate Base", fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                        }
-                        FilledTonalButton(
-                            onClick = {
-                                if (stagingDir.exists()) {
-                                    java.awt.Desktop.getDesktop().open(stagingDir)
-                                }
-                            },
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.filledTonalButtonColors(containerColor = AppTheme.colors.secondaryContainer)
-                        ) {
-                            Icon(Icons.Default.FolderOpen, null, modifier = Modifier.size(18.dp), tint = AppTheme.colors.onSecondaryContainer)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Explore", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppTheme.colors.onSecondaryContainer)
-                        }
-                        OutlinedButton(
-                            onClick = { refreshStaging() },
-                            modifier = Modifier.weight(1f).height(50.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, AppTheme.colors.outlineVariant)
-                        ) {
-                            Icon(Icons.Default.Refresh, null, modifier = Modifier.size(18.dp), tint = AppTheme.colors.onSurfaceVariant)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Reload", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppTheme.colors.onSurfaceVariant)
-                        }
-                    }
-                }
-            }
-            
-            Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
             if (stagingDirectories.isNotEmpty()) {
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
@@ -519,59 +456,3 @@ fun SmartNavDesktopDashboard(
          }
 }
 
-@Composable
-fun CollapsibleControlPanel(
-    isExpanded: Boolean,
-    onToggle: () -> Unit,
-    content: @Composable () -> Unit
-) {
-    OutlinedCard(
-        modifier = Modifier.fillMaxWidth().animateContentSize().padding(vertical = 8.dp),
-        shape = RoundedCornerShape(16.dp),
-        border = BorderStroke(1.dp, AppTheme.colors.outlineVariant),
-        colors = CardDefaults.outlinedCardColors(containerColor = AppTheme.colors.surface)
-    ) {
-        Column {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onToggle() }
-                    .padding(20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(AppTheme.colors.primary.copy(alpha = 0.1f)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(Icons.Default.Settings, contentDescription = null, tint = AppTheme.colors.primary, modifier = Modifier.size(24.dp))
-                    }
-                    Spacer(Modifier.width(16.dp))
-                    Column {
-                        Text("Workspace Configuration", fontWeight = FontWeight.ExtraBold, fontSize = 16.sp, color = AppTheme.colors.onSurface)
-                        Spacer(Modifier.height(4.dp))
-                        Text("Workspace configuration and staging directories", fontSize = 13.sp, color = AppTheme.colors.onSurfaceVariant)
-                    }
-                }
-                Icon(
-                    if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    tint = AppTheme.colors.primary,
-                    modifier = Modifier.size(28.dp)
-                )
-            }
-            
-            AnimatedVisibility(visible = isExpanded) {
-                Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp).padding(bottom = 8.dp)) {
-                    HorizontalDivider(color = AppTheme.colors.outlineVariant.copy(alpha = 0.5f), thickness = 1.dp)
-                    Spacer(Modifier.height(20.dp))
-                    content()
-                }
-            }
-        }
-    }
-}

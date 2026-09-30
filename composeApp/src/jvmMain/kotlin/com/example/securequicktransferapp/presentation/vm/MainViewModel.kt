@@ -1,6 +1,5 @@
 package com.example.securequicktransferapp.presentation.vm
 
-import com.example.secureqt.sdk.SecureQtSdk
 import com.example.securequicktransferapp.data.usb.TransferQueue
 import com.example.securequicktransferapp.data.usb.UsbSession
 import com.example.securequicktransferapp.data.usb.UsbSessionManager
@@ -9,7 +8,6 @@ import com.example.securequicktransferapp.domain.model.DeviceSessionStatus
 import com.example.securequicktransferapp.domain.model.RemoteFile
 import com.example.securequicktransferapp.domain.model.TransferItemStatus
 import com.example.securequicktransferapp.domain.model.TransferProgress
-import com.example.securequicktransferapp.domain.model.TransferQueueItem
 import com.example.securequicktransferapp.domain.model.UsbSessionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,7 +21,6 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -44,6 +41,8 @@ class MainViewModel(
 
     /** All active device sessions (deviceId -> UsbSessionState) */
     val sessionsState: StateFlow<Map<String, UsbSessionState>> = sessionManager.sessionsState
+
+    val stagingDirPath = MutableStateFlow(java.io.File(System.getProperty("user.home"), "Downloads/SmartNavStaging").absolutePath)
 
     // Per-device queue completion watchers
     private val queueWatchers = ConcurrentHashMap<String, Job>()
@@ -545,16 +544,30 @@ class MainViewModel(
         _editingFileContent.value = null
     }
 
-    fun prepareLocalSmartNavStaging(stagingDir: File, onComplete: () -> Unit) {
+    fun checkLocalSmartNavStagingConflicts(stagingDir: File): List<String> {
+        val foldersAndFiles = Constants.SmartnavRoot.DEFAULT_FOLDERS_AND_FILES
+        val conflicts = mutableListOf<String>()
+        for ((folder, filePair) in foldersAndFiles) {
+            val (fileName, _) = filePair
+            val file = File(File(stagingDir, folder), fileName)
+            if (file.exists()) {
+                conflicts.add("${folder}/${fileName}")
+            }
+        }
+        return conflicts
+    }
+
+    fun prepareLocalSmartNavStaging(stagingDir: File, overwrite: Boolean, onComplete: () -> Unit) {
         scope.launch(Dispatchers.IO) {
             println("[ViewModel] prepareLocalSmartNavStaging: Initializing SmartNavRoot hierarchy under ${stagingDir.absolutePath}...")
+            kotlinx.coroutines.delay(600.milliseconds) // Artificial delay for intuitive UI feedback
             val foldersAndFiles = Constants.SmartnavRoot.DEFAULT_FOLDERS_AND_FILES
             for ((folder, filePair) in foldersAndFiles) {
                 val (fileName, content) = filePair
                 val dir = File(stagingDir, folder)
                 dir.mkdirs()
                 val file = File(dir, fileName)
-                if (!file.exists()) {
+                if (!file.exists() || overwrite) {
                     file.writeText(content)
                 }
             }

@@ -37,7 +37,8 @@ fun SettingsScreen(
     onThemeToggle: () -> Unit,
     onBack: () -> Unit,
     onShowAbout: (() -> Unit)? = null,
-    onExitApp: (() -> Unit)? = null
+    onExitApp: (() -> Unit)? = null,
+    extraSettingsContent: (@Composable () -> Unit)? = null
 ) {
     Scaffold(
         topBar = {
@@ -125,6 +126,10 @@ fun SettingsScreen(
                 }
             }
 
+            if (extraSettingsContent != null) {
+                extraSettingsContent()
+            }
+            
             // 2. System Information
             SettingsSection(title = "System Information", icon = Icons.Default.Info) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -177,7 +182,7 @@ fun SettingsScreen(
 }
 
 @Composable
-private fun SettingsSection(
+fun SettingsSection(
     title: String,
     icon: ImageVector,
     content: @Composable () -> Unit

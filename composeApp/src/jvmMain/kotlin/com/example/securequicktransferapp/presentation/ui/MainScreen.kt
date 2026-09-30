@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
@@ -56,6 +58,8 @@ import androidx.compose.material.icons.filled.Usb
 import androidx.compose.material.icons.filled.UsbOff
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -154,7 +158,155 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
                 SettingsScreen(
                     isDarkTheme = isDarkTheme,
                     onThemeToggle = onThemeToggle,
-                    onBack = { currentScreen = Constants.Screens.EXPLORER }
+                    onBack = { currentScreen = Constants.Screens.EXPLORER },
+                    extraSettingsContent = {
+                        val stagingDirPath by vm.stagingDirPath.collectAsState()
+                        val stagingDir = java.io.File(stagingDirPath)
+                        
+                        SettingsSection(title = "Workspace Configuration", icon = androidx.compose.material.icons.Icons.Default.Build) {
+                            Column(modifier = Modifier.fillMaxWidth()) {
+                                OutlinedTextField(
+                                    value = stagingDirPath,
+                                    onValueChange = { vm.stagingDirPath.value = it },
+                                    label = { Text("Local Workspace Directory", fontSize = 12.sp) },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true,
+                                    shape = RoundedCornerShape(12.dp),
+                                    trailingIcon = {
+                                        IconButton(
+                                            onClick = {
+                                                val chooser = javax.swing.JFileChooser(stagingDirPath)
+                                                chooser.fileSelectionMode = javax.swing.JFileChooser.DIRECTORIES_ONLY
+                                                chooser.dialogTitle = "Select Workspace Directory"
+                                                if (chooser.showOpenDialog(null) == javax.swing.JFileChooser.APPROVE_OPTION) {
+                                                    vm.stagingDirPath.value = chooser.selectedFile.absolutePath
+                                                }
+                                            }
+                                        ) {
+                                            Icon(androidx.compose.material.icons.Icons.Default.FolderOpen, contentDescription = "Browse...", tint = AppTheme.colors.primary)
+                                        }
+                                    }
+                                )
+                                Spacer(Modifier.height(20.dp))
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    var isGeneratingBase by remember { mutableStateOf(false) }
+                                    var generateSuccess by remember { mutableStateOf(false) }
+                                    var showStagingConflictDialog by remember { mutableStateOf(false) }
+                                    var stagingConflicts by remember { mutableStateOf<List<String>>(emptyList()) }
+                                    
+                                    LaunchedEffect(generateSuccess) {
+                                        if (generateSuccess) {
+                                            kotlinx.coroutines.delay(2000)
+                                            generateSuccess = false
+                                        }
+                                    }
+                                    
+                                    if (showStagingConflictDialog) {
+                                        AlertDialog(
+                                            onDismissRequest = { showStagingConflictDialog = false },
+                                            title = { Text("Base Files Already Exist", fontWeight = FontWeight.Bold) },
+                                            text = {
+                                                Column {
+                                                    Text("The following files already exist in the staging directory:", fontSize = 13.sp)
+                                                    Spacer(Modifier.height(8.dp))
+                                                    LazyColumn(modifier = Modifier.heightIn(max = 120.dp).fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(AppTheme.colors.onSurface.copy(alpha = 0.05f)).padding(8.dp)) {
+                                                        items(stagingConflicts) { conflict ->
+                                                            Text(conflict, fontSize = 12.sp, color = AppTheme.colors.onSurfaceVariant)
+                                                        }
+                                                    }
+                                                    Spacer(Modifier.height(8.dp))
+                                                    Text("Do you want to overwrite them with the default base files, or skip existing files?", fontSize = 13.sp)
+                                                }
+                                            },
+                                            confirmButton = {
+                                                Button(
+                                                    onClick = {
+                                                        showStagingConflictDialog = false
+                                                        isGeneratingBase = true
+                                                        vm.prepareLocalSmartNavStaging(stagingDir, overwrite = true) {
+                                                            isGeneratingBase = false
+                                                            generateSuccess = true
+                                                        }
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
+                                                ) {
+                                                    Text("Overwrite")
+                                                }
+                                            },
+                                            dismissButton = {
+                                                TextButton(
+                                                    onClick = {
+                                                        showStagingConflictDialog = false
+                                                        isGeneratingBase = true
+                                                        vm.prepareLocalSmartNavStaging(stagingDir, overwrite = false) {
+                                                            isGeneratingBase = false
+                                                            generateSuccess = true
+                                                        }
+                                                    }
+                                                ) {
+                                                    Text("Skip Existing")
+                                                }
+                                            }
+                                        )
+                                    }
+
+                                    Button(
+                                        onClick = { 
+                                            val conflicts = vm.checkLocalSmartNavStagingConflicts(stagingDir)
+                                            if (conflicts.isNotEmpty()) {
+                                                stagingConflicts = conflicts
+                                                showStagingConflictDialog = true
+                                            } else {
+                                                isGeneratingBase = true
+                                                vm.prepareLocalSmartNavStaging(stagingDir, overwrite = false) {
+                                                    isGeneratingBase = false
+                                                    generateSuccess = true
+                                                }
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1.5f).height(50.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(
+                                            containerColor = if (generateSuccess) androidx.compose.ui.graphics.Color(0xFF4CAF50) else AppTheme.colors.primary
+                                        ),
+                                        enabled = !isGeneratingBase
+                                    ) {
+                                        if (isGeneratingBase) {
+                                            androidx.compose.material3.CircularProgressIndicator(
+                                                modifier = Modifier.size(20.dp),
+                                                color = AppTheme.colors.onPrimary,
+                                                strokeWidth = 2.dp
+                                            )
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Generating...", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        } else if (generateSuccess) {
+                                            Icon(androidx.compose.material.icons.Icons.Default.Check, null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Generated!", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        } else {
+                                            Icon(androidx.compose.material.icons.Icons.Default.Build, null, modifier = Modifier.size(18.dp))
+                                            Spacer(Modifier.width(8.dp))
+                                            Text("Generate Base", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                        }
+                                    }
+                                    FilledTonalButton(
+                                        onClick = {
+                                            if (stagingDir.exists()) {
+                                                java.awt.Desktop.getDesktop().open(stagingDir)
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f).height(50.dp),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.filledTonalButtonColors(containerColor = AppTheme.colors.secondaryContainer)
+                                    ) {
+                                        Icon(androidx.compose.material.icons.Icons.Default.FolderOpen, null, modifier = Modifier.size(18.dp), tint = AppTheme.colors.onSecondaryContainer)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Explore", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = AppTheme.colors.onSecondaryContainer)
+                                    }
+                                }
+                            }
+                        }
+                    }
                 )
             } /*else if (currentScreen == Constants.Screens.TRANSFER_HISTORY) {
                 TransferHistoryScreen(
