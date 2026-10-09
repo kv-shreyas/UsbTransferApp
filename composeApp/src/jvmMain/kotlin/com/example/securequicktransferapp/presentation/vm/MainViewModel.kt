@@ -12,6 +12,7 @@ import com.example.securequicktransferapp.domain.model.UsbSessionState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -167,9 +168,6 @@ class MainViewModel(
             println("$TAG Attempting to connect to USB device $id...")
             val success = session.connect()
             println("$TAG Connection status for $id: success=$success")
-            if (success) {
-                refreshRemoteFilesInternal(session)
-            }
         }
     }
 
@@ -272,6 +270,13 @@ class MainViewModel(
         println("$TAG Enqueuing ${files.size} file(s) to send → $destinationPath for device ${session.deviceId}")
         session.transferQueue.enqueueSendBatch(files, destinationPath)
         watchQueueCompletion(session)
+    }
+
+    private val calculateRemoteFolderSizesUseCase = com.example.securequicktransferapp.domain.usecase.CalculateRemoteFolderSizesUseCase()
+
+    suspend fun calculateRemoteFolderSizes(deviceId: String, rootPath: String): Map<String, Long> {
+        val session = sessionManager.getSession(deviceId) ?: return emptyMap()
+        return calculateRemoteFolderSizesUseCase(session, rootPath)
     }
 
     fun checkCloneConflicts(
