@@ -450,9 +450,46 @@ private fun DeviceQueueSection(
                                 Spacer(Modifier.height(12.dp))
                                 Surface(color = WarningColor.copy(alpha = 0.1f), shape = RoundedCornerShape(8.dp), modifier = Modifier.fillMaxWidth()) {
                                     Column(modifier = Modifier.padding(12.dp)) {
-                                        Text("File already exists: ${activeConflict.displayName}", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = WarningColor)
+                                        Text("File already exists: ${activeConflict.displayName}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = WarningColor)
                                         Spacer(Modifier.height(4.dp))
-                                        Text("Conflict resolution is handled globally per session.", fontSize = 10.sp, color = AppTheme.colors.onSurfaceVariant)
+                                        Text("Destination: ${activeConflict.destinationPath}", fontSize = 10.sp, color = AppTheme.colors.onSurfaceVariant)
+                                        Spacer(Modifier.height(8.dp))
+                                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                                            Button(
+                                                onClick = {
+                                                    vm.resolveConflict(deviceId, activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL)
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Overwrite All", fontSize = 11.sp)
+                                            }
+                                            Button(
+                                                onClick = {
+                                                    vm.resolveConflict(deviceId, activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL)
+                                                },
+                                                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary),
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Skip All", fontSize = 11.sp)
+                                            }
+                                            OutlinedButton(
+                                                onClick = {
+                                                    vm.resolveConflict(deviceId, activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE)
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Overwrite", fontSize = 11.sp)
+                                            }
+                                            OutlinedButton(
+                                                onClick = {
+                                                    vm.resolveConflict(deviceId, activeConflict.id, com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP)
+                                                },
+                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                            ) {
+                                                Text("Skip", fontSize = 11.sp)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -680,7 +717,35 @@ private fun QueueItemRow(
             AnimatedVisibility(visible = isExpanded) {
                 Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     if (isConflict) {
-                        Text("File already exists at destination. Resolve conflicts globally when initiating a transfer.", fontSize = 10.sp, color = WarningColor, modifier = Modifier.padding(bottom = 8.dp))
+                        Surface(
+                            color = WarningColor.copy(alpha = 0.08f),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("File already exists at destination", fontSize = 10.sp, color = WarningColor, fontWeight = FontWeight.Medium)
+                                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    OutlinedButton(
+                                        onClick = { onResolveConflict(com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text("Overwrite", fontSize = 10.sp)
+                                    }
+                                    OutlinedButton(
+                                        onClick = { onResolveConflict(com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP) },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        modifier = Modifier.height(28.dp)
+                                    ) {
+                                        Text("Skip", fontSize = 10.sp)
+                                    }
+                                }
+                            }
+                        }
                     }
                     // Full destination path
                     Row(verticalAlignment = Alignment.CenterVertically) {

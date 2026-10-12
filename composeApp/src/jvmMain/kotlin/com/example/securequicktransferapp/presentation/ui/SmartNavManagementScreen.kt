@@ -33,7 +33,7 @@ fun SmartNavManagementScreen(
     var pickerAllowMultiple by remember { mutableStateOf(true) }
     var onFilesPicked by remember { mutableStateOf<(List<File>) -> Unit>({}) }
 
-    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pendingConflictAction by remember { mutableStateOf<((com.example.securequicktransferapp.data.usb.ConflictResolution) -> Unit)?>(null) }
     var pendingMessage by remember { mutableStateOf("") }
     var showConflictDialog by remember { mutableStateOf(false) }
 
@@ -41,16 +41,16 @@ fun SmartNavManagementScreen(
         AlertDialog(
             onDismissRequest = { 
                 showConflictDialog = false
-                pendingAction = null
+                pendingConflictAction = null
             },
-            title = { Text("Overwrite Confirmation") },
+            title = { Text("File Conflict Detected") },
             text = { Text(pendingMessage) },
             confirmButton = {
                 Button(
                     onClick = {
-                        pendingAction?.invoke()
+                        pendingConflictAction?.invoke(com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL)
                         showConflictDialog = false
-                        pendingAction = null
+                        pendingConflictAction = null
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
                 ) {
@@ -58,38 +58,50 @@ fun SmartNavManagementScreen(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { 
-                    showConflictDialog = false
-                    pendingAction = null
-                }) {
-                    Text("Cancel")
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = { 
+                        showConflictDialog = false
+                        pendingConflictAction = null
+                    }) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = {
+                            pendingConflictAction?.invoke(com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL)
+                            showConflictDialog = false
+                            pendingConflictAction = null
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary)
+                    ) {
+                        Text("Skip")
+                    }
                 }
             }
         )
     }
 
-    val checkSingleFile = { fileName: String, targetFolder: String, action: () -> Unit ->
+    val checkSingleFile = { fileName: String, targetFolder: String, action: (com.example.securequicktransferapp.data.usb.ConflictResolution?) -> Unit ->
         vm.checkRemoteFileExists(targetFolder, fileName) { exists ->
             if (exists) {
-                pendingMessage = "The file '$fileName' already exists on the remote device. Do you want to overwrite it?"
-                pendingAction = action
+                pendingMessage = "The file '$fileName' already exists on the remote device. How should this existing file be handled?"
+                pendingConflictAction = { resolution -> action(resolution) }
                 showConflictDialog = true
             } else {
-                action()
+                action(null)
             }
         }
     }
 
-    val checkMultipleFiles = { files: List<File>, targetFolder: String, action: () -> Unit ->
+    val checkMultipleFiles = { files: List<File>, targetFolder: String, action: (com.example.securequicktransferapp.data.usb.ConflictResolution?) -> Unit ->
         val targetDeviceIds = vm.sessionsState.value.keys
         vm.checkCloneConflicts(files, targetDeviceIds, targetFolder) { conflicts ->
             if (conflicts.isNotEmpty()) {
                 val count = conflicts.flatMap { it.folders }.flatMap { it.files }.size
-                pendingMessage = "$count file(s) already exist in the target directory on the remote device(s). Do you want to overwrite them?"
-                pendingAction = action
+                pendingMessage = "$count file(s) already exist in the target directory on the remote device(s). How should existing files be handled?"
+                pendingConflictAction = { resolution -> action(resolution) }
                 showConflictDialog = true
             } else {
-                action()
+                action(null)
             }
         }
     }
@@ -251,7 +263,7 @@ private fun AssetUploadRow(
     icon: androidx.compose.ui.graphics.vector.ImageVector, 
     vm: MainViewModel, 
     targetDir: String, 
-    onCheckConflict: (List<File>, String, () -> Unit) -> Unit,
+    onCheckConflict: (List<File>, String, (com.example.securequicktransferapp.data.usb.ConflictResolution?) -> Unit) -> Unit,
     onRequestPicker: (title: String, mode: PickerMode, allowMultiple: Boolean, onResult: (List<File>) -> Unit) -> Unit
 ) {
     Row(
@@ -265,8 +277,8 @@ private fun AssetUploadRow(
             onClick = {
                 onRequestPicker("Select file(s) for $title", PickerMode.FILES_AND_DIRECTORIES, true) { files ->
                     if (files.isNotEmpty()) {
-                        onCheckConflict(files, targetDir) {
-                            vm.sendFiles(files, targetDir)
+                        onCheckConflict(files, targetDir) { resolution ->
+                            vm.sendFiles(files, targetDir, conflictResolution = resolution)
                         }
                     }
                 }
@@ -280,7 +292,14 @@ private fun AssetUploadRow(
 }
 
 @Composable
-private fun PasswordUploadRow(label: String, value: String, onValueChange: (String) -> Unit, fileName: String, vm: MainViewModel, onCheckConflict: (String, String, () -> Unit) -> Unit) {
+private fun PasswordUploadRow(
+    label: String, 
+    value: String, 
+    onValueChange: (String) -> Unit, 
+    fileName: String, 
+    vm: MainViewModel, 
+    onCheckConflict: (String, String, (com.example.securequicktransferapp.data.usb.ConflictResolution?) -> Unit) -> Unit
+) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
@@ -297,12 +316,17 @@ private fun PasswordUploadRow(label: String, value: String, onValueChange: (Stri
         Button(
             onClick = {
                 val target = "${Constants.SmartnavRoot.DEFAULT_APP_EXTERNAL_ROOT_PATH}/${Constants.SmartnavRoot.DIR_PASSWORD}"
-                onCheckConflict(fileName, target) {
+                onCheckConflict(fileName, target) { resolution ->
+                    if (resolution == com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP ||
+                        resolution == com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL) {
+                        return@onCheckConflict
+                    }
                     vm.sendTextAsRemoteFile(
                         fileName = fileName,
                         content = value,
                         targetFolder = target,
-                        overwrite = true
+                        overwrite = (resolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE ||
+                                    resolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL)
                     )
                 }
             },

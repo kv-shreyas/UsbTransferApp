@@ -124,6 +124,10 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
     val editingFileContent by vm.editingFileContent.collectAsState()
     var currentEditContent by remember { mutableStateOf("") }
 
+    var showSendConflictDialog by remember { mutableStateOf(false) }
+    var sendConflictMessage by remember { mutableStateOf("") }
+    var pendingSendAction by remember { mutableStateOf<((com.example.securequicktransferapp.data.usb.ConflictResolution) -> Unit)?>(null) }
+
     LaunchedEffect(editingFileContent) {
         if (editingFileContent != null) {
             currentEditContent = editingFileContent ?: ""
@@ -495,13 +499,72 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
 
                 Spacer(Modifier.height(16.dp))
                 
+                if (showSendConflictDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showSendConflictDialog = false
+                            pendingSendAction = null
+                        },
+                        title = { Text("File Conflict Detected") },
+                        text = { Text(sendConflictMessage) },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    pendingSendAction?.invoke(com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL)
+                                    showSendConflictDialog = false
+                                    pendingSendAction = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
+                            ) {
+                                Text("Overwrite")
+                            }
+                        },
+                        dismissButton = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = {
+                                    showSendConflictDialog = false
+                                    pendingSendAction = null
+                                }) {
+                                    Text("Cancel")
+                                }
+                                Button(
+                                    onClick = {
+                                        pendingSendAction?.invoke(com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL)
+                                        showSendConflictDialog = false
+                                        pendingSendAction = null
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary)
+                                ) {
+                                    Text("Skip")
+                                }
+                            }
+                        }
+                    )
+                }
+
                 ActionBar(currentPath = currentPath, onSendFile = {
                     if (!isQueueProcessing) {
                         val fileChooser = JFileChooser()
                         fileChooser.fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
                         fileChooser.isMultiSelectionEnabled = true
                         if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            vm.sendFiles(fileChooser.selectedFiles.toList())
+                            val chosenFiles = fileChooser.selectedFiles.toList()
+                            if (chosenFiles.isNotEmpty()) {
+                                val currentDeviceId = selectedDeviceId
+                                val targetIds = if (currentDeviceId != null) setOf(currentDeviceId) else vm.sessionsState.value.keys
+                                vm.checkCloneConflicts(chosenFiles, targetIds, currentPath) { conflicts ->
+                                    if (conflicts.isNotEmpty()) {
+                                        val count = conflicts.flatMap { it.folders }.flatMap { it.files }.size
+                                        sendConflictMessage = "$count file(s) already exist in '$currentPath' on the remote device. How should existing files be handled?"
+                                        pendingSendAction = { resolution ->
+                                            vm.sendFiles(chosenFiles, currentPath, conflictResolution = resolution)
+                                        }
+                                        showSendConflictDialog = true
+                                    } else {
+                                        vm.sendFiles(chosenFiles, currentPath)
+                                    }
+                                }
+                            }
                         }
                     }
                 })

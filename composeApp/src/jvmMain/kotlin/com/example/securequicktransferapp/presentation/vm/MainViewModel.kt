@@ -264,11 +264,20 @@ class MainViewModel(
         refreshRemoteFiles()
     }
 
-    fun sendFiles(files: List<File>, targetPath: String? = null) {
+    fun sendFiles(
+        files: List<File>, 
+        targetPath: String? = null,
+        conflictResolution: com.example.securequicktransferapp.data.usb.ConflictResolution? = null
+    ) {
         val session = selectedSession() ?: return
         val destinationPath = targetPath ?: session.sessionState.value.currentPath
-        println("$TAG Enqueuing ${files.size} file(s) to send → $destinationPath for device ${session.deviceId}")
-        session.transferQueue.enqueueSendBatch(files, destinationPath)
+        if (conflictResolution != null) {
+            session.transferQueue.globalConflictResolution = conflictResolution
+        }
+        val overwrite = conflictResolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE ||
+                        conflictResolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL
+        println("$TAG Enqueuing ${files.size} file(s) to send → $destinationPath for device ${session.deviceId} (overwrite=$overwrite)")
+        session.transferQueue.enqueueSendBatch(files, destinationPath, overwrite = overwrite)
         watchQueueCompletion(session)
     }
 
@@ -368,19 +377,22 @@ class MainViewModel(
             val updateOsFiles = files.filter { it.name == Constants.SmartnavRoot.DIR_OS_UPDATE }
             val standardFiles = files.filter { it.name != Constants.SmartnavRoot.DIR_APP_UPDATE && it.name != Constants.SmartnavRoot.DIR_OS_UPDATE }
             
+            val overwrite = conflictResolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE ||
+                            conflictResolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL
+
             if (standardFiles.isNotEmpty()) {
-                println("$TAG [Multi-Clone] Enqueuing ${standardFiles.size} standard file(s) to send → $defaultTargetPath for device $deviceId")
-                session.transferQueue.enqueueSendBatch(standardFiles, defaultTargetPath)
+                println("$TAG [Multi-Clone] Enqueuing ${standardFiles.size} standard file(s) to send → $defaultTargetPath for device $deviceId (overwrite=$overwrite)")
+                session.transferQueue.enqueueSendBatch(standardFiles, defaultTargetPath, overwrite = overwrite)
             }
             
             if (updateAppFiles.isNotEmpty()) {
-                println("$TAG [Multi-Clone] Enqueuing ${updateAppFiles.size} file(s) to send → /sdcard for device $deviceId")
-                session.transferQueue.enqueueSendBatch(updateAppFiles, Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH)
+                println("$TAG [Multi-Clone] Enqueuing ${updateAppFiles.size} file(s) to send → /sdcard for device $deviceId (overwrite=$overwrite)")
+                session.transferQueue.enqueueSendBatch(updateAppFiles, Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH, overwrite = overwrite)
             }
             
             if (updateOsFiles.isNotEmpty()) {
-                println("$TAG [Multi-Clone] Enqueuing ${updateOsFiles.size} file(s) to send → /sdcard for device $deviceId")
-                session.transferQueue.enqueueSendBatch(updateOsFiles, Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH)
+                println("$TAG [Multi-Clone] Enqueuing ${updateOsFiles.size} file(s) to send → /sdcard for device $deviceId (overwrite=$overwrite)")
+                session.transferQueue.enqueueSendBatch(updateOsFiles, Constants.SmartnavRoot.DEFAULT_SDCARD_ROOT_PATH, overwrite = overwrite)
             }
 
             watchQueueCompletion(session)
