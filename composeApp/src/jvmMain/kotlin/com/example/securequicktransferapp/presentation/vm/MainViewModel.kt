@@ -267,18 +267,29 @@ class MainViewModel(
     fun sendFiles(
         files: List<File>, 
         targetPath: String? = null,
-        conflictResolution: com.example.securequicktransferapp.data.usb.ConflictResolution? = null
+        conflictResolution: com.example.securequicktransferapp.data.usb.ConflictResolution? = null,
+        targetDeviceIds: Set<String>? = null
     ) {
-        val session = selectedSession() ?: return
-        val destinationPath = targetPath ?: session.sessionState.value.currentPath
-        if (conflictResolution != null) {
-            session.transferQueue.globalConflictResolution = conflictResolution
+        val targets = if (!targetDeviceIds.isNullOrEmpty()) {
+            targetDeviceIds.mapNotNull { sessionManager.getSession(it) }
+        } else {
+            val session = selectedSession()
+            if (session != null) listOf(session) else emptyList()
         }
-        val overwrite = conflictResolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE ||
-                        conflictResolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL
-        println("$TAG Enqueuing ${files.size} file(s) to send → $destinationPath for device ${session.deviceId} (overwrite=$overwrite)")
-        session.transferQueue.enqueueSendBatch(files, destinationPath, overwrite = overwrite)
-        watchQueueCompletion(session)
+
+        if (targets.isEmpty()) return
+
+        targets.forEach { session ->
+            val destinationPath = targetPath ?: session.sessionState.value.currentPath
+            if (conflictResolution != null) {
+                session.transferQueue.globalConflictResolution = conflictResolution
+            }
+            val overwrite = conflictResolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE ||
+                            conflictResolution == com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL
+            println("$TAG Enqueuing ${files.size} file(s) to send → $destinationPath for device ${session.deviceId} (overwrite=$overwrite)")
+            session.transferQueue.enqueueSendBatch(files, destinationPath, overwrite = overwrite)
+            watchQueueCompletion(session)
+        }
     }
 
     private val calculateRemoteFolderSizesUseCase = com.example.securequicktransferapp.domain.usecase.CalculateRemoteFolderSizesUseCase()
@@ -424,11 +435,25 @@ class MainViewModel(
         }
     }
 
-    fun fetchFiles(remoteFiles: List<RemoteFile>, destinationDir: java.io.File = java.io.File(System.getProperty("user.home"), "Downloads")) {
-        val session = selectedSession() ?: return
-        println("$TAG Enqueuing ${remoteFiles.size} file(s) to fetch from device ${session.deviceId} to ${destinationDir.absolutePath}")
-        session.transferQueue.enqueueFetchBatch(remoteFiles, destinationDir)
-        watchQueueCompletion(session)
+    fun fetchFiles(
+        remoteFiles: List<RemoteFile>, 
+        destinationDir: java.io.File = java.io.File(System.getProperty("user.home"), "Downloads"),
+        targetDeviceIds: Set<String>? = null
+    ) {
+        val targets = if (!targetDeviceIds.isNullOrEmpty()) {
+            targetDeviceIds.mapNotNull { sessionManager.getSession(it) }
+        } else {
+            val session = selectedSession()
+            if (session != null) listOf(session) else emptyList()
+        }
+
+        if (targets.isEmpty()) return
+
+        targets.forEach { session ->
+            println("$TAG Enqueuing ${remoteFiles.size} file(s) to fetch from device ${session.deviceId} to ${destinationDir.absolutePath}")
+            session.transferQueue.enqueueFetchBatch(remoteFiles, destinationDir)
+            watchQueueCompletion(session)
+        }
     }
 
     // executeFetch removed — now handled by TransferQueue
@@ -488,15 +513,38 @@ class MainViewModel(
         }
     }
 
-    fun checkRemoteFileExists(targetFolder: String, fileName: String, onResult: (Boolean) -> Unit) {
-        val session = selectedSession() ?: run { onResult(false); return }
+    fun checkRemoteFileExists(
+        targetFolder: String, 
+        fileName: String, 
+        targetDeviceIds: Set<String>? = null,
+        onResult: (Boolean) -> Unit
+    ) {
+        val targets = if (!targetDeviceIds.isNullOrEmpty()) {
+            targetDeviceIds.mapNotNull { sessionManager.getSession(it) }
+        } else {
+            val session = selectedSession()
+            if (session != null) listOf(session) else emptyList()
+        }
+
+        if (targets.isEmpty()) {
+            onResult(false)
+            return
+        }
+
         scope.launch {
-            val exists = session.sessionMutex.withLock {
-                try {
-                    val files = session.repository.listDirectory(targetFolder)
-                    files.any { it.name == fileName }
-                } catch (e: Exception) {
-                    false
+            var exists = false
+            for (session in targets) {
+                val found = session.sessionMutex.withLock {
+                    try {
+                        val files = session.repository.listDirectory(targetFolder)
+                        files.any { it.name == fileName }
+                    } catch (e: Exception) {
+                        false
+                    }
+                }
+                if (found) {
+                    exists = true
+                    break
                 }
             }
             withContext(Dispatchers.Main) {
@@ -505,15 +553,31 @@ class MainViewModel(
         }
     }
 
-    fun sendTextAsRemoteFile(fileName: String, content: String, targetFolder: String, overwrite: Boolean = false) {
-        val session = selectedSession() ?: return
-        println("[ViewModel] sendTextAsRemoteFile: Enqueuing $fileName to $targetFolder for device ${session.deviceId}...")
-        val tempDir = java.nio.file.Files.createTempDirectory("smartnav_").toFile()
-        val tempFile = File(tempDir, fileName)
-        tempFile.writeText(content)
-        val destinationPath = targetFolder.trimEnd('/')
-        session.transferQueue.enqueueSend(tempFile, destinationPath, isDirectory = false, overwrite = overwrite)
-        watchQueueCompletion(session)
+    fun sendTextAsRemoteFile(
+        fileName: String, 
+        content: String, 
+        targetFolder: String, 
+        overwrite: Boolean = false,
+        targetDeviceIds: Set<String>? = null
+    ) {
+        val targets = if (!targetDeviceIds.isNullOrEmpty()) {
+            targetDeviceIds.mapNotNull { sessionManager.getSession(it) }
+        } else {
+            val session = selectedSession()
+            if (session != null) listOf(session) else emptyList()
+        }
+
+        if (targets.isEmpty()) return
+
+        targets.forEach { session ->
+            println("[ViewModel] sendTextAsRemoteFile: Enqueuing $fileName to $targetFolder for device ${session.deviceId}...")
+            val tempDir = java.nio.file.Files.createTempDirectory("smartnav_").toFile()
+            val tempFile = File(tempDir, fileName)
+            tempFile.writeText(content)
+            val destinationPath = targetFolder.trimEnd('/')
+            session.transferQueue.enqueueSend(tempFile, destinationPath, isDirectory = false, overwrite = overwrite)
+            watchQueueCompletion(session)
+        }
     }
 
     private val _editingFileContent = MutableStateFlow<String?>(null)
