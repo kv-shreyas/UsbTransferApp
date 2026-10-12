@@ -18,7 +18,7 @@ val appVersion = file("src/commonMain/kotlin/com/example/securequicktransferapp/
             ?.substringAfter("PACKAGE_VERSION =")
             ?.trim()
             ?.removeSurrounding("\"")
-    } ?: "1.0.0"
+    } ?: "0.0.0"
 
 kotlin {
     androidTarget {
