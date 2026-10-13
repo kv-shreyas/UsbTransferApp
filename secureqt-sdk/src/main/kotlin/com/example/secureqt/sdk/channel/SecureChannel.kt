@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 import kotlin.coroutines.coroutineContext
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * Encapsulates the entire secure communication protocol over an abstract USB transport.
@@ -33,13 +34,18 @@ class SecureChannel(private val transport: IUsbTransport) {
     /**
      * Reads a raw framed packet from the transport.
      * Blocks/suspends until a complete packet (header + payload) is received.
+     * @param timeoutMs Optional timeout in milliseconds. If > 0, returns null if no packet is received within this duration.
      */
-    suspend fun receiveRawPacket(): Pair<Byte, ByteArray>? = withContext(Dispatchers.IO) {
+    suspend fun receiveRawPacket(timeoutMs: Long = 0L): Pair<Byte, ByteArray>? = withContext(Dispatchers.IO) {
+        val startTime = System.currentTimeMillis()
         // Wait for 5-byte header
         while (!rxBuffer.has(SecureQtSdk.Codec.HEADER_SIZE)) {
             val bytesRead = transport.read(readBuffer)
             if (bytesRead <= 0) {
                 if (!transport.isConnected() || !coroutineContext.isActive) return@withContext null
+                if (timeoutMs > 0L && (System.currentTimeMillis() - startTime) >= timeoutMs) {
+                    return@withContext null
+                }
                 if (bytesRead == 0) yield() else delay(5) // Reduced delay for higher throughput
                 continue
             }
@@ -59,7 +65,10 @@ class SecureChannel(private val transport: IUsbTransport) {
             val bytesRead = transport.read(readBuffer)
             if (bytesRead <= 0) {
                 if (!transport.isConnected() || !coroutineContext.isActive) return@withContext null
-                if (bytesRead == 0) yield() else delay(5)
+                if (timeoutMs > 0L && (System.currentTimeMillis() - startTime) >= timeoutMs) {
+                    return@withContext null
+                }
+                if (bytesRead == 0) yield() else delay(5.milliseconds)
                 continue
             }
             rxBuffer.append(readBuffer, 0, bytesRead)
@@ -103,7 +112,7 @@ class SecureChannel(private val transport: IUsbTransport) {
             val pubBytes = session.getPublicKey()
             if (!sendRawPacket(SecureQtSdk.Packets.TYPE_PUBLIC_KEY, pubBytes)) return@withContext false
 
-            val remotePacket = waitForPublicKey() ?: return@withContext false
+            val remotePacket = waitForPublicKey(retransmitPayload = pubBytes) ?: return@withContext false
             return@withContext tryDeriveSecret(remotePacket.second)
         } else {
             // Responder: Wait for initiator's public key first, then send ours
@@ -115,13 +124,17 @@ class SecureChannel(private val transport: IUsbTransport) {
         }
     }
 
-    private suspend fun waitForPublicKey(): Pair<Byte, ByteArray>? {
-        for (i in 0 until 60) { // Try up to 15 seconds
+    private suspend fun waitForPublicKey(retransmitPayload: ByteArray? = null): Pair<Byte, ByteArray>? {
+        for (i in 0 until 30) { // Try up to 30 attempts (~30 seconds)
             if (!transport.isConnected()) return null
-            val packet = receiveRawPacket()
+            val packet = receiveRawPacket(timeoutMs = 1000L)
             if (packet == null) {
                 if (!transport.isConnected()) return null
-                delay(250)
+                // If retransmitPayload is provided, periodically re-send our public key (~every 1s)
+                // in case remote side opened its accessory descriptor after the initial packet was sent
+                if (retransmitPayload != null) {
+                    sendRawPacket(SecureQtSdk.Packets.TYPE_PUBLIC_KEY, retransmitPayload)
+                }
                 continue
             }
             if (packet.first == SecureQtSdk.Packets.TYPE_PUBLIC_KEY) return packet

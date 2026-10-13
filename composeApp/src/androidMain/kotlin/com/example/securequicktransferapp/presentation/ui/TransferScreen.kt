@@ -70,6 +70,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -139,6 +140,34 @@ fun TransferScreen(
 
     var showAboutDialog by remember { mutableStateOf(false) }
     var showSettingsScreen by remember { mutableStateOf(false) }
+    var showResetConfirmDialog by remember { mutableStateOf(false) }
+
+    if (showResetConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetConfirmDialog = false },
+            icon = { Icon(Icons.Default.Refresh, contentDescription = null, tint = AppTheme.colors.primary) },
+            title = { Text("Reset Connection?") },
+            text = {
+                Text("This will disconnect the active session, clear saved roles, stop background services, and reset the connection state to start fresh and ready to connect to any device.")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showResetConfirmDialog = false
+                        viewModel.resetConnection()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
+                ) {
+                    Text("Reset & Start Fresh")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetConfirmDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
 
     if (showSettingsScreen) {
         SettingsScreen(
@@ -146,7 +175,31 @@ fun TransferScreen(
             onThemeToggle = onThemeToggle,
             onBack = { showSettingsScreen = false },
             onShowAbout = { showAboutDialog = true },
-            onExitApp = { (context as? android.app.Activity)?.finishAffinity() }
+            onExitApp = { (context as? android.app.Activity)?.finishAffinity() },
+            extraSettingsContent = {
+                SettingsSection(title = "Connection Management", icon = Icons.Default.Usb) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(
+                            "Reset active USB connection, clear cached roles, and reset state to connect to a fresh device.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Button(
+                            onClick = {
+                                showSettingsScreen = false
+                                viewModel.resetConnection()
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Reset Connection & Start Fresh")
+                        }
+                    }
+                }
+            }
         )
         if (showAboutDialog) {
             AboutAppDialog(
@@ -185,6 +238,9 @@ fun TransferScreen(
                     titleContentColor = AppTheme.colors.onSurface
                 ),
                 actions = {
+                    IconButton(onClick = { showResetConfirmDialog = true }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Reset Connection & Start Fresh")
+                    }
                     IconButton(onClick = { showSettingsScreen = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
@@ -214,14 +270,18 @@ fun TransferScreen(
                     }
                 ) { targetState ->
                     if (targetState is UsbUiState.Success && role is UsbRole.Host) {
-                        HostModeDashboard(role = role as UsbRole.Host)
+                        HostModeDashboard(
+                            role = role as UsbRole.Host,
+                            onReset = { showResetConfirmDialog = true }
+                        )
                     } else {
                         UnifiedStateCard(
                             state = targetState,
                             role = role,
                             isCableConnected = isCableConnected,
                             onConnect = { viewModel.requestPermissionAndConnect() },
-                            onSelectRole = { viewModel.selectRoleAndConnect(it) }
+                            onSelectRole = { viewModel.selectRoleAndConnect(it) },
+                            onReset = { showResetConfirmDialog = true }
                         )
                     }
                 }
@@ -374,20 +434,39 @@ fun DebugLogsViewer(
 fun HostModeDashboard(
     role: UsbRole.Host? = null,
     onNavigateDir: ((String) -> Unit)? = null,
+    onReset: (() -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var selectedOption by remember { mutableStateOf("fileManager") }
 
     Column(modifier = Modifier.fillMaxSize()) {
         if (role != null) {
-            Text(
-                text = "Connected to ${role.connectedDeviceName}",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = AppTheme.colors.primary,
-                modifier = Modifier.padding(bottom = 12.dp).fillMaxWidth(),
-                textAlign = TextAlign.Center
-            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = "Connected to ${role.connectedDeviceName}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = AppTheme.colors.primary,
+                    modifier = Modifier.weight(1f),
+                    textAlign = TextAlign.Start
+                )
+                if (onReset != null) {
+                    TextButton(
+                        onClick = onReset,
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                    ) {
+                        Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp), tint = AppTheme.colors.error)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Reset", color = AppTheme.colors.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
         }
         // Top Option Selector / Tab Bar
         Surface(
@@ -719,7 +798,8 @@ fun UnifiedStateCard(
     role: UsbRole?,
     isCableConnected: Boolean,
     onConnect: () -> Unit,
-    onSelectRole: (UsbRole) -> Unit
+    onSelectRole: (UsbRole) -> Unit,
+    onReset: () -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -805,6 +885,7 @@ fun UnifiedStateCard(
                     Text("Connected to $connectedName", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = SuccessColor, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(8.dp))
                     Text(state.message.ifBlank { "Waiting for commands from the Host device." }, color = AppTheme.colors.onSurfaceVariant, textAlign = TextAlign.Center)
+
                 }
                 is UsbUiState.Receiving -> {
                     Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(64.dp), tint = AppTheme.colors.primary)
@@ -833,8 +914,18 @@ fun UnifiedStateCard(
                         Text("Retry", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                     }
                     Spacer(Modifier.height(12.dp))
-                    TextButton(onClick = { onSelectRole(if (role is UsbRole.Host) UsbRole.Client("Unknown Host") else UsbRole.Host("Remote Device")) }) {
-                        Text("Change Role")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceEvenly
+                    ) {
+                        TextButton(onClick = onReset) {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Reset & Start Fresh")
+                        }
+                        TextButton(onClick = { onSelectRole(if (role is UsbRole.Host) UsbRole.Client("Unknown Host") else UsbRole.Host("Remote Device")) }) {
+                            Text("Change Role")
+                        }
                     }
                 }
             }

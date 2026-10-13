@@ -123,8 +123,10 @@ class UsbTransferViewModel @Inject constructor(
         startCableMonitor()
         viewModelScope.launch {
             clientServiceController.clientUiState.collect { state ->
-                if (_usbRole.value is UsbRole.Client && clientServiceController.isServiceRunning.value) {
-                    _uiState.value = state
+                if (_usbRole.value is UsbRole.Client) {
+                    if (clientServiceController.isServiceRunning.value || state is UsbUiState.NoDevice || state is UsbUiState.Idle) {
+                        _uiState.value = state
+                    }
                     if (state is UsbUiState.Success && !state.deviceId.isNullOrBlank()) {
                         val currentRole = _usbRole.value as UsbRole.Client
                         if (currentRole.connectedHostName != state.deviceId) {
@@ -170,11 +172,15 @@ class UsbTransferViewModel @Inject constructor(
                         _uiState.value = UsbUiState.NoDevice
                     }
                 } else {
-                    // Whenever cable is connected or a state broadcast fires, if no device/accessory is active or we are in NoDevice, detect and auto-connect immediately.
-                    if (!isBusyOrConnected() && (_uiState.value is UsbUiState.NoDevice || (currentDevice == null && currentAccessory == null))) {
-                        if (!wasConnected) {
-                            usbLogger.i(TAG, "USB cable physically plugged in! Re-detecting device...")
-                        }
+                    val hasAccessory = usbManagerWrapper.getAccessories()?.isNotEmpty() == true
+                    // Whenever cable is plugged in fresh (wasConnected was false), re-detect device.
+                    if (!wasConnected) {
+                        usbLogger.i(TAG, "USB cable physically plugged in! Re-detecting device...")
+                        detectAndConnect()
+                    } else if (hasAccessory && currentAccessory == null && !isBusyOrConnected()) {
+                        usbLogger.i(TAG, "USB Accessory detected! Host switched to AOA mode. Auto-connecting...")
+                        detectAndConnect()
+                    } else if (_uiState.value is UsbUiState.NoDevice && !isBusyOrConnected()) {
                         detectAndConnect()
                     }
                 }
@@ -275,6 +281,9 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     fun requestPermissionAndConnect() {
+        if (currentDevice == null && currentAccessory == null) {
+            detectDevice()
+        }
         val dev = currentDevice
         val acc = currentAccessory
         val hasPerm = (acc != null && usbManagerWrapper.hasPermission(acc)) ||
@@ -518,6 +527,59 @@ class UsbTransferViewModel @Inject constructor(
     }
 
 
+    fun resetConnection() {
+        usbLogger.i(TAG, "resetConnection: User requested full reset. Resetting connection, role, and all state to start fresh.")
+        connectJob?.cancel()
+        connectJob = null
+        commandJob?.cancel()
+        commandJob = null
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // Attempt to send disconnect packet to remote device
+            try {
+                withTimeoutOrNull(250.milliseconds) {
+                    if (_usbRole.value is UsbRole.Host) {
+                        hostCommandSender.sendDisconnect()
+                    } else {
+                        dataSource.sendSecure(byteArrayOf(4.toByte()))
+                    }
+                    delay(50.milliseconds)
+                }
+            } catch (e: Exception) {
+                usbLogger.d(TAG, "resetConnection: Remote disconnect signal skipped: ${e.message}")
+            }
+
+            withContext(Dispatchers.Main) {
+                // Stop and reset client service controller
+                clientServiceController.reset()
+
+                // Clean up hardware connections and crypto session
+                delegatingConnection.disconnect()
+                aoaManager.disconnect()
+                hostManager.disconnect()
+                dataSource.disconnect()
+
+                currentDevice = null
+                currentAccessory = null
+
+                // Clear persisted preferences
+                preferencesManager.clear()
+                preferencesManager.usbRole = null
+
+                // Reset role and progress
+                _usbRole.value = null
+                dismissProgress()
+
+                // Check physical cable and reset UI state to Idle so user can select role or connect to fresh device
+                val isCable = usbManagerWrapper.isUsbCablePhysicallyConnected()
+                _isCablePhysicallyConnected.value = isCable
+                _uiState.value = if (isCable) UsbUiState.Idle else UsbUiState.NoDevice
+
+                usbLogger.i(TAG, "resetConnection: Reset complete. Ready to connect to any fresh device.")
+            }
+        }
+    }
+
     fun disconnect(sendSignal: Boolean = true) {
         usbLogger.d(TAG, "disconnect: Resetting connection and state (sendSignal=$sendSignal, role=${_usbRole.value})")
         connectJob?.cancel()
@@ -528,25 +590,28 @@ class UsbTransferViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             if (sendSignal) {
                 try {
-                    if (_usbRole.value is UsbRole.Host) {
-                        hostCommandSender.sendDisconnect()
-                    } else {
-                        dataSource.sendSecure(byteArrayOf(4.toByte()))
+                    withTimeoutOrNull(250.milliseconds) {
+                        if (_usbRole.value is UsbRole.Host) {
+                            hostCommandSender.sendDisconnect()
+                        } else {
+                            dataSource.sendSecure(byteArrayOf(4.toByte()))
+                        }
+                        delay(50.milliseconds)
                     }
-                    kotlinx.coroutines.delay(100) // Give it a moment to flush
                 } catch (e: Exception) {
                     usbLogger.w(TAG, "disconnect: Failed to send disconnect command to remote", e)
                 }
             }
 
-            withContext(kotlinx.coroutines.Dispatchers.Main) {
+            withContext(Dispatchers.Main) {
 
                 if (_usbRole.value is UsbRole.Client || clientServiceController.isServiceRunning.value) {
-                    clientServiceController.stopService()
+                    clientServiceController.reset()
                 } else {
                     delegatingConnection.disconnect()
                     aoaManager.disconnect()
                     hostManager.disconnect()
+                    dataSource.disconnect()
                 }
 
                 currentDevice = null
@@ -557,6 +622,7 @@ class UsbTransferViewModel @Inject constructor(
                     _usbRole.value = null
                     preferencesManager.usbRole = null
                     _uiState.value = UsbUiState.NoDevice
+                    dismissProgress()
                 } else {
                     detectDevice()
                 }
