@@ -170,36 +170,39 @@ fun TransferScreen(
     }
 
     if (showSettingsScreen) {
+        val isUnpluggedFromHost = !isCableConnected || state is UsbUiState.NoDevice
         SettingsScreen(
             isDarkTheme = isDarkTheme,
             onThemeToggle = onThemeToggle,
             onBack = { showSettingsScreen = false },
             onShowAbout = { showAboutDialog = true },
             onExitApp = { (context as? android.app.Activity)?.finishAffinity() },
-            extraSettingsContent = {
-                SettingsSection(title = "Connection Management", icon = Icons.Default.Usb) {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            "Reset active USB connection, clear cached roles, and reset state to connect to a fresh device.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        Spacer(Modifier.height(4.dp))
-                        Button(
-                            onClick = {
-                                showSettingsScreen = false
-                                viewModel.resetConnection()
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(8.dp))
-                            Text("Reset Connection & Start Fresh")
+            extraSettingsContent = if (isUnpluggedFromHost) {
+                {
+                    SettingsSection(title = "Connection Management", icon = Icons.Default.Usb) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text(
+                                "Reset active USB connection, clear cached roles, and reset state to connect to a fresh device.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Button(
+                                onClick = {
+                                    showSettingsScreen = false
+                                    viewModel.resetConnection()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Reset Connection & Start Fresh")
+                            }
                         }
                     }
                 }
-            }
+            } else null
         )
         if (showAboutDialog) {
             AboutAppDialog(
@@ -238,9 +241,6 @@ fun TransferScreen(
                     titleContentColor = AppTheme.colors.onSurface
                 ),
                 actions = {
-                    IconButton(onClick = { showResetConfirmDialog = true }) {
-                        Icon(Icons.Default.Refresh, contentDescription = "Reset Connection & Start Fresh")
-                    }
                     IconButton(onClick = { showSettingsScreen = true }) {
                         Icon(Icons.Default.Settings, contentDescription = "Settings")
                     }
