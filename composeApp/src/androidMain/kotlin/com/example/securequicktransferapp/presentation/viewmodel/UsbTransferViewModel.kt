@@ -82,31 +82,120 @@ class UsbTransferViewModel @Inject constructor(
 
     fun installAppUpdate(context: android.content.Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            val apkFile = java.io.File("/sdcard/updateUsbApp/usb_desktop_update.apk")
-            if (!apkFile.exists()) {
+            val updateDirs = listOf(
+                File(android.os.Environment.getExternalStorageDirectory(), "updateUsbApp"),
+                File("/sdcard/updateUsbApp")
+            )
+
+            // Priority: usb_update_app.apk first, followed by usb_desktop_update.apk
+            val candidateNames = listOf("usb_update_app.apk", "usb_desktop_update.apk")
+            var apkFile: File? = null
+
+            for (dir in updateDirs) {
+                for (name in candidateNames) {
+                    val candidate = File(dir, name)
+                    if (candidate.exists() && candidate.isFile) {
+                        apkFile = candidate
+                        break
+                    }
+                }
+                if (apkFile != null) break
+            }
+
+            // Fallback: check if any .apk exists in updateUsbApp directory
+            if (apkFile == null) {
+                for (dir in updateDirs) {
+                    if (dir.exists() && dir.isDirectory) {
+                        val anyApk = dir.listFiles { f -> f.isFile && f.name.endsWith(".apk", ignoreCase = true) }
+                            ?.firstOrNull()
+                        if (anyApk != null) {
+                            apkFile = anyApk
+                            break
+                        }
+                    }
+                }
+            }
+
+            if (apkFile == null || !apkFile.exists()) {
+                val errorMsg = "Update file not found (expected usb_update_app.apk at /sdcard/updateUsbApp/)"
+                Log.e(TAG, errorMsg)
+                usbLogger.e(TAG, errorMsg)
                 withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(context, "Update file not found at /sdcard/updateUsbApp/usb_desktop_update.apk", android.widget.Toast.LENGTH_LONG).show()
+                    android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
                 }
                 return@launch
             }
-            
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context, 
-                "${context.packageName}.fileprovider", 
-                apkFile
-            )
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                putExtra(android.content.Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+
+            usbLogger.i(TAG, "Found update APK: ${apkFile.absolutePath} (${apkFile.length()} bytes)")
+
+            // Check REQUEST_INSTALL_PACKAGES permission on Android 8.0+ (Oreo)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Please grant permission to install unknown apps, then retry update.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        try {
+                            val settingsIntent = android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                android.net.Uri.parse("package:${context.packageName}")
+                            ).apply {
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(settingsIntent)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to open install unknown apps settings", e)
+                        }
+                    }
+                    return@launch
+                }
             }
+
             try {
+                val fileToShare = try {
+                    apkFile.canonicalFile
+                } catch (e: Exception) {
+                    apkFile
+                }
+
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    fileToShare
+                )
+
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                val resolveInfos = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager.queryIntentActivities(
+                        intent,
+                        android.content.pm.PackageManager.ResolveInfoFlags.of(android.content.pm.PackageManager.MATCH_DEFAULT_ONLY.toLong())
+                    )
+                } else {
+                    context.packageManager.queryIntentActivities(
+                        intent,
+                        android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+                    )
+                }
+                for (resolveInfo in resolveInfos) {
+                    val packageName = resolveInfo.activityInfo.packageName
+                    context.grantUriPermission(packageName, uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
                 context.startActivity(intent)
+                usbLogger.i(TAG, "Launched installer for: ${apkFile.name}")
             } catch (e: Exception) {
-                Log.e("UsbTransferViewModel", "Update failed", e)
+                val msg = "Update failed: ${e.localizedMessage ?: e.message}"
+                Log.e(TAG, msg, e)
+                usbLogger.e(TAG, msg)
                 withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(context, "Update failed to launch", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         }

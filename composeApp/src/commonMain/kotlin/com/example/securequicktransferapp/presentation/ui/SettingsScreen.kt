@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -56,6 +58,7 @@ fun SettingsScreen(
             )
         }
     ) { padding ->
+        val scrollState = rememberScrollState()
         Column(
             modifier = Modifier
                 .padding(padding)
@@ -68,6 +71,7 @@ fun SettingsScreen(
                         )
                     )
                 )
+                .verticalScroll(scrollState)
                 .padding(horizontal = 24.dp, vertical = 20.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
@@ -130,11 +134,11 @@ fun SettingsScreen(
                 extraSettingsContent()
             }
             
-            // 2. System Information
-            SettingsSection(title = "System Information", icon = Icons.Default.Info) {
+            // 2. About Application Details Section
+            SettingsSection(title = "About Application Details", icon = Icons.Default.Info) {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    InfoRow(label = "App Version", value = "v${Constants.App.PACKAGE_VERSION}")
                     InfoRow(label = "App Name", value = Constants.App.NAME)
+                    InfoRow(label = "App Version", value = "v${Constants.App.PACKAGE_VERSION}")
                     
                     if (onShowAbout != null || onExitApp != null) {
                         Spacer(Modifier.height(8.dp))
@@ -146,17 +150,21 @@ fun SettingsScreen(
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable(onClick = onShowAbout)
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("About Application Details", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
+                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                            Spacer(Modifier.width(12.dp))
+                            Text("About Application Details", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.weight(1f))
                         }
                     }
                     if (onExitApp != null) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
                                 .clickable(onClick = onExitApp)
                                 .padding(vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -168,7 +176,7 @@ fun SettingsScreen(
                 }
             }
             
-            Spacer(Modifier.weight(1f))
+            Spacer(Modifier.height(16.dp))
             
             // Footer
             Text(

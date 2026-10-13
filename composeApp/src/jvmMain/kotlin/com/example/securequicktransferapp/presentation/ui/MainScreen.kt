@@ -159,10 +159,13 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
         // Main Content
         Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(24.dp)) {
             if (currentScreen == Constants.Screens.SETTINGS) {
+                var showAboutDialog by remember { mutableStateOf(false) }
                 SettingsScreen(
                     isDarkTheme = isDarkTheme,
                     onThemeToggle = onThemeToggle,
                     onBack = { currentScreen = Constants.Screens.EXPLORER },
+                    onShowAbout = { showAboutDialog = true },
+                    onExitApp = { java.lang.System.exit(0) },
                     extraSettingsContent = {
                         val stagingDirPath by vm.stagingDirPath.collectAsState()
                         val stagingDir = java.io.File(stagingDirPath)
@@ -312,6 +315,27 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
                         }
                     }
                 )
+                if (showAboutDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showAboutDialog = false },
+                        icon = { Icon(androidx.compose.material.icons.Icons.Default.Info, contentDescription = null, tint = AppTheme.colors.primary) },
+                        title = { Text("About Application Details") },
+                        text = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Text(Constants.App.NAME, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Version: v${Constants.App.PACKAGE_VERSION}", style = MaterialTheme.typography.bodyMedium)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Secure USB File Transfer Solution", style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
+                            }
+                        },
+                        confirmButton = {
+                            Button(onClick = { showAboutDialog = false }) {
+                                Text("Close")
+                            }
+                        }
+                    )
+                }
             } /*else if (currentScreen == Constants.Screens.TRANSFER_HISTORY) {
                 TransferHistoryScreen(
                     onBack = { currentScreen = Constants.Screens.TRANSFERS }

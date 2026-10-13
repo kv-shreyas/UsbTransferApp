@@ -207,7 +207,10 @@ fun TransferScreen(
         if (showAboutDialog) {
             AboutAppDialog(
                 onDismiss = { showAboutDialog = false },
-                onUpdate = { viewModel.installAppUpdate(context) }
+                onUpdate = {
+                    showAboutDialog = false
+                    viewModel.installAppUpdate(context)
+                }
             )
         }
         return
