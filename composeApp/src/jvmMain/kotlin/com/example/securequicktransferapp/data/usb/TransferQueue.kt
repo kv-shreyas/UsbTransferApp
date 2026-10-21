@@ -70,7 +70,7 @@ class TransferQueue(
     /**
      * Enqueues multiple files/directories for sending, flattening directories into individual items.
      */
-    fun enqueueSendBatch(files: List<File>, destinationPath: String) {
+    fun enqueueSendBatch(files: List<File>, destinationPath: String, overwrite: Boolean = false) {
         val items = mutableListOf<TransferQueueItem>()
         fun flatten(file: File, remoteParent: String) {
             if (file.isDirectory) {
@@ -79,7 +79,8 @@ class TransferQueue(
                     type = TransferType.SEND,
                     localFile = file,
                     destinationPath = remoteDir,
-                    isDirectory = true
+                    isDirectory = true,
+                    overwrite = overwrite
                 ))
                 file.listFiles()?.forEach { flatten(it, remoteDir) }
             } else {
@@ -87,13 +88,14 @@ class TransferQueue(
                     type = TransferType.SEND,
                     localFile = file,
                     destinationPath = remoteParent,
-                    isDirectory = false
+                    isDirectory = false,
+                    overwrite = overwrite
                 ))
             }
         }
         files.forEach { flatten(it, destinationPath) }
         _queue.value = _queue.value + items
-        println("$TAG Enqueued SEND batch: ${items.size} items")
+        println("$TAG Enqueued SEND batch: ${items.size} items (overwrite=$overwrite)")
         ensureProcessing()
     }
 

@@ -78,7 +78,6 @@ class UsbClientForegroundService : Service() {
 
         if (action == ClientServiceController.ACTION_STOP_CLIENT) {
             usbLogger.i(TAG, "Received ACTION_STOP_CLIENT. Stopping service...")
-            controller.stopService()
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf()
             return START_NOT_STICKY
@@ -106,7 +105,7 @@ class UsbClientForegroundService : Service() {
             updateNotification("USB Client Active", "Waiting for USB Host cable connection...")
         }
 
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onDestroy() {

@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.example.securequicktransferapp.data.usb.connection.UsbManagerWrapper
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -34,7 +35,8 @@ class ClientServiceController @Inject constructor(
     private val delegatingConnection: DelegatingUsbConnection,
     private val dataSource: UsbDataSource,
     private val commandProcessor: UsbCommandProcessor,
-    private val usbLogger: UsbLogger
+    private val usbLogger: UsbLogger,
+    private val usbManagerWrapper: UsbManagerWrapper
 ) {
     companion object {
         private const val TAG = "ClientServiceController"
@@ -74,7 +76,12 @@ class ClientServiceController @Inject constructor(
             clientJob = null
             delegatingConnection.disconnect()
             aoaManager.disconnect()
+            dataSource.disconnect()
             isServiceRunning.value = false
+            remoteDeviceId = null
+            currentReceiveFileName = ""
+            currentReceiveFileSize = 0L
+            receiveStartTime = 0L
             clientUiState.value = UsbUiState.NoDevice
             clientTransferProgress.value = TransferProgress()
 
@@ -82,6 +89,29 @@ class ClientServiceController @Inject constructor(
             context.stopService(intent)
         } catch (e: Exception) {
             usbLogger.e(TAG, "Failed to stop UsbClientForegroundService", e)
+        }
+    }
+
+    fun reset() {
+        try {
+            usbLogger.i(TAG, "reset: Stopping client service, clearing states and resetting.")
+            clientJob?.cancel()
+            clientJob = null
+            delegatingConnection.disconnect()
+            aoaManager.disconnect()
+            dataSource.disconnect()
+            isServiceRunning.value = false
+            remoteDeviceId = null
+            currentReceiveFileName = ""
+            currentReceiveFileSize = 0L
+            receiveStartTime = 0L
+            clientUiState.value = UsbUiState.Idle
+            clientTransferProgress.value = TransferProgress()
+
+            val intent = Intent(context, UsbClientForegroundService::class.java)
+            context.stopService(intent)
+        } catch (e: Exception) {
+            usbLogger.e(TAG, "Failed to reset ClientServiceController", e)
         }
     }
 
@@ -111,6 +141,13 @@ class ClientServiceController @Inject constructor(
                         }
                     } else {
                         usbLogger.d(TAG, "runClientLoop: Waiting for accessory permission (attempt $attempt)...")
+                        if (attempt == 1 || attempt % 6 == 0) {
+                            try {
+                                usbManagerWrapper.requestPermission(accessory)
+                            } catch (e: Exception) {
+                                usbLogger.w(TAG, "runClientLoop: Failed to request permission: ${e.message}")
+                            }
+                        }
                     }
                     kotlinx.coroutines.delay(500)
                 }
@@ -133,7 +170,6 @@ class ClientServiceController @Inject constructor(
                         clientUiState.value = UsbUiState.Success("Secure Channel Established", remoteDeviceId)
                         onStatusUpdate("Connected as Client: Listening for commands")
 
-                        delegatingConnection.clearBuffer()
                         commandProcessor.startListening(
                             onReceiveStarted = { fileName, fileSize ->
                                 currentReceiveFileName = fileName

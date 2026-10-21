@@ -178,23 +178,43 @@ class UsbManagerWrapper @Inject constructor(
     }.distinctUntilChanged()
 
     fun isUsbCablePhysicallyConnected(intent: Intent? = null): Boolean {
-        // If we just received an explicit detached/unplugged broadcast, check immediately
-        if (intent?.action == UsbManager.ACTION_USB_DEVICE_DETACHED ||
-            intent?.action == UsbManager.ACTION_USB_ACCESSORY_DETACHED ||
-            intent?.action == Intent.ACTION_POWER_DISCONNECTED) {
-            val hasRemainingDevices = getDevices().isNotEmpty()
-            val hasRemainingAccessories = !getAccessories().isNullOrEmpty()
-            if (!hasRemainingDevices && !hasRemainingAccessories && !isUsbPowerConnected()) {
-                return false
+        // 1. If we just received an explicit broadcast, check action-specific flags immediately
+        if (intent != null) {
+            when (intent.action) {
+                "android.hardware.usb.action.USB_STATE" -> {
+                    val connected = intent.getBooleanExtra("connected", false)
+                    if (!connected) return false
+                }
+                UsbManager.ACTION_USB_DEVICE_DETACHED,
+                UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
+                    val hasRemainingDevices = getDevices().isNotEmpty()
+                    val hasRemainingAccessories = !getAccessories().isNullOrEmpty()
+                    if (!hasRemainingDevices && !hasRemainingAccessories) {
+                        return false
+                    }
+                }
+                Intent.ACTION_POWER_DISCONNECTED -> {
+                    return false
+                }
             }
         }
 
-        // Check active USB devices or accessories via UsbManager
+        // 2. Check active USB devices or accessories via UsbManager
         val hasDevices = getDevices().isNotEmpty()
         val hasAccessories = !getAccessories().isNullOrEmpty()
         if (hasDevices || hasAccessories) return true
 
-        // Fallback: Check if USB data power is connected via BatteryManager.
+        // 3. Check sticky USB_STATE broadcast (instantaneous kernel USB gadget state)
+        val usbStateIntent = try {
+            context.registerReceiver(null, IntentFilter("android.hardware.usb.action.USB_STATE"))
+        } catch (_: Exception) { null }
+        if (usbStateIntent != null) {
+            val isConnected = usbStateIntent.getBooleanExtra("connected", false)
+            if (!isConnected) return false
+            return true
+        }
+
+        // 4. Fallback: Check if USB data power is connected via BatteryManager.
         // This detects the cable on the peripheral side BEFORE the remote host
         // switches us to AOA Accessory mode (when no UsbDevice/UsbAccessory is visible yet).
         return isUsbPowerConnected()

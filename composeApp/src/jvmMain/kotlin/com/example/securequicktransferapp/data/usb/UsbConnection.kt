@@ -254,15 +254,20 @@ class UsbConnection {
             endpointIn,
             readBuffer,
             transferredBuffer,
-            20000 // 20s
+            1000 // 1s polling timeout
         )
 
         val size = transferredBuffer.get(0)
         
         if (result != LibUsb.SUCCESS) {
-            if (result == LibUsb.ERROR_TIMEOUT && size > 0) {
-                // We received data despite the timeout! Don't discard it.
-                println("[UsbConnection] Warning: bulkRead timed out but transferred $size bytes.")
+            if (result == LibUsb.ERROR_TIMEOUT) {
+                if (size > 0) {
+                    // Data received despite timeout flag
+                    println("[UsbConnection] Warning: bulkRead timed out but transferred $size bytes.")
+                } else {
+                    // Normal polling timeout waiting for incoming packets
+                    return null
+                }
             } else {
                 println("[UsbConnection] Error: bulkRead failed. Code: $result (${LibUsb.strError(result)}), Endpoint: ${String.format("0x%02X", endpointIn)}")
                 if (result == LibUsb.ERROR_NO_DEVICE || result == LibUsb.ERROR_IO || result == LibUsb.ERROR_PIPE) {

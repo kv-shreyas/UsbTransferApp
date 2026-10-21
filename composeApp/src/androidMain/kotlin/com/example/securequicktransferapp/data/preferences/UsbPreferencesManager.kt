@@ -32,10 +32,15 @@ class UsbPreferencesManager @Inject constructor(
                 }
                 null -> {
                     editor.remove(KEY_ROLE)
+                    editor.remove(KEY_ROLE_NAME)
                 }
             }
             editor.apply()
         }
+
+    fun clear() {
+        prefs.edit().clear().apply()
+    }
 
     companion object {
         private const val KEY_ROLE = "saved_usb_role"

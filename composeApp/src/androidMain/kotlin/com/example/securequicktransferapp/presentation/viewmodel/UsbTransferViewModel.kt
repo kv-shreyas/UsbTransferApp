@@ -82,31 +82,120 @@ class UsbTransferViewModel @Inject constructor(
 
     fun installAppUpdate(context: android.content.Context) {
         viewModelScope.launch(Dispatchers.IO) {
-            val apkFile = java.io.File("/sdcard/updateUsbApp/usb_desktop_update.apk")
-            if (!apkFile.exists()) {
+            val updateDirs = listOf(
+                File(android.os.Environment.getExternalStorageDirectory(), "updateUsbApp"),
+                File("/sdcard/updateUsbApp")
+            )
+
+            // Priority: usb_update_app.apk first, followed by usb_desktop_update.apk
+            val candidateNames = listOf("usb_update_app.apk", "usb_desktop_update.apk")
+            var apkFile: File? = null
+
+            for (dir in updateDirs) {
+                for (name in candidateNames) {
+                    val candidate = File(dir, name)
+                    if (candidate.exists() && candidate.isFile) {
+                        apkFile = candidate
+                        break
+                    }
+                }
+                if (apkFile != null) break
+            }
+
+            // Fallback: check if any .apk exists in updateUsbApp directory
+            if (apkFile == null) {
+                for (dir in updateDirs) {
+                    if (dir.exists() && dir.isDirectory) {
+                        val anyApk = dir.listFiles { f -> f.isFile && f.name.endsWith(".apk", ignoreCase = true) }
+                            ?.firstOrNull()
+                        if (anyApk != null) {
+                            apkFile = anyApk
+                            break
+                        }
+                    }
+                }
+            }
+
+            if (apkFile == null || !apkFile.exists()) {
+                val errorMsg = "Update file not found (expected usb_update_app.apk at /sdcard/updateUsbApp/)"
+                Log.e(TAG, errorMsg)
+                usbLogger.e(TAG, errorMsg)
                 withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(context, "Update file not found at /sdcard/updateUsbApp/usb_desktop_update.apk", android.widget.Toast.LENGTH_LONG).show()
+                    android.widget.Toast.makeText(context, errorMsg, android.widget.Toast.LENGTH_LONG).show()
                 }
                 return@launch
             }
-            
-            val uri = androidx.core.content.FileProvider.getUriForFile(
-                context, 
-                "${context.packageName}.fileprovider", 
-                apkFile
-            )
-            val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
-                setDataAndType(uri, "application/vnd.android.package-archive")
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                putExtra(android.content.Intent.EXTRA_NOT_UNKNOWN_SOURCE, true)
+
+            usbLogger.i(TAG, "Found update APK: ${apkFile.absolutePath} (${apkFile.length()} bytes)")
+
+            // Check REQUEST_INSTALL_PACKAGES permission on Android 8.0+ (Oreo)
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    withContext(Dispatchers.Main) {
+                        android.widget.Toast.makeText(
+                            context,
+                            "Please grant permission to install unknown apps, then retry update.",
+                            android.widget.Toast.LENGTH_LONG
+                        ).show()
+                        try {
+                            val settingsIntent = android.content.Intent(
+                                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                android.net.Uri.parse("package:${context.packageName}")
+                            ).apply {
+                                addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            context.startActivity(settingsIntent)
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Failed to open install unknown apps settings", e)
+                        }
+                    }
+                    return@launch
+                }
             }
+
             try {
+                val fileToShare = try {
+                    apkFile.canonicalFile
+                } catch (e: Exception) {
+                    apkFile
+                }
+
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    fileToShare
+                )
+
+                val intent = android.content.Intent(android.content.Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                    addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
+                val resolveInfos = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.TIRAMISU) {
+                    context.packageManager.queryIntentActivities(
+                        intent,
+                        android.content.pm.PackageManager.ResolveInfoFlags.of(android.content.pm.PackageManager.MATCH_DEFAULT_ONLY.toLong())
+                    )
+                } else {
+                    context.packageManager.queryIntentActivities(
+                        intent,
+                        android.content.pm.PackageManager.MATCH_DEFAULT_ONLY
+                    )
+                }
+                for (resolveInfo in resolveInfos) {
+                    val packageName = resolveInfo.activityInfo.packageName
+                    context.grantUriPermission(packageName, uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+
                 context.startActivity(intent)
+                usbLogger.i(TAG, "Launched installer for: ${apkFile.name}")
             } catch (e: Exception) {
-                Log.e("UsbTransferViewModel", "Update failed", e)
+                val msg = "Update failed: ${e.localizedMessage ?: e.message}"
+                Log.e(TAG, msg, e)
+                usbLogger.e(TAG, msg)
                 withContext(Dispatchers.Main) {
-                    android.widget.Toast.makeText(context, "Update failed to launch", android.widget.Toast.LENGTH_SHORT).show()
+                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
                 }
             }
         }
@@ -123,8 +212,10 @@ class UsbTransferViewModel @Inject constructor(
         startCableMonitor()
         viewModelScope.launch {
             clientServiceController.clientUiState.collect { state ->
-                if (_usbRole.value is UsbRole.Client && clientServiceController.isServiceRunning.value) {
-                    _uiState.value = state
+                if (_usbRole.value is UsbRole.Client) {
+                    if (clientServiceController.isServiceRunning.value || state is UsbUiState.NoDevice || state is UsbUiState.Idle) {
+                        _uiState.value = state
+                    }
                     if (state is UsbUiState.Success && !state.deviceId.isNullOrBlank()) {
                         val currentRole = _usbRole.value as UsbRole.Client
                         if (currentRole.connectedHostName != state.deviceId) {
@@ -170,11 +261,15 @@ class UsbTransferViewModel @Inject constructor(
                         _uiState.value = UsbUiState.NoDevice
                     }
                 } else {
-                    // Whenever cable is connected or a state broadcast fires, if no device/accessory is active or we are in NoDevice, detect and auto-connect immediately.
-                    if (!isBusyOrConnected() && (_uiState.value is UsbUiState.NoDevice || (currentDevice == null && currentAccessory == null))) {
-                        if (!wasConnected) {
-                            usbLogger.i(TAG, "USB cable physically plugged in! Re-detecting device...")
-                        }
+                    val hasAccessory = usbManagerWrapper.getAccessories()?.isNotEmpty() == true
+                    // Whenever cable is plugged in fresh (wasConnected was false), re-detect device.
+                    if (!wasConnected) {
+                        usbLogger.i(TAG, "USB cable physically plugged in! Re-detecting device...")
+                        detectAndConnect()
+                    } else if (hasAccessory && currentAccessory == null && !isBusyOrConnected()) {
+                        usbLogger.i(TAG, "USB Accessory detected! Host switched to AOA mode. Auto-connecting...")
+                        detectAndConnect()
+                    } else if (_uiState.value is UsbUiState.NoDevice && !isBusyOrConnected()) {
                         detectAndConnect()
                     }
                 }
@@ -275,6 +370,9 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     fun requestPermissionAndConnect() {
+        if (currentDevice == null && currentAccessory == null) {
+            detectDevice()
+        }
         val dev = currentDevice
         val acc = currentAccessory
         val hasPerm = (acc != null && usbManagerWrapper.hasPermission(acc)) ||
@@ -518,6 +616,59 @@ class UsbTransferViewModel @Inject constructor(
     }
 
 
+    fun resetConnection() {
+        usbLogger.i(TAG, "resetConnection: User requested full reset. Resetting connection, role, and all state to start fresh.")
+        connectJob?.cancel()
+        connectJob = null
+        commandJob?.cancel()
+        commandJob = null
+
+        viewModelScope.launch(Dispatchers.IO) {
+            // Attempt to send disconnect packet to remote device
+            try {
+                withTimeoutOrNull(250.milliseconds) {
+                    if (_usbRole.value is UsbRole.Host) {
+                        hostCommandSender.sendDisconnect()
+                    } else {
+                        dataSource.sendSecure(byteArrayOf(4.toByte()))
+                    }
+                    delay(50.milliseconds)
+                }
+            } catch (e: Exception) {
+                usbLogger.d(TAG, "resetConnection: Remote disconnect signal skipped: ${e.message}")
+            }
+
+            withContext(Dispatchers.Main) {
+                // Stop and reset client service controller
+                clientServiceController.reset()
+
+                // Clean up hardware connections and crypto session
+                delegatingConnection.disconnect()
+                aoaManager.disconnect()
+                hostManager.disconnect()
+                dataSource.disconnect()
+
+                currentDevice = null
+                currentAccessory = null
+
+                // Clear persisted preferences
+                preferencesManager.clear()
+                preferencesManager.usbRole = null
+
+                // Reset role and progress
+                _usbRole.value = null
+                dismissProgress()
+
+                // Check physical cable and reset UI state to Idle so user can select role or connect to fresh device
+                val isCable = usbManagerWrapper.isUsbCablePhysicallyConnected()
+                _isCablePhysicallyConnected.value = isCable
+                _uiState.value = if (isCable) UsbUiState.Idle else UsbUiState.NoDevice
+
+                usbLogger.i(TAG, "resetConnection: Reset complete. Ready to connect to any fresh device.")
+            }
+        }
+    }
+
     fun disconnect(sendSignal: Boolean = true) {
         usbLogger.d(TAG, "disconnect: Resetting connection and state (sendSignal=$sendSignal, role=${_usbRole.value})")
         connectJob?.cancel()
@@ -528,25 +679,28 @@ class UsbTransferViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             if (sendSignal) {
                 try {
-                    if (_usbRole.value is UsbRole.Host) {
-                        hostCommandSender.sendDisconnect()
-                    } else {
-                        dataSource.sendSecure(byteArrayOf(4.toByte()))
+                    withTimeoutOrNull(250.milliseconds) {
+                        if (_usbRole.value is UsbRole.Host) {
+                            hostCommandSender.sendDisconnect()
+                        } else {
+                            dataSource.sendSecure(byteArrayOf(4.toByte()))
+                        }
+                        delay(50.milliseconds)
                     }
-                    kotlinx.coroutines.delay(100) // Give it a moment to flush
                 } catch (e: Exception) {
                     usbLogger.w(TAG, "disconnect: Failed to send disconnect command to remote", e)
                 }
             }
 
-            withContext(kotlinx.coroutines.Dispatchers.Main) {
+            withContext(Dispatchers.Main) {
 
                 if (_usbRole.value is UsbRole.Client || clientServiceController.isServiceRunning.value) {
-                    clientServiceController.stopService()
+                    clientServiceController.reset()
                 } else {
                     delegatingConnection.disconnect()
                     aoaManager.disconnect()
                     hostManager.disconnect()
+                    dataSource.disconnect()
                 }
 
                 currentDevice = null
@@ -557,6 +711,7 @@ class UsbTransferViewModel @Inject constructor(
                     _usbRole.value = null
                     preferencesManager.usbRole = null
                     _uiState.value = UsbUiState.NoDevice
+                    dismissProgress()
                 } else {
                     detectDevice()
                 }

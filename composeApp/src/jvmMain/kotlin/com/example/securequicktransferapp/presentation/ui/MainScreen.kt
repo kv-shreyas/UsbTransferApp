@@ -126,6 +126,10 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
     val editingFileContent by vm.editingFileContent.collectAsState()
     var currentEditContent by remember { mutableStateOf("") }
 
+    var showSendConflictDialog by remember { mutableStateOf(false) }
+    var sendConflictMessage by remember { mutableStateOf("") }
+    var pendingSendAction by remember { mutableStateOf<((com.example.securequicktransferapp.data.usb.ConflictResolution) -> Unit)?>(null) }
+
     LaunchedEffect(editingFileContent) {
         if (editingFileContent != null) {
             currentEditContent = editingFileContent ?: ""
@@ -159,10 +163,13 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
         // Main Content
         Column(modifier = Modifier.weight(1f).fillMaxHeight().padding(24.dp)) {
             if (currentScreen == Constants.Screens.SETTINGS) {
+                var showAboutDialog by remember { mutableStateOf(false) }
                 SettingsScreen(
                     isDarkTheme = isDarkTheme,
                     onThemeToggle = onThemeToggle,
                     onBack = { currentScreen = Constants.Screens.EXPLORER },
+                    onShowAbout = { showAboutDialog = true },
+                    onExitApp = { java.lang.System.exit(0) },
                     extraSettingsContent = {
                         val stagingDirPath by vm.stagingDirPath.collectAsState()
                         val stagingDir = java.io.File(stagingDirPath)
@@ -312,6 +319,27 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
                         }
                     }
                 )
+                if (showAboutDialog) {
+                    AlertDialog(
+                        onDismissRequest = { showAboutDialog = false },
+                        icon = { Icon(androidx.compose.material.icons.Icons.Default.Info, contentDescription = null, tint = AppTheme.colors.primary) },
+                        title = { Text("About Application Details") },
+                        text = {
+                            Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
+                                Text(Constants.App.NAME, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Text("Version: v${Constants.App.PACKAGE_VERSION}", style = MaterialTheme.typography.bodyMedium)
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text("Secure USB File Transfer Solution", style = MaterialTheme.typography.bodySmall, color = AppTheme.colors.onSurfaceVariant)
+                            }
+                        },
+                        confirmButton = {
+                            Button(onClick = { showAboutDialog = false }) {
+                                Text("Close")
+                            }
+                        }
+                    )
+                }
             } /*else if (currentScreen == Constants.Screens.TRANSFER_HISTORY) {
                 TransferHistoryScreen(
                     onBack = { currentScreen = Constants.Screens.TRANSFERS }
@@ -499,13 +527,72 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
 
                 Spacer(Modifier.height(16.dp))
                 
+                if (showSendConflictDialog) {
+                    AlertDialog(
+                        onDismissRequest = {
+                            showSendConflictDialog = false
+                            pendingSendAction = null
+                        },
+                        title = { Text("File Conflict Detected") },
+                        text = { Text(sendConflictMessage) },
+                        confirmButton = {
+                            Button(
+                                onClick = {
+                                    pendingSendAction?.invoke(com.example.securequicktransferapp.data.usb.ConflictResolution.OVERWRITE_ALL)
+                                    showSendConflictDialog = false
+                                    pendingSendAction = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.error)
+                            ) {
+                                Text("Overwrite")
+                            }
+                        },
+                        dismissButton = {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                TextButton(onClick = {
+                                    showSendConflictDialog = false
+                                    pendingSendAction = null
+                                }) {
+                                    Text("Cancel")
+                                }
+                                Button(
+                                    onClick = {
+                                        pendingSendAction?.invoke(com.example.securequicktransferapp.data.usb.ConflictResolution.SKIP_ALL)
+                                        showSendConflictDialog = false
+                                        pendingSendAction = null
+                                    },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AppTheme.colors.primary)
+                                ) {
+                                    Text("Skip")
+                                }
+                            }
+                        }
+                    )
+                }
+
                 ActionBar(currentPath = currentPath, onSendFile = {
                     if (!isQueueProcessing) {
                         val fileChooser = JFileChooser()
                         fileChooser.fileSelectionMode = JFileChooser.FILES_AND_DIRECTORIES
                         fileChooser.isMultiSelectionEnabled = true
                         if (fileChooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION) {
-                            vm.sendFiles(fileChooser.selectedFiles.toList())
+                            val chosenFiles = fileChooser.selectedFiles.toList()
+                            if (chosenFiles.isNotEmpty()) {
+                                val currentDeviceId = selectedDeviceId
+                                val targetIds = if (currentDeviceId != null) setOf(currentDeviceId) else vm.sessionsState.value.keys
+                                vm.checkCloneConflicts(chosenFiles, targetIds, currentPath) { conflicts ->
+                                    if (conflicts.isNotEmpty()) {
+                                        val count = conflicts.flatMap { it.folders }.flatMap { it.files }.size
+                                        sendConflictMessage = "$count file(s) already exist in '$currentPath' on the remote device. How should existing files be handled?"
+                                        pendingSendAction = { resolution ->
+                                            vm.sendFiles(chosenFiles, currentPath, conflictResolution = resolution)
+                                        }
+                                        showSendConflictDialog = true
+                                    } else {
+                                        vm.sendFiles(chosenFiles, currentPath)
+                                    }
+                                }
+                            }
                         }
                     }
                 })
