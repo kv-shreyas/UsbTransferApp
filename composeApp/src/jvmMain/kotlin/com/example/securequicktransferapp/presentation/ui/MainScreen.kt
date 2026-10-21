@@ -50,6 +50,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MenuOpen
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.OpenInNew
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
@@ -60,7 +61,7 @@ import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -100,6 +101,7 @@ import com.example.securequicktransferapp.domain.model.TransferItemStatus
 import com.example.securequicktransferapp.domain.model.TransferQueueItem
 import com.example.securequicktransferapp.domain.model.UsbSessionState
 import com.example.securequicktransferapp.presentation.theme.AppTheme
+import com.example.securequicktransferapp.presentation.ui.components.DriverInstallDialog
 import com.example.securequicktransferapp.presentation.vm.MainViewModel
 import javax.swing.JFileChooser
 import kotlin.time.Duration.Companion.milliseconds
@@ -137,6 +139,8 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
             currentScreen = Constants.Screens.SMARTNAV
         }
     }
+
+    DriverInstallDialog(vm = vm)
 
     Row(modifier = Modifier.fillMaxSize().background(AppTheme.colors.surface)) {
         // Sidebar
@@ -1369,16 +1373,6 @@ fun DesktopNotConnectedView(
                     Spacer(Modifier.width(10.dp))
                     Text(if (isPhysicallyConnected) "Connect to Device (${physicalDeviceName ?: "Android"})" else "Connect Device", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
-            }
-
-            if (state.contains("Failed") || state.contains("Error")) {
-                Spacer(Modifier.height(16.dp))
-                Text(
-                    text = "Previous attempt status: $state",
-                    color = AppTheme.colors.error,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
             }
         }
     }

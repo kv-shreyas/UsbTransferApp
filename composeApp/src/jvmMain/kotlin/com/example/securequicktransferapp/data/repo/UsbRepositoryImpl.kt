@@ -49,33 +49,114 @@ class UsbRepositoryImpl(
         try {
             val desc = org.usb4java.DeviceDescriptor()
             org.usb4java.LibUsb.getDeviceDescriptor(device, desc)
+            val vid = desc.idVendor().toInt() and 0xFFFF
             val pid = desc.idProduct().toInt() and 0xFFFF
-            val isAlreadyAoa = pid == 0x2D00 || pid == 0x2D01
+            val isAlreadyAoa = pid in 0x2D00..0x2D05
             
             if (isAlreadyAoa) {
                 isAoaMode = true
-                if (!connection.open(device)) return false
+                if (!connection.open(device)) {
+                    deviceManager.reportDriverIssue(vid, pid, "Android Device (AOA)")
+                    if (deviceManager.isDriverInstalling()) {
+                        logger.i(TAG, "WinUSB driver installation in progress for AOA device. Awaiting completion...")
+                        val installed = kotlinx.coroutines.runBlocking { deviceManager.waitForDriverInstall() }
+                        if (installed) {
+                            logger.i(TAG, "Driver installation finished! Re-acquiring AOA device after PnP binding...")
+                            Thread.sleep(1200)
+                            val freshAccessory = if (targetDeviceId != null) {
+                                deviceManager.findDeviceById(targetDeviceId, requireAccessory = true)
+                                    ?: deviceManager.findAndroidDevice(requireAccessory = true)
+                            } else {
+                                deviceManager.findAndroidDevice(requireAccessory = true)
+                            }
+                            if (freshAccessory != null) {
+                                try {
+                                    if (connection.open(freshAccessory)) {
+                                        logger.i(TAG, "Successfully opened AOA device after driver installation!")
+                                    } else {
+                                        logger.e(TAG, "Failed to open connection to AOA accessory after driver install.")
+                                        return false
+                                    }
+                                } finally {
+                                    deviceManager.releaseDevice(freshAccessory)
+                                }
+                            } else {
+                                logger.e(TAG, "Could not find AOA device after driver install.")
+                                return false
+                            }
+                        } else {
+                            return false
+                        }
+                    } else {
+                        return false
+                    }
+                }
             } else {
                 if (connection.switchToAoa(device)) {
                     var accessory: org.usb4java.Device? = null
-                    for (i in 0 until 25) {
-                        Thread.sleep(120)
+                    logger.i(TAG, "Waiting up to 10s for device to reconnect in AOA mode (targetId: $targetDeviceId)...")
+                    for (i in 0 until 50) {
+                        Thread.sleep(200)
                         accessory = if (targetDeviceId != null) {
                             deviceManager.findDeviceById(targetDeviceId, requireAccessory = true)
+                                ?: deviceManager.findAndroidDevice(requireAccessory = true)
                         } else {
                             deviceManager.findAndroidDevice(requireAccessory = true)
                         }
-                        if (accessory != null) break
+                        if (accessory != null) {
+                            logger.i(TAG, "Device re-enumerated in AOA mode on attempt ${i + 1}!")
+                            break
+                        }
                     }
-                    if (accessory == null) return false
+                    if (accessory == null) {
+                        logger.w(TAG, "Device failed to reconnect in AOA mode within 10s. If the phone is locked, please unlock it. Prompting driver setup for AOA mode...")
+                        deviceManager.reportDriverIssue(0x18D1, 0x2D00, "Android Open Accessory")
+                        return false
+                    }
                     isAoaMode = true
                     try {
-                        Thread.sleep(120)
-                        if (!connection.open(accessory)) return false
+                        // Allow Windows PnP to complete driver binding to the new USB device node
+                        Thread.sleep(600)
+                        if (!connection.open(accessory)) {
+                            logger.e(TAG, "Failed to open connection to accessory in AOA mode.")
+                            deviceManager.reportDriverIssue(0x18D1, 0x2D00, "Android Open Accessory")
+                            if (deviceManager.isDriverInstalling()) {
+                                logger.i(TAG, "WinUSB driver installation in progress for AOA mode. Awaiting completion...")
+                                val installed = kotlinx.coroutines.runBlocking { deviceManager.waitForDriverInstall() }
+                                if (installed) {
+                                    logger.i(TAG, "Driver installation finished! Re-acquiring AOA device after PnP binding...")
+                                    Thread.sleep(1200)
+                                    val freshAccessory = if (targetDeviceId != null) {
+                                        deviceManager.findDeviceById(targetDeviceId, requireAccessory = true)
+                                            ?: deviceManager.findAndroidDevice(requireAccessory = true)
+                                    } else {
+                                        deviceManager.findAndroidDevice(requireAccessory = true)
+                                    }
+                                    if (freshAccessory != null) {
+                                        try {
+                                            if (!connection.open(freshAccessory)) {
+                                                logger.e(TAG, "Failed to open connection to accessory after driver install.")
+                                                return false
+                                            }
+                                        } finally {
+                                            deviceManager.releaseDevice(freshAccessory)
+                                        }
+                                    } else {
+                                        logger.e(TAG, "Could not find AOA device after driver install.")
+                                        return false
+                                    }
+                                } else {
+                                    return false
+                                }
+                            } else {
+                                return false
+                            }
+                        }
                     } finally {
                         deviceManager.releaseDevice(accessory)
                     }
                 } else {
+                    logger.w(TAG, "Failed to switch device to AOA mode. Ensure device is unlocked and file transfer/AOA is allowed.")
                     return false
                 }
             }

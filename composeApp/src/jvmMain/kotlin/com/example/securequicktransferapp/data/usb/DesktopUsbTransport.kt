@@ -11,6 +11,7 @@ class DesktopUsbTransport(private val connection: UsbConnection) : IUsbTransport
     }
 
     override suspend fun write(buffer: ByteArray): Boolean {
+        if (!connection.isOpen()) return false
         return connection.bulkWrite(buffer)
     }
 

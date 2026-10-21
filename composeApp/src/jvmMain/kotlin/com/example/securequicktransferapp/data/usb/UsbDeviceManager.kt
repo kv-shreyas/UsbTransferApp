@@ -1,18 +1,33 @@
 package com.example.securequicktransferapp.data.usb
 
+import com.example.securequicktransferapp.data.driver.DriverInstallManager
 import com.example.securequicktransferapp.domain.model.DiscoveredUsbDevice
 import org.usb4java.Context
 import org.usb4java.Device
 import org.usb4java.DeviceDescriptor
+import org.usb4java.DeviceHandle
 import org.usb4java.DeviceList
 import org.usb4java.LibUsb
 import java.nio.ByteBuffer
 
-open class UsbDeviceManager {
+/**
+ * Enumerates physical USB devices via libusb and exposes them as [DiscoveredUsbDevice] domain objects.
+ *
+ * On **Windows**, libusb requires a WinUSB-compatible kernel driver to claim USB interfaces.
+ * If a known Android VID is detected but libusb cannot open the device (ERROR_ACCESS / ERROR_NOT_SUPPORTED),
+ * [driverInstallManager] is notified so the UI can prompt the user to install the correct driver via Zadig.
+ *
+ * @param driverInstallManager Optional [DriverInstallManager] — when provided, driver-less device
+ *   detection is active. Pass `null` to disable automatic driver prompts (e.g. in tests).
+ */
+open class UsbDeviceManager(
+    val driverInstallManager: DriverInstallManager? = null
+) {
 
     private val context = Context()
     private val usbLock = Any()
     private var isInitialized = false
+    private val probedDevices = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     init {
         try {
@@ -88,6 +103,9 @@ open class UsbDeviceManager {
      * Enumerates all physical USB devices connected to the host and returns all matching Android devices.
      * Each returned [DiscoveredUsbDevice] has its native Device reference count incremented (+1).
      * Callers must invoke [releaseDevice] on device handles when finished.
+     *
+     * On Windows, this method also performs a lightweight driver-accessibility probe for non-AOA devices.
+     * If the probe detects a missing WinUSB driver, [driverInstallManager] is notified.
      */
     open fun discoverDevices(): List<DiscoveredUsbDevice> = synchronized(usbLock) {
         if (!isInitialized) return emptyList()
@@ -107,7 +125,7 @@ open class UsbDeviceManager {
                     val pid = desc.idProduct().toInt() and 0xFFFF
 
                     val isAndroidVid = vid in knownAndroidVids
-                    val isAoa = pid == 0x2D00 || pid == 0x2D01
+                    val isAoa = pid in 0x2D00..0x2D05
 
                     if (isAndroidVid || isAoa) {
                         val (id, busNumber, portNumber) = getHardwareIdentifier(device)
@@ -118,6 +136,15 @@ open class UsbDeviceManager {
                             .replace(")", "")
                             .substringBefore(",")
                             .trim()
+
+                        // --- Windows driver detection probe ---
+                        // On Windows, libusb requires a WinUSB-compatible kernel driver to open a device.
+                        // We do a lightweight open test: if it fails with ACCESS / NOT_SUPPORTED, the
+                        // device likely has no WinUSB driver installed and we signal the install manager.
+                        // Check if a WinUSB-compatible driver is present on Windows (strictly for AOA mode)
+                        if (driverInstallManager != null && isAoa) {
+                            probeDeviceAccessibility(device, vid, pid, deviceName)
+                        }
 
                         // Retain reference (+1) for returned device handle
                         LibUsb.refDevice(device)
@@ -143,6 +170,77 @@ open class UsbDeviceManager {
     }
 
     /**
+     * Attempts a non-destructive open of [device] to detect whether a WinUSB-compatible driver
+     * is installed on Windows. If the open fails with an access/IO error, [driverInstallManager]
+     * is notified via [DriverInstallManager.onDeviceNeedsDriver].
+     *
+     * The temporary handle is closed immediately after the test — this is a probe only.
+     */
+    private fun probeDeviceAccessibility(device: Device, vid: Int, pid: Int, deviceName: String) {
+        val key = "VID_${String.format("%04X", vid)}_PID_${String.format("%04X", pid)}"
+        if (!probedDevices.add(key)) return
+
+        // 1. If Windows Registry already confirms a WinUSB / libusb driver is installed, skip probe entirely
+        if (com.example.securequicktransferapp.data.driver.ZadigDriverInstaller.isDriverAlreadyInstalled(vid, pid)) {
+            println("[UsbDeviceManager] Driver already installed for $key — skipping accessibility probe.")
+            return
+        }
+
+        val tempHandle = DeviceHandle()
+        val openResult = LibUsb.open(device, tempHandle)
+        if (openResult == LibUsb.ERROR_ACCESS) {
+            // ERROR_ACCESS (-3) on Windows means the device is currently opened/claimed by an active connection.
+            // A driver is already present and active; do not treat this as a missing driver!
+            println("[UsbDeviceManager] Device $key is currently in-use / claimed (code=-3). Driver is present.")
+            return
+        }
+        when (openResult) {
+            LibUsb.SUCCESS -> {
+                // Device is accessible — WinUSB (or compatible) driver is present. No action needed.
+                LibUsb.close(tempHandle)
+                println("[UsbDeviceManager] Driver probe OK for VID:${String.format("%04X", vid)} PID:${String.format("%04X", pid)}")
+            }
+            LibUsb.ERROR_NOT_SUPPORTED -> {
+                // On Windows: ERROR_NOT_SUPPORTED typically means no WinUSB driver is installed.
+                // ERROR_ACCESS means the driver exists but we don't have permissions (less common on Desktop).
+                println("[UsbDeviceManager] Driver probe FAILED (code=$openResult) for VID:${String.format("%04X", vid)} PID:${String.format("%04X", pid)} — notifying DriverInstallManager")
+                driverInstallManager?.onDeviceNeedsDriver(vid, pid, deviceName)
+            }
+            else -> {
+                // Transient state (e.g. device temporarily busy) — remove key so it can be re-evaluated later
+                probedDevices.remove(key)
+                println("[UsbDeviceManager] Driver probe returned $openResult for VID:${String.format("%04X", vid)} — ignoring")
+            }
+        }
+    }
+
+    /**
+     * Reports that a device encountered a driver/permission issue during connection attempts,
+     * allowing the DriverInstallManager to prompt the user to install the WinUSB driver.
+     */
+    open fun reportDriverIssue(vendorId: Int, productId: Int, deviceName: String = "Android Device") {
+        if (com.example.securequicktransferapp.data.driver.ZadigDriverInstaller.isDriverAlreadyInstalled(vendorId, productId)) {
+            println("[UsbDeviceManager] reportDriverIssue ignored: driver already installed for VID:${String.format("%04X", vendorId)} PID:${String.format("%04X", productId)}")
+            return
+        }
+        driverInstallManager?.onDeviceNeedsDriver(vendorId, productId, deviceName)
+    }
+
+    /**
+     * Returns true if WinUSB driver installation is actively underway.
+     */
+    open fun isDriverInstalling(): Boolean {
+        return driverInstallManager?.driverInstallState?.value is com.example.usbdriverinstaller.api.DriverInstallState.Installing
+    }
+
+    /**
+     * Suspends until the active driver installation completes or times out.
+     */
+    open suspend fun waitForDriverInstall(timeoutMs: Long = 45000): Boolean {
+        return driverInstallManager?.waitForInstall(timeoutMs) ?: true
+    }
+
+    /**
      * Searches for a specific connected device matching [hardwareId] (e.g. "bus_1_port_3").
      * Returns a retained Device pointer (+1 ref count) or null if not found.
      */
@@ -160,7 +258,7 @@ open class UsbDeviceManager {
                     val pid = desc.idProduct().toInt() and 0xFFFF
 
                     val isAndroidVid = vid in knownAndroidVids
-                    val isAoa = pid == 0x2D00 || pid == 0x2D01
+                    val isAoa = pid in 0x2D00..0x2D05
 
                     if (isAndroidVid || isAoa) {
                         if (requireAccessory && !isAoa) continue
@@ -196,7 +294,7 @@ open class UsbDeviceManager {
                     val pid = desc.idProduct().toInt() and 0xFFFF
 
                     val isAndroidVid = vid in knownAndroidVids
-                    val isAoa = pid == 0x2D00 || pid == 0x2D01
+                    val isAoa = pid in 0x2D00..0x2D05
 
                     if (isAndroidVid || isAoa) {
                         val (id, _, _) = getHardwareIdentifier(device)

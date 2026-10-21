@@ -31,10 +31,29 @@ import kotlin.time.Duration.Companion.milliseconds
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MainViewModel(
-    private val sessionManager: UsbSessionManager
+    private val sessionManager: UsbSessionManager,
+    val driverInstallManager: com.example.securequicktransferapp.data.driver.DriverInstallManager? = null
 ) {
     val TAG = "MainViewModel"
     private val scope = CoroutineScope(Dispatchers.IO)
+
+    // --- Driver Installation State ---
+    val driverInstallState: StateFlow<com.example.usbdriverinstaller.api.DriverInstallState> =
+        driverInstallManager?.driverInstallState
+            ?: MutableStateFlow(com.example.usbdriverinstaller.api.DriverInstallState.Idle)
+
+    /** Retries a previously-failed driver installation. */
+    fun retryDriverInstall(vendorId: Int, productId: Int, deviceName: String) {
+        driverInstallManager?.retryInstall(vendorId, productId, deviceName)
+    }
+
+    fun dismissDriverDialog() {
+        driverInstallManager?.dismiss()
+    }
+
+    fun launchZadig() {
+        driverInstallManager?.launchZadig()
+    }
 
     // --- Multi-device state ---
     private val _selectedDeviceId = MutableStateFlow<String?>(null)
@@ -53,6 +72,20 @@ class MainViewModel(
 
     init {
         sessionManager.startPolling()
+
+        // Auto-reconnect when WinUSB driver installation finishes successfully
+        scope.launch {
+            driverInstallState.collect { installState ->
+                if (installState is com.example.usbdriverinstaller.api.DriverInstallState.Installed) {
+                    println("[$TAG] Driver installed successfully for ${installState.deviceName} — auto-reconnecting...")
+                    delay(1200) // Allow Windows PnP to complete device re-enumeration
+                    val session = selectedSession()
+                    if (session != null && session.sessionState.value.status !is DeviceSessionStatus.Ready && session.sessionState.value.status !is DeviceSessionStatus.Connecting) {
+                        connect()
+                    }
+                }
+            }
+        }
         scope.launch {
             sessionsState.collect { sessions ->
                 // Auto-select the first device when it appears

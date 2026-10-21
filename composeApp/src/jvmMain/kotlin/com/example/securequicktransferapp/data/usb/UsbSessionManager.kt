@@ -129,7 +129,18 @@ class UsbSessionManager(
                 // BUT, if it's already in AOA mode, it means we just successfully switched it,
                 // or it was already in AOA mode, so we should automatically connect to finalize the handshake.
                 if (devInfo.isAoa) {
-                    scope.launch { session.connect() }
+                    scope.launch {
+                        if (deviceManager.isDriverInstalling()) {
+                            println("[UsbSessionManager] Device $id is AOA but driver install is in progress. Waiting...")
+                            deviceManager.waitForDriverInstall()
+                            delay(1200)
+                        }
+                        val status = session.sessionState.value.status
+                        if (status !is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Connecting &&
+                            status !is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Ready) {
+                            session.connect()
+                        }
+                    }
                 }
             } else {
                 // Device already tracked in activeSessions.

@@ -155,8 +155,11 @@ class TransferQueue(
      * Cancels all pending and active items in the queue.
      */
     fun cancelAll() {
+        val wasActive = currentItemJob?.isActive == true
         currentItemJob?.cancel()
-        try { repository.cancelTransfer() } catch (_: Exception) {}
+        if (wasActive) {
+            try { repository.cancelTransfer() } catch (_: Exception) {}
+        }
         _queue.value = _queue.value.map { item ->
             when (item.status) {
                 TransferItemStatus.PENDING, TransferItemStatus.ACTIVE ->

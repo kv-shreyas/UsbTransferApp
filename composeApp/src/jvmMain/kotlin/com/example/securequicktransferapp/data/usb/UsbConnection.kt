@@ -27,7 +27,15 @@ class UsbConnection {
 
     fun switchToAoa(device: Device): Boolean {
         val tempHandle = DeviceHandle()
-        val openResult = LibUsb.open(device, tempHandle)
+        var openResult = LibUsb.open(device, tempHandle)
+        if (openResult == LibUsb.ERROR_ACCESS) {
+            killAdbServerIfRunning()
+            for (retry in 1..4) {
+                Thread.sleep(300)
+                openResult = LibUsb.open(device, tempHandle)
+                if (openResult == LibUsb.SUCCESS) break
+            }
+        }
         if (openResult != LibUsb.SUCCESS) {
             println("[UsbConnection] switchToAoa Error: LibUsb.open failed with code $openResult (${LibUsb.strError(openResult)})")
             return false
@@ -122,10 +130,29 @@ class UsbConnection {
             close()
         }
         handle = DeviceHandle()
+        var result = LibUsb.open(device, handle)
 
-        val result = LibUsb.open(device, handle)
+        // On Windows, two transient failure codes are expected immediately after a driver change:
+        //   -3  (ERROR_ACCESS)         — driver installed but another process briefly holds it
+        //   -12 (ERROR_NOT_SUPPORTED)  — WinUSB driver just installed but PnP binding not yet complete
+        // We retry with increasing patience: 16 × 500 ms = up to 8 seconds.
+        if (result == LibUsb.ERROR_ACCESS || result == LibUsb.ERROR_NOT_SUPPORTED) {
+            if (result == LibUsb.ERROR_ACCESS) killAdbServerIfRunning()
+            println("[UsbConnection] open: code $result (${LibUsb.strError(result)}) — waiting for driver binding...")
+            for (retry in 1..16) {
+                Thread.sleep(500)
+                result = LibUsb.open(device, handle)
+                if (result == LibUsb.SUCCESS) {
+                    println("[UsbConnection] open: driver bound on retry $retry")
+                    break
+                }
+                if (result != LibUsb.ERROR_ACCESS && result != LibUsb.ERROR_NOT_SUPPORTED) break
+            }
+        }
+
         if (result != LibUsb.SUCCESS) {
             println("[UsbConnection] Error: Failed to open device handle. Code: $result (${LibUsb.strError(result)})")
+            handle = null
             return false
         }
 
@@ -342,6 +369,21 @@ class UsbConnection {
         handle = null
             }
         }
+    }
+
+    private fun killAdbServerIfRunning() {
+        try {
+            val os = System.getProperty("os.name", "").lowercase()
+            if (os.contains("win")) {
+                val localAppData = System.getenv("LOCALAPPDATA")
+                val adbFile = if (localAppData != null) java.io.File(localAppData, "Android\\Sdk\\platform-tools\\adb.exe") else null
+                if (adbFile != null && adbFile.exists()) {
+                    ProcessBuilder(adbFile.absolutePath, "kill-server").start().waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                } else {
+                    ProcessBuilder("taskkill", "/F", "/IM", "adb.exe").start().waitFor(3, java.util.concurrent.TimeUnit.SECONDS)
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     fun resetPort() {
