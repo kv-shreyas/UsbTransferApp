@@ -4,8 +4,9 @@ import com.example.securequicktransferapp.domain.repo.UsbRepository
 import com.example.securequicktransferapp.domain.model.RemoteFile
 import com.example.securequicktransferapp.data.usb.UsbConnection
 import com.example.securequicktransferapp.data.usb.UsbDeviceManager
-import com.example.securequicktransferapp.data.usb.DesktopUsbTransport
 import com.example.secureqt.sdk.SecureQtSdk
+import com.example.secureqt.sdk.autoConnectDesktop
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.logging.ILogger
 import com.example.securequicktransferapp.data.logging.ConsoleLogger
 import kotlinx.coroutines.flow.Flow
@@ -24,9 +25,8 @@ class UsbRepositoryImpl(
     override var isAoaMode: Boolean = false
         private set
 
-    // SDK integration: The transport adapts the desktop connection, the channel manages framing/crypto, and client manages the transfer logic
-    private val transport = DesktopUsbTransport(connection)
-    private val channel = SecureQtSdk.createChannel(transport)
+    // SDK integration: UsbConnection directly implements IUsbTransport delegating to DesktopAoaTransport
+    private val channel = SecureQtSdk.createChannel(connection)
     private val transferClient = SecureQtSdk.createTransferClient(channel)
 
     override fun connect(): Boolean {
@@ -249,6 +249,15 @@ class UsbRepositoryImpl(
             deviceManager.isDevicePhysicallyConnected(targetDeviceId)
         } else {
             deviceManager.isDevicePhysicallyConnected()
+        }
+    }
+
+    companion object {
+        /**
+         * Fast-path helper using the SDK desktop extension to auto-scan the USB bus and connect.
+         */
+        fun autoConnectDirect(timeoutMs: Long = 10000L): SecureChannel? {
+            return SecureQtSdk.autoConnectDesktop(timeoutMs = timeoutMs)
         }
     }
 }

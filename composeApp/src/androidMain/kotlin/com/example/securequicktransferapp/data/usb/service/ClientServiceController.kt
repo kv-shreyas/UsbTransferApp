@@ -4,9 +4,7 @@ import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
 
 import com.example.securequicktransferapp.data.usb.command.UsbCommandProcessor
 
-import com.example.securequicktransferapp.data.usb.connection.DelegatingUsbConnection
-
-import com.example.securequicktransferapp.data.usb.connection.AoaConnectionManager
+import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
 import com.example.secureqt.sdk.SecureQtSdk
 
 import android.content.Context
@@ -31,8 +29,7 @@ import javax.inject.Singleton
 @Singleton
 class ClientServiceController @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val aoaManager: AoaConnectionManager,
-    private val delegatingConnection: DelegatingUsbConnection,
+    private val connectionManager: UsbConnectionManager,
     private val dataSource: UsbDataSource,
     private val commandProcessor: UsbCommandProcessor,
     private val usbLogger: UsbLogger,
@@ -74,8 +71,7 @@ class ClientServiceController @Inject constructor(
             usbLogger.i(TAG, "stopService requested. Stopping loop and service...")
             clientJob?.cancel()
             clientJob = null
-            delegatingConnection.disconnect()
-            aoaManager.disconnect()
+            connectionManager.disconnect()
             dataSource.disconnect()
             isServiceRunning.value = false
             remoteDeviceId = null
@@ -97,8 +93,7 @@ class ClientServiceController @Inject constructor(
             usbLogger.i(TAG, "reset: Stopping client service, clearing states and resetting.")
             clientJob?.cancel()
             clientJob = null
-            delegatingConnection.disconnect()
-            aoaManager.disconnect()
+            connectionManager.disconnect()
             dataSource.disconnect()
             isServiceRunning.value = false
             remoteDeviceId = null
@@ -116,7 +111,7 @@ class ClientServiceController @Inject constructor(
     }
 
     suspend fun runClientLoop(accessory: UsbAccessory, onStatusUpdate: (String) -> Unit) = withContext(Dispatchers.IO) {
-        if (clientJob?.isActive == true && aoaManager.isConnected()) {
+        if (clientJob?.isActive == true && connectionManager.isConnected()) {
             usbLogger.i(TAG, "runClientLoop: Already running and connected to ${accessory.model}. Ignoring duplicate runClientLoop request.")
             return@withContext
         }
@@ -132,12 +127,12 @@ class ClientServiceController @Inject constructor(
                     if (!isActive) break
                     val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
                     if (usbManager.hasPermission(accessory)) {
-                        if (aoaManager.connect(accessory)) {
+                        if (connectionManager.connect(accessory)) {
                             connected = true
                             usbLogger.i(TAG, "runClientLoop: Successfully connected to accessory on attempt $attempt")
                             break
                         } else {
-                            usbLogger.d(TAG, "runClientLoop: aoaManager.connect attempt $attempt failed (Host may still be opening pipe). Retrying in 500ms...")
+                            usbLogger.d(TAG, "runClientLoop: connectionManager.connect attempt $attempt failed (Host may still be opening pipe). Retrying in 500ms...")
                         }
                     } else {
                         usbLogger.d(TAG, "runClientLoop: Waiting for accessory permission (attempt $attempt)...")
@@ -153,15 +148,13 @@ class ClientServiceController @Inject constructor(
                 }
 
                 if (!connected) {
-                    usbLogger.e(TAG, "runClientLoop: aoaManager.connect(accessory) failed after 15s of retries.")
+                    usbLogger.e(TAG, "runClientLoop: connectionManager.connect(accessory) failed after 15s of retries.")
                     clientUiState.value = UsbUiState.Error("Failed to open USB Accessory connection.")
                     onStatusUpdate("Connection Failed")
                     return@launch
                 }
 
-                delegatingConnection.setDelegate(aoaManager)
-
-                while (isActive && aoaManager.isConnected()) {
+                while (isActive && connectionManager.isConnected()) {
                     clientUiState.value = UsbUiState.Success("Standby: Waiting for Host...", remoteDeviceId)
                     onStatusUpdate("Standby: Waiting for Host...")
 
@@ -266,7 +259,7 @@ class ClientServiceController @Inject constructor(
                             }
                         )
                     } else {
-                        if (!aoaManager.isConnected()) {
+                        if (!connectionManager.isConnected()) {
                             usbLogger.i(TAG, "runClientLoop: Accessory physically disconnected.")
                             break
                         }

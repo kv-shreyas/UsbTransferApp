@@ -1,12 +1,16 @@
 package com.example.securequicktransferapp.data.usb.connection
 
-import android.hardware.usb.UsbConstants
+import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbDeviceConnection
-import android.hardware.usb.UsbEndpoint
-import javax.inject.Inject
 import android.util.Log
+import com.example.secureqt.sdk.SecureQtSdk
+import com.example.secureqt.sdk.createAndroidAccessoryTransport
+import com.example.secureqt.sdk.createAndroidDeviceTransport
+import com.example.secureqt.sdk.transport.android.AndroidAoaTransport
+import javax.inject.Inject
+import javax.inject.Singleton
 
+@Singleton
 class UsbConnectionManager @Inject constructor(
     private val wrapper: UsbManagerWrapper,
     private val usbLogger: com.example.securequicktransferapp.data.logging.UsbLogger
@@ -16,92 +20,66 @@ class UsbConnectionManager @Inject constructor(
         private const val TAG = "UsbConnManager"
     }
 
-    private var connection: UsbDeviceConnection? = null
-    private var endpointIn: UsbEndpoint? = null
-    private var endpointOut: UsbEndpoint? = null
-    private var currentInterface: android.hardware.usb.UsbInterface? = null
-
+    /** Active multiplatform transport provided by secureqt-sdk */
+    var transport: AndroidAoaTransport? = null
+        private set
 
     fun connect(device: UsbDevice): Boolean {
         usbLogger.d(TAG, "Connecting to device: ${device.deviceName} (interfaces: ${device.interfaceCount})")
-        connection = wrapper.usbManager.openDevice(device)
 
-        if (connection == null) {
-            usbLogger.e(TAG, "Failed to open device connection")
-            return false
+        val aoaTransport = SecureQtSdk.createAndroidDeviceTransport(wrapper.usbManager, device)
+        if (aoaTransport != null) {
+            transport = aoaTransport
+            usbLogger.i(TAG, "Successfully claimed interface and bulk endpoints via SecureQtSdk")
+            return true
         }
 
-        for (ifaceIdx in 0 until device.interfaceCount) {
-            val iface = device.getInterface(ifaceIdx)
-            var epIn: UsbEndpoint? = null
-            var epOut: UsbEndpoint? = null
-            for (i in 0 until iface.endpointCount) {
-                val ep = iface.getEndpoint(i)
-                if (ep.type == UsbConstants.USB_ENDPOINT_XFER_BULK) {
-                    if (ep.direction == UsbConstants.USB_DIR_IN) {
-                        epIn = ep
-                    } else {
-                        epOut = ep
-                    }
-                }
-            }
-            if (epIn != null && epOut != null) {
-                if (connection?.claimInterface(iface, true) == true) {
-                    currentInterface = iface
-                    endpointIn = epIn
-                    endpointOut = epOut
-                    usbLogger.i(TAG, "Claimed interface $ifaceIdx with Bulk IN=${epIn.address}, OUT=${epOut.address}")
-                    return true
-                } else {
-                    usbLogger.w(TAG, "Failed to claim interface $ifaceIdx")
-                }
-            }
-        }
-
-        usbLogger.e(TAG, "Missing bulk endpoints across all ${device.interfaceCount} interfaces")
+        usbLogger.e(TAG, "Missing bulk endpoints or failed to claim interface across all ${device.interfaceCount} interfaces")
         return false
     }
 
-    private val MAX_USBFS_BUFFER_SIZE = 16384
+    fun connect(accessory: UsbAccessory): Boolean {
+        if (isConnected()) {
+            usbLogger.d(TAG, "AOA already connected to accessory: $accessory")
+            return true
+        }
+        usbLogger.d(TAG, "Connecting to accessory: $accessory")
+
+        val aoaTransport = SecureQtSdk.createAndroidAccessoryTransport(wrapper.usbManager, accessory)
+        if (aoaTransport != null) {
+            transport = aoaTransport
+            usbLogger.i(TAG, "AOA Connection established via SecureQtSdk")
+            return true
+        }
+
+        usbLogger.e(TAG, "Failed to open accessory via AndroidAoaConnector")
+        return false
+    }
 
     override fun send(data: ByteArray): Int {
-        var offset = 0
-        while (offset < data.size) {
-            val chunk = minOf(MAX_USBFS_BUFFER_SIZE, data.size - offset)
-            val result = connection?.bulkTransfer(endpointOut, data, offset, chunk, 5000) ?: -1
-            if (result < 0) {
-                Log.e(TAG, "Failed to send data at offset $offset (result=$result)")
-                return -1
-            }
-            offset += result
-        }
-        return data.size
+        val t = transport ?: return -1
+        return if (t.writeSync(data)) data.size else -1
     }
 
     override fun receive(maxSize: Int): ByteArray? {
-        val chunk = minOf(MAX_USBFS_BUFFER_SIZE, maxSize)
+        val chunk = minOf(AndroidAoaTransport.MAX_USBFS_BURST_SIZE, maxSize)
         val buffer = ByteArray(chunk)
-        val len = connection?.bulkTransfer(endpointIn, buffer, buffer.size, 5000) ?: -1
-        return if (len > 0) {
-            buffer.copyOf(len)
-        } else {
-            if (len < 0) Log.e(TAG, "Failed to receive data: len=$len")
-            null
-        }
+        val len = receive(buffer)
+        return if (len > 0) buffer.copyOf(len) else null
     }
 
     override fun receive(buffer: ByteArray): Int {
-        val chunk = minOf(MAX_USBFS_BUFFER_SIZE, buffer.size)
-        return connection?.bulkTransfer(endpointIn, buffer, chunk, 5000) ?: -1
+        val t = transport ?: return -1
+        return t.readSync(buffer)
     }
 
     override fun receiveExact(size: Int): ByteArray? {
+        val t = transport ?: return null
         val buffer = ByteArray(size)
         var offset = 0
         while (offset < size) {
             val remaining = size - offset
-            val chunk = minOf(MAX_USBFS_BUFFER_SIZE, remaining)
-            val len = connection?.bulkTransfer(endpointIn, buffer, offset, chunk, 5000) ?: -1
+            val len = t.readSync(buffer, offset, remaining)
             if (len <= 0) {
                 Log.e(TAG, "Failed to receive exact bytes at offset $offset: len=$len")
                 return null
@@ -112,29 +90,20 @@ class UsbConnectionManager @Inject constructor(
     }
 
     override fun clearBuffer() {
-        // Bulk endpoints don't have an easy "available()" so we just do a short read if data is there
-        val temp = ByteArray(1024)
-        while (true) {
-            val len = connection?.bulkTransfer(endpointIn, temp, temp.size, 10) ?: -1
-            if (len <= 0) break
-        }
+        transport?.clearBuffer()
     }
 
     override fun disconnect() {
         try {
-            currentInterface?.let { connection?.releaseInterface(it) }
-            connection?.close()
+            transport?.close()
         } catch (e: Exception) {
             Log.e(TAG, "Error closing connection", e)
         } finally {
-            connection = null
-            endpointIn = null
-            endpointOut = null
-            currentInterface = null
+            transport = null
         }
     }
 
     override fun isConnected(): Boolean {
-        return connection != null && endpointIn != null && endpointOut != null
+        return transport?.isConnected() == true
     }
 }

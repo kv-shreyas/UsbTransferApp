@@ -32,7 +32,7 @@ import kotlin.time.Duration.Companion.milliseconds
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class MainViewModel(
     private val sessionManager: UsbSessionManager,
-    val driverInstallManager: com.example.securequicktransferapp.data.driver.DriverInstallManager? = null
+    val driverInstallManager: com.example.usbdriverinstaller.api.IUsbDriverInstallManager? = null
 ) {
     val TAG = "MainViewModel"
     private val scope = CoroutineScope(Dispatchers.IO)

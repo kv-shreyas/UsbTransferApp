@@ -3,56 +3,44 @@ package com.example.securequicktransferapp.presentation.viewmodel
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbDevice
 import android.util.Log
-import com.example.secureqt.sdk.SecureQtSdk
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.securequicktransferapp.data.UsbRole
 import com.example.securequicktransferapp.data.UsbUiState
-import com.example.securequicktransferapp.domain.model.TransferProgress
 import com.example.securequicktransferapp.data.logging.UsbLogger
 import com.example.securequicktransferapp.data.preferences.UsbPreferencesManager
-import com.example.securequicktransferapp.data.usb.connection.AoaConnectionManager
-import com.example.securequicktransferapp.data.usb.connection.AoaHostSwitcher
-import com.example.securequicktransferapp.data.usb.service.ClientServiceController
-import com.example.securequicktransferapp.data.usb.connection.DelegatingUsbConnection
-import com.example.securequicktransferapp.data.usb.command.HostCommandSender
-import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
-import com.example.securequicktransferapp.data.usb.connection.UsbManagerWrapper
 import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionBus
 import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionEvent
-import com.example.securequicktransferapp.data.usb.command.UsbCommandProcessor
-import com.example.securequicktransferapp.domain.constants.Constants
-import kotlinx.coroutines.flow.asStateFlow
-import com.example.securequicktransferapp.domain.model.RemoteFile
+import com.example.securequicktransferapp.data.usb.command.HostCommandSender
+import com.example.securequicktransferapp.data.usb.connection.AoaHostSwitcher
+import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
+import com.example.securequicktransferapp.data.usb.connection.UsbManagerWrapper
+import com.example.securequicktransferapp.data.usb.service.ClientServiceController
+import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
+import com.example.securequicktransferapp.domain.model.TransferProgress
 import com.example.securequicktransferapp.domain.usecases.UsbUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
-import java.io.FileOutputStream
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.milliseconds
 
 @HiltViewModel
 class UsbTransferViewModel @Inject constructor(
     private val usbManagerWrapper: UsbManagerWrapper,
-    private val hostManager: UsbConnectionManager,
-    private val aoaManager: AoaConnectionManager,
+    private val connectionManager: UsbConnectionManager,
     private val aoaHostSwitcher: AoaHostSwitcher,
-    private val delegatingConnection: DelegatingUsbConnection,
     private val dataSource: UsbDataSource,
-    private val commandProcessor: UsbCommandProcessor,
     private val hostCommandSender: HostCommandSender,
     private val usbUseCases: UsbUseCases,
     private val preferencesManager: UsbPreferencesManager,
@@ -387,9 +375,7 @@ class UsbTransferViewModel @Inject constructor(
             commandJob?.cancel()
             commandJob = null
             
-            delegatingConnection.disconnect()
-            aoaManager.disconnect()
-            hostManager.disconnect()
+            connectionManager.disconnect()
 
             val device = currentDevice
             val accessory = currentAccessory
@@ -479,9 +465,7 @@ class UsbTransferViewModel @Inject constructor(
             commandJob?.cancel()
             commandJob = null
 
-            delegatingConnection.disconnect()
-            aoaManager.disconnect()
-            hostManager.disconnect()
+            connectionManager.disconnect()
 
             detectDevice()
         }
@@ -543,9 +527,8 @@ class UsbTransferViewModel @Inject constructor(
                     _uiState.value = UsbUiState.Error("Timed out waiting for remote device AOA re-enumeration")
                     return
                 }
-                if (hostManager.connect(aoaDevice)) {
+                if (connectionManager.connect(aoaDevice)) {
                     usbLogger.i(TAG, "proceedWithDevice: Host connection to AOA device successful.")
-                    delegatingConnection.setDelegate(hostManager)
                     currentDevice = aoaDevice
                     startHostHandshakeAndCommands()
                 } else {
@@ -557,9 +540,8 @@ class UsbTransferViewModel @Inject constructor(
             }
         } else {
             // Device is already in AOA mode, connect directly
-            if (hostManager.connect(device)) {
+            if (connectionManager.connect(device)) {
                 usbLogger.i(TAG, "proceedWithDevice: Host connection to already-in-AOA device successful.")
-                delegatingConnection.setDelegate(hostManager)
                 startHostHandshakeAndCommands()
             } else {
                 usbLogger.e(TAG, "proceedWithDevice: Failed to connect to AOA device.")
@@ -643,9 +625,7 @@ class UsbTransferViewModel @Inject constructor(
                 clientServiceController.reset()
 
                 // Clean up hardware connections and crypto session
-                delegatingConnection.disconnect()
-                aoaManager.disconnect()
-                hostManager.disconnect()
+                connectionManager.disconnect()
                 dataSource.disconnect()
 
                 currentDevice = null
@@ -697,9 +677,7 @@ class UsbTransferViewModel @Inject constructor(
                 if (_usbRole.value is UsbRole.Client || clientServiceController.isServiceRunning.value) {
                     clientServiceController.reset()
                 } else {
-                    delegatingConnection.disconnect()
-                    aoaManager.disconnect()
-                    hostManager.disconnect()
+                    connectionManager.disconnect()
                     dataSource.disconnect()
                 }
 

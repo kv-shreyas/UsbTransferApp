@@ -1,7 +1,8 @@
 package com.example.securequicktransferapp.data.usb
 
-import com.example.securequicktransferapp.data.driver.DriverInstallManager
 import com.example.securequicktransferapp.domain.model.DiscoveredUsbDevice
+import com.example.usbdriverinstaller.api.IUsbDriverInstallManager
+import com.example.usbdriverinstaller.api.UsbDriverInstallerFactory
 import org.usb4java.Context
 import org.usb4java.Device
 import org.usb4java.DeviceDescriptor
@@ -21,7 +22,7 @@ import java.nio.ByteBuffer
  *   detection is active. Pass `null` to disable automatic driver prompts (e.g. in tests).
  */
 open class UsbDeviceManager(
-    val driverInstallManager: DriverInstallManager? = null
+    val driverInstallManager: IUsbDriverInstallManager? = null
 ) {
 
     private val context = Context()
@@ -181,7 +182,7 @@ open class UsbDeviceManager(
         if (!probedDevices.add(key)) return
 
         // 1. If Windows Registry already confirms a WinUSB / libusb driver is installed, skip probe entirely
-        if (com.example.securequicktransferapp.data.driver.ZadigDriverInstaller.isDriverAlreadyInstalled(vid, pid)) {
+        if (UsbDriverInstallerFactory.getDefaultInstaller().isDriverAlreadyInstalled(vid, pid)) {
             println("[UsbDeviceManager] Driver already installed for $key — skipping accessibility probe.")
             return
         }
@@ -219,7 +220,7 @@ open class UsbDeviceManager(
      * allowing the DriverInstallManager to prompt the user to install the WinUSB driver.
      */
     open fun reportDriverIssue(vendorId: Int, productId: Int, deviceName: String = "Android Device") {
-        if (com.example.securequicktransferapp.data.driver.ZadigDriverInstaller.isDriverAlreadyInstalled(vendorId, productId)) {
+        if (UsbDriverInstallerFactory.getDefaultInstaller().isDriverAlreadyInstalled(vendorId, productId)) {
             println("[UsbDeviceManager] reportDriverIssue ignored: driver already installed for VID:${String.format("%04X", vendorId)} PID:${String.format("%04X", productId)}")
             return
         }
