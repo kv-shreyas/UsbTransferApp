@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>SecureQT SDK & USB Transfer Protocol Specification</title>
+<style>
+  @page {
+    size: A4;
+    margin: 14mm 12mm 14mm 12mm;
+    @bottom-right {
+      content: counter(page);
+    }
+  }
+
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: #1e293b;
+    background-color: #ffffff;
+    font-size: 9pt;
+    line-height: 1.45;
+    margin: 0;
+    padding: 0;
+  }
+
+  h1, h2, h3, h4 {
+    color: #0f172a;
+    font-weight: 700;
+    margin-top: 14pt;
+    margin-bottom: 6pt;
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  h1 {
+    font-size: 18pt;
+    border-bottom: 2.5px solid #2563eb;
+    padding-bottom: 6pt;
+    margin-top: 0;
+  }
+
+  h2 {
+    font-size: 13pt;
+    border-bottom: 1.5px solid #cbd5e1;
+    padding-bottom: 4pt;
+    color: #1e40af;
+    margin-top: 16pt;
+  }
+
+  h3 {
+    font-size: 10.5pt;
+    color: #334155;
+    margin-top: 10pt;
+  }
+
+  p {
+    margin-top: 0;
+    margin-bottom: 6pt;
+  }
+
+  code, pre {
+    font-family: "JetBrains Mono", Consolas, "Courier New", monospace;
+  }
+
+  code {
+    background: #f1f5f9;
+    color: #0f172a;
+    padding: 1.5px 4px;
+    border-radius: 3px;
+    font-size: 8.5pt;
+    border: 1px solid #e2e8f0;
+  }
+
+  pre {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 8pt 10pt;
+    border-radius: 5px;
+    font-size: 8pt;
+    line-height: 1.35;
+    overflow-x: auto;
+    margin: 6pt 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  pre code {
+    background: transparent;
+    color: inherit;
+    padding: 0;
+    border: none;
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 8pt 0;
+    font-size: 8.5pt;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 4.5pt 6pt;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  th {
+    background: #f8fafc;
+    color: #0f172a;
+    font-weight: 600;
+  }
+
+  tr:nth-child(even) td {
+    background: #fbfcfe;
+  }
+
+  .badge {
+    display: inline-block;
+    padding: 1.5px 5px;
+    border-radius: 3px;
+    font-size: 7.5pt;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .badge-blue { background: #dbeafe; color: #1e40af; }
+  .badge-green { background: #dcfce7; color: #15803d; }
+  .badge-purple { background: #f3e8ff; color: #7e22ce; }
+  .badge-amber { background: #fef3c7; color: #b45309; }
+  .badge-red { background: #fee2e2; color: #b91c1c; }
+
+  .packet-layout {
+    display: flex;
+    width: 100%;
+    margin: 6pt 0;
+    border: 1.5px solid #475569;
+    border-radius: 4px;
+    overflow: hidden;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .packet-block {
+    padding: 5pt 3pt;
+    text-align: center;
+    border-right: 1px solid #475569;
+    font-size: 7.5pt;
+    font-family: "JetBrains Mono", Consolas, monospace;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .packet-block:last-child {
+    border-right: none;
+  }
+  .packet-block .title {
+    font-weight: bold;
+    margin-bottom: 2px;
+  }
+  .packet-block .sub {
+    font-size: 6.8pt;
+    opacity: 0.85;
+  }
+
+  .bg-hdr { background: #bae6fd; color: #0369a1; }
+  .bg-len { background: #fed7aa; color: #c2410c; }
+  .bg-iv  { background: #e9d5ff; color: #6b21a8; }
+  .bg-cmd { background: #fef08a; color: #854d0e; }
+  .bg-dat { background: #bbf7d0; color: #15803d; }
+  .bg-tag { background: #fecdd3; color: #be123c; }
+  .bg-sec { background: #ddd6fe; color: #5b21b6; }
+
+  .diagram-box {
+    background: #f8fafc;
+    border: 1.5px solid #cbd5e1;
+    border-radius: 6px;
+    padding: 10pt;
+    margin: 8pt 0;
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .header-meta {
+    font-size: 8pt;
+    color: #64748b;
+    margin-bottom: 12pt;
+    display: flex;
+    justify-content: space-between;
+    border-bottom: 1px solid #e2e8f0;
+    padding-bottom: 4pt;
+  }
+
+  .pipe-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    padding: 5pt 8pt;
+    margin: 4pt 0;
+    font-family: monospace;
+    font-size: 8pt;
+  }
+  .pipe-arrow {
+    color: #2563eb;
+    font-weight: bold;
+    padding: 0 6pt;
+  }
+
+  .avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+</style>
+</head>
+<body>
+
+<div class="header-meta">
+  <span><strong>Document Ref:</strong> SQT-PROT-SPEC-V1</span>
+  <span><strong>Package:</strong> com.example.secureqt.sdk.SecureQtSdk</span>
+  <span><strong>Standard:</strong> USB 2.0 / 3.x AOA 2.0</span>
+</div>
+
+<h1>SecureQT SDK & USB Data Transfer Protocol Specification</h1>
+<p style="font-size: 9.5pt; color: #475569; margin-top: -3pt; margin-bottom: 12pt;">
+Comprehensive architectural reference covering multiplatform SDK bindings, hardware USB communication managers, packet wire schemas, sliding window streaming, and cryptographic file pipelines.
+</p>
+
+<!-- SECTION 1 -->
+<h2>1. Executive Architecture & Component Topology</h2>
+<p>
+The <strong>SecureQT SDK</strong> provides a unified multiplatform protocol stack connecting a Desktop Host (running JVM/Compose Desktop with native <code>libusb</code>) and an Android Client (running Android Open Accessory APIs) over high-speed physical USB bulk pipes.
+</p>
+
+<div class="diagram-box">
+  <svg viewBox="0 0 740 210" style="width: 100%; height: auto; font-family: -apple-system, sans-serif;">
+    <!-- Desktop Host Box -->
+    <rect x="10" y="10" width="230" height="190" rx="6" fill="#eff6ff" stroke="#3b82f6" stroke-width="1.5"/>
+    <text x="125" y="32" font-size="11" font-weight="bold" fill="#1e40af" text-anchor="middle">Desktop Host (JVM)</text>
+    <rect x="25" y="45" width="200" height="28" rx="4" fill="#ffffff" stroke="#93c5fd"/>
+    <text x="125" y="63" font-size="8.5" fill="#1e3a8a" text-anchor="middle">UsbSessionManager (Hotplug/RefCounts)</text>
+    <rect x="25" y="80" width="200" height="28" rx="4" fill="#ffffff" stroke="#93c5fd"/>
+    <text x="125" y="98" font-size="8.5" fill="#1e3a8a" text-anchor="middle">DesktopAoaTransport (300KB Direct NIO)</text>
+    <rect x="25" y="115" width="200" height="28" rx="4" fill="#ffffff" stroke="#93c5fd"/>
+    <text x="125" y="133" font-size="8.5" fill="#1e3a8a" text-anchor="middle">SecureChannel (ECDH / AES-GCM)</text>
+    <rect x="25" y="150" width="200" height="38" rx="4" fill="#dbeafe" stroke="#3b82f6"/>
+    <text x="125" y="167" font-size="8.5" font-weight="bold" fill="#1e40af" text-anchor="middle">SecureTransferClientImpl</text>
+    <text x="125" y="180" font-size="7.5" fill="#3b82f6" text-anchor="middle">3-Stage Coroutine Pipeline</text>
+
+    <!-- Physical USB Cable -->
+    <rect x="260" y="55" width="220" height="100" rx="6" fill="#f1f5f9" stroke="#64748b" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="370" y="75" font-size="9.5" font-weight="bold" fill="#334155" text-anchor="middle">Physical USB Cable (AOA Mode)</text>
+    
+    <!-- Pipe Arrows -->
+    <line x1="225" y1="95" x2="275" y2="95" stroke="#2563eb" stroke-width="2" marker-end="url(#arrow)"/>
+    <rect x="280" y="86" width="180" height="22" rx="3" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="370" y="101" font-size="7.5" fill="#0f172a" text-anchor="middle">Bulk OUT (0x01) — 256KB Chunks &rarr;</text>
+
+    <line x1="515" y1="130" x2="465" y2="130" stroke="#059669" stroke-width="2"/>
+    <rect x="280" y="118" width="180" height="22" rx="3" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="370" y="133" font-size="7.5" fill="#0f172a" text-anchor="middle">&larr; Bulk IN (0x81) — 16KB usbfs Bursts</text>
+
+    <!-- Android Client Box -->
+    <rect x="500" y="10" width="230" height="190" rx="6" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+    <text x="615" y="32" font-size="11" font-weight="bold" fill="#065f46" text-anchor="middle">Android Client (AOA Device)</text>
+    <rect x="515" y="45" width="200" height="28" rx="4" fill="#ffffff" stroke="#a7f3d0"/>
+    <text x="615" y="63" font-size="8.5" fill="#064e3b" text-anchor="middle">UsbConnectionManager (ParcelFD/Endpoints)</text>
+    <rect x="515" y="80" width="200" height="28" rx="4" fill="#ffffff" stroke="#a7f3d0"/>
+    <text x="615" y="98" font-size="8.5" fill="#064e3b" text-anchor="middle">AndroidAoaTransport (16KB Burst Slicer)</text>
+    <rect x="515" y="115" width="200" height="28" rx="4" fill="#ffffff" stroke="#a7f3d0"/>
+    <text x="615" y="133" font-size="8.5" fill="#064e3b" text-anchor="middle">SlidingWindowBuffer (5MB Circular Buffer)</text>
+    <rect x="515" y="150" width="200" height="38" rx="4" fill="#d1fae5" stroke="#10b981"/>
+    <text x="615" y="167" font-size="8.5" font-weight="bold" fill="#065f46" text-anchor="middle">UsbCommandProcessor</text>
+    <text x="615" y="180" font-size="7.5" fill="#059669" text-anchor="middle">SmartNavStorage Sink / Foreground Service</text>
+  </svg>
+</div>
+
+<p>
+The SDK entry point is <code>com.example.secureqt.sdk.SecureQtSdk</code>, exposing the foundational protocol modules:
+</p>
+<pre><code>val Commands = CommandConstants   // Inner encrypted RPC command byte IDs
+val Packets  = PacketTypes        // 5-byte framing envelope packet type markers
+val Codec    = PacketCodec        // Binary framing, length decoders, and zero-copy encoders
+val Utils    = FormatUtils        // High-speed string, size, and speed formatting helpers</code></pre>
+
+<!-- SECTION 2 -->
+<h2>2. End-to-End Packet Structures & Binary Schemas</h2>
+<p>
+All USB traffic is structured in a two-tier framing protocol: outer <strong>Transport Wire Envelopes</strong> managed by <code>PacketCodec</code>, and inner <strong>Encrypted Application Payloads</strong> carrying file blocks or <code>CommandConstants</code>.
+</p>
+
+<h3>2.1 Universal Wire Header (5 Bytes)</h3>
+<p>Every frame on the USB bus begins with this fixed 5-byte sequence:</p>
+<div class="packet-layout">
+  <div class="packet-block bg-hdr" style="width: 25%;">
+    <span class="title">Type Byte (1B)</span>
+    <span class="sub">Offset 0 (uint8)</span>
+  </div>
+  <div class="packet-block bg-len" style="width: 75%;">
+    <span class="title">Payload Length N (4 Bytes, Big-Endian)</span>
+    <span class="sub">Offset 1..4 (uint32) — Total body size following header</span>
+  </div>
+</div>
+
+<h3>2.2 Detailed Envelope Packet Types (`PacketTypes`)</h3>
+
+<div class="avoid-break">
+  <h4>A. `TYPE_PUBLIC_KEY` (0x01) — ECDH P-256 Public Key Handshake</h4>
+  <p>Transmitted unencrypted during initial pairing. Carries SEC1 uncompressed point format (65 bytes):</p>
+  <div class="packet-layout">
+    <div class="packet-block bg-hdr" style="width: 10%;"><span class="title">0x01</span><span class="sub">1B</span></div>
+    <div class="packet-block bg-len" style="width: 15%;"><span class="title">Len = 65</span><span class="sub">4B (BE)</span></div>
+    <div class="packet-block bg-sec" style="width: 10%;"><span class="title">0x04</span><span class="sub">SEC1 Tag</span></div>
+    <div class="packet-block bg-sec" style="width: 32.5%;"><span class="title">EC Coordinate X (32 Bytes)</span><span class="sub">Big-Endian Scalar</span></div>
+    <div class="packet-block bg-sec" style="width: 32.5%;"><span class="title">EC Coordinate Y (32 Bytes)</span><span class="sub">Big-Endian Scalar</span></div>
+  </div>
+  <p style="font-size: 7.8pt; color: #64748b; margin-top: 2pt;">Total on-wire size: <strong>70 bytes</strong> (5 bytes header + 65 bytes payload).</p>
+</div>
+
+<div class="avoid-break" style="margin-top: 8pt;">
+  <h4>B. `TYPE_DATA` (0x02) — Authenticated Encrypted Payload (AES-256-GCM)</h4>
+  <p>Transports all encrypted commands, queries, responses, and 256KB file streaming blocks:</p>
+  <div class="packet-layout">
+    <div class="packet-block bg-hdr" style="width: 8%;"><span class="title">0x02</span><span class="sub">1B</span></div>
+    <div class="packet-block bg-len" style="width: 14%;"><span class="title">Length N</span><span class="sub">4B (BE)</span></div>
+    <div class="packet-block bg-iv"  style="width: 18%;"><span class="title">IV / Nonce (12 Bytes)</span><span class="sub">SecureRandom per packet</span></div>
+    <div class="packet-block bg-dat" style="width: 44%;"><span class="title">AES-GCM Ciphertext (C Bytes)</span><span class="sub">Payload data (commands or 256KB chunk)</span></div>
+    <div class="packet-block bg-tag" style="width: 16%;"><span class="title">Auth Tag (16B)</span><span class="sub">Poly1305 / GHASH</span></div>
+  </div>
+  <p style="font-size: 7.8pt; color: #64748b; margin-top: 2pt;">
+    Total on-wire size for a 256KB chunk: <strong>262,177 bytes</strong> (5B header + 12B IV + 262,144B ciphertext + 16B tag). Total overhead = exactly 33 bytes.
+  </p>
+</div>
+
+<div class="avoid-break" style="margin-top: 8pt;">
+  <h4>C. `TYPE_EOF` (0x03) — Stream Termination Delimiter</h4>
+  <p>Dispatched immediately after the final file chunk or dynamic ZIP stream to gracefully close sinks:</p>
+  <div class="packet-layout">
+    <div class="packet-block bg-hdr" style="width: 25%;"><span class="title">0x03 (TYPE_EOF)</span><span class="sub">1 Byte</span></div>
+    <div class="packet-block bg-len" style="width: 75%;"><span class="title">Length = 0 (0x00000000)</span><span class="sub">4 Bytes</span></div>
+  </div>
+  <p style="font-size: 7.8pt; color: #64748b; margin-top: 2pt;">Total on-wire size: <strong>5 bytes</strong> (Zero payload).</p>
+</div>
+
+<div class="avoid-break" style="margin-top: 8pt;">
+  <h4>D. `TYPE_PING` (0x04) & `TYPE_CANCEL` (0x06) — Control Packets</h4>
+  <table style="margin-top: 4pt;">
+    <tr>
+      <th style="width: 18%;">Packet Constant</th>
+      <th style="width: 12%;">Type Byte</th>
+      <th style="width: 15%;">Payload Len</th>
+      <th>Semantic Wire Behavior</th>
+    </tr>
+    <tr>
+      <td><code>TYPE_PING</code></td>
+      <td><code>0x04</code></td>
+      <td><code>0 Bytes</code></td>
+      <td>Heartbeat / Ready ACK signal transmitted during handshake and mode switches.</td>
+    </tr>
+    <tr>
+      <td><code>TYPE_ERROR</code></td>
+      <td><code>0x05</code></td>
+      <td><code>N Bytes</code></td>
+      <td>Carries UTF-8 error string; peer cancels pending job and triggers UI error callback.</td>
+    </tr>
+    <tr>
+      <td><code>TYPE_CANCEL</code></td>
+      <td><code>0x06</code></td>
+      <td><code>0 Bytes</code></td>
+      <td>High-priority abort frame; immediately stops active read/write jobs and purges partial files.</td>
+    </tr>
+  </table>
+</div>
+
+<!-- SECTION 3 -->
+<h2>3. Application Command Packets (`CommandConstants`)</h2>
+<p>
+Application commands are encapsulated <em>inside</em> the decrypted plaintext of <code>TYPE_DATA</code> packets:
+</p>
+
+<table style="margin-top: 4pt;">
+  <tr>
+    <th style="width: 22%;">Command Constant</th>
+    <th style="width: 8%;">ID</th>
+    <th style="width: 35%;">Plaintext Payload Schema</th>
+    <th>Response Schema</th>
+  </tr>
+  <tr>
+    <td><code>CMD_LIST_DIR</code></td>
+    <td><code>0x00</code></td>
+    <td><code>[0x00][4B PathLen][UTF-8 Path]</code></td>
+    <td><code>[4B Count M]</code>, then $M$ packets: <code>[1B isDir][8B Size][4B NameLen][UTF-8 Name]</code></td>
+  </tr>
+  <tr>
+    <td><code>CMD_SEND_FILE_START</code></td>
+    <td><code>0x01</code></td>
+    <td><code>[0x01][4B PathLen][UTF-8 Path][8B TotalFileSize]</code></td>
+    <td>Passive listener opens <code>FileOutputStream</code>, then receives 256KB <code>TYPE_DATA</code> chunks.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_FETCH_FILE_START</code></td>
+    <td><code>0x02</code></td>
+    <td><code>[0x02][4B PathLen][UTF-8 Path]</code></td>
+    <td><code>[8B FileSize]</code>, followed by continuous 256KB <code>TYPE_DATA</code> chunks until <code>TYPE_EOF</code>.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_FETCH_DIR_ZIP_START</code></td>
+    <td><code>0x03</code></td>
+    <td><code>[0x03][4B PathLen][UTF-8 Path]</code></td>
+    <td><code>[8B 0L]</code>, followed by dynamic on-the-fly ZIP stream chunks until <code>TYPE_EOF</code>.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_DISCONNECT</code></td>
+    <td><code>0x04</code></td>
+    <td><code>[0x04]</code> (1 Byte)</td>
+    <td>Peer resets cryptographic session, flushes buffers, and closes descriptor.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_SEND_DIR_ZIP_START</code></td>
+    <td><code>0x05</code></td>
+    <td><code>[0x05][4B PathLen][UTF-8 Path][8B 0L]</code></td>
+    <td>Sender streams dynamic ZIP chunks; receiver unzips on-the-fly to target directory.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_DELETE_FILE</code></td>
+    <td><code>0x06</code></td>
+    <td><code>[0x06][4B PathLen][UTF-8 Path]</code></td>
+    <td><code>[1B Status]</code>: <code>0x01</code> = Success, <code>0x00</code> = Failed.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_RENAME_FILE</code></td>
+    <td><code>0x07</code></td>
+    <td><code>[0x07][4B OldLen][OldPath][4B NewLen][NewName]</code></td>
+    <td><code>[1B Status]</code>: <code>0x01</code> = Success, <code>0x00</code> = Failed.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_CREATE_FOLDER</code></td>
+    <td><code>0x08</code></td>
+    <td><code>[0x08][4B PathLen][UTF-8 Path]</code></td>
+    <td><code>[1B Status]</code>: <code>0x01</code> = Success, <code>0x00</code> = Failed.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_SET_DEVICE_ID</code></td>
+    <td><code>0x09</code></td>
+    <td><code>[0x09][4B IdLen][UTF-8 DeviceIdentifier]</code></td>
+    <td>Registers remote device hardware ID into UI session map.</td>
+  </tr>
+  <tr>
+    <td><code>CMD_CANCEL_TRANSFER</code></td>
+    <td><code>0x0F</code></td>
+    <td><code>[0x0F]</code> (1 Byte)</td>
+    <td>Application-level abort; peer stops loop and deletes incomplete target file.</td>
+  </tr>
+</table>
+
+<!-- SECTION 4 -->
+<h2>4. Sliding Window Buffer (`SlidingWindowBuffer`)</h2>
+<p>
+Due to USB packet coalescing and fragmentation across OS kernel boundaries, reads rarely return full logical frames. 
+<code>SlidingWindowBuffer</code> preallocates a contiguous <strong>5 MB circular memory slab</strong>, utilizing moving cursor pointers to eliminate memory churn and garbage collection halts:
+</p>
+
+<div class="diagram-box">
+  <svg viewBox="0 0 740 135" style="width: 100%; height: auto; font-family: monospace;">
+    <!-- Buffer Outline -->
+    <rect x="20" y="25" width="700" height="40" rx="4" fill="#f8fafc" stroke="#475569" stroke-width="1.5"/>
+    
+    <!-- Consumed Region -->
+    <rect x="20" y="25" width="130" height="40" fill="#e2e8f0"/>
+    <text x="85" y="49" font-size="9" fill="#64748b" text-anchor="middle">Stale Consumed Bytes</text>
+
+    <!-- Valid Unread Data -->
+    <rect x="150" y="25" width="340" height="40" fill="#bbf7d0" stroke="#16a34a" stroke-width="1.5"/>
+    <text x="320" y="49" font-size="10" font-weight="bold" fill="#14532d" text-anchor="middle">Available Stream Data (size = tail - head)</text>
+
+    <!-- Free Capacity -->
+    <text x="605" y="49" font-size="9" fill="#94a3b8" text-anchor="middle">Free Space to Capacity (5MB)</text>
+
+    <!-- Head Pointer -->
+    <line x1="150" y1="20" x2="150" y2="70" stroke="#dc2626" stroke-width="2"/>
+    <polygon points="150,20 145,10 155,10" fill="#dc2626"/>
+    <text x="150" y="85" font-size="9" font-weight="bold" fill="#dc2626" text-anchor="middle">head (Read Cursor)</text>
+
+    <!-- Tail Pointer -->
+    <line x1="490" y1="20" x2="490" y2="70" stroke="#2563eb" stroke-width="2"/>
+    <polygon points="490,20 485,10 495,10" fill="#2563eb"/>
+    <text x="490" y="85" font-size="9" font-weight="bold" fill="#2563eb" text-anchor="middle">tail (Write Cursor)</text>
+
+    <!-- Indices -->
+    <text x="20" y="85" font-size="8.5" fill="#64748b">Index 0</text>
+    <text x="720" y="85" font-size="8.5" fill="#64748b" text-anchor="end">5,242,880 Bytes</text>
+    <text x="370" y="118" font-size="8" fill="#475569" text-anchor="middle">Compaction: System.arraycopy(buffer, head, buffer, 0, tail - head); head = 0; tail = size</text>
+  </svg>
+</div>
+
+<div class="avoid-break">
+  <h4>Framing Ingestion Sequence:</h4>
+  <ol style="margin-top: 2pt; padding-left: 18pt;">
+    <li>Incoming raw USB chunks are appended via <code>append(data, 0, len)</code>, advancing <code>tail</code>.</li>
+    <li><code>has(5)</code> validates header availability. <code>take(5)</code> extracts envelope bytes; <code>head</code> advances by 5.</li>
+    <li>Payload length $N$ is decoded via <code>Codec.decodePayloadLength(header)</code>.</li>
+    <li>The loop suspends until <code>has(N)</code> is true. <code>take(N)</code> yields the payload with zero intermediary copies.</li>
+    <li>When <code>tail + incoming > buffer.size</code>, <code>compact()</code> shifts active bytes to index 0.</li>
+  </ol>
+</div>
+
+<!-- SECTION 5 -->
+<h2>5. End-to-End File Transfer Pipeline & Line Diagram</h2>
+<p>
+File transfer utilizes an asynchronous 3-stage coroutine pipeline decoupling disk I/O, parallel cryptography, and physical USB writing:
+</p>
+
+<div class="diagram-box">
+  <div style="font-weight: bold; font-size: 8.5pt; color: #1e40af; margin-bottom: 6pt;">Producer-Consumer Channel Pipeline:</div>
+  <div class="pipe-row">
+    <span>Disk Reader Coroutine (Dispatchers.IO)</span>
+    <span class="pipe-arrow">&rarr; Channel&lt;ByteArray&gt;(capacity = 32) &rarr;</span>
+    <span>AES-GCM Encryptor (Dispatchers.Default)</span>
+  </div>
+  <div class="pipe-row">
+    <span>AES-GCM Encryptor</span>
+    <span class="pipe-arrow">&rarr; Channel&lt;ByteArray&gt;(capacity = 32) &rarr;</span>
+    <span>USB Bulk Writer (Dispatchers.IO)</span>
+  </div>
+</div>
+
+<h3>5.1 Detailed File Transfer Sequence & Timing Diagram</h3>
+<div class="diagram-box">
+  <svg viewBox="0 0 740 280" style="width: 100%; height: auto; font-family: -apple-system, sans-serif; font-size: 8pt;">
+    <!-- Columns -->
+    <line x1="120" y1="30" x2="120" y2="260" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+    <line x1="370" y1="30" x2="370" y2="260" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+    <line x1="620" y1="30" x2="620" y2="260" stroke="#cbd5e1" stroke-width="1.5" stroke-dasharray="4,4"/>
+
+    <!-- Column Headers -->
+    <rect x="30" y="8" width="180" height="24" rx="4" fill="#eff6ff" stroke="#3b82f6"/>
+    <text x="120" y="24" font-weight="bold" fill="#1e40af" text-anchor="middle">Desktop Host (Sender)</text>
+
+    <rect x="280" y="8" width="180" height="24" rx="4" fill="#f8fafc" stroke="#64748b"/>
+    <text x="370" y="24" font-weight="bold" fill="#334155" text-anchor="middle">USB Bulk Pipe (AOA)</text>
+
+    <rect x="530" y="8" width="180" height="24" rx="4" fill="#ecfdf5" stroke="#10b981"/>
+    <text x="620" y="24" font-weight="bold" fill="#065f46" text-anchor="middle">Android Client (Receiver)</text>
+
+    <!-- Flow 1: CMD_SEND_FILE_START -->
+    <line x1="120" y1="50" x2="615" y2="50" stroke="#2563eb" stroke-width="1.5"/>
+    <polygon points="620,50 612,46 612,54" fill="#2563eb"/>
+    <text x="370" y="45" fill="#1e40af" text-anchor="middle" font-weight="bold">1. CMD_SEND_FILE_START [Path: "video.mp4" | Size: 1,048,576 Bytes]</text>
+
+    <rect x="540" y="58" width="160" height="20" rx="3" fill="#ffffff" stroke="#a7f3d0"/>
+    <text x="620" y="72" font-size="7.5" fill="#065f46" text-anchor="middle">Open FileOutputStream(target)</text>
+
+    <!-- Flow 2: Chunk 0 -->
+    <line x1="120" y1="95" x2="615" y2="95" stroke="#059669" stroke-width="1.5"/>
+    <polygon points="620,95 612,91 612,99" fill="#059669"/>
+    <text x="370" y="90" fill="#065f46" text-anchor="middle">2. TYPE_DATA Chunk 0 [262,177 Bytes: IV + Encrypted 256KB + Tag]</text>
+
+    <rect x="540" y="103" width="160" height="20" rx="3" fill="#ffffff" stroke="#a7f3d0"/>
+    <text x="620" y="117" font-size="7.5" fill="#065f46" text-anchor="middle">Decrypt & Write to Disk (256KB)</text>
+
+    <!-- Flow 3: Chunk 1 -->
+    <line x1="120" y1="140" x2="615" y2="140" stroke="#059669" stroke-width="1.5"/>
+    <polygon points="620,140 612,136 612,144" fill="#059669"/>
+    <text x="370" y="135" fill="#065f46" text-anchor="middle">3. TYPE_DATA Chunk 1 [262,177 Bytes: 256KB..512KB]</text>
+
+    <!-- Dots -->
+    <text x="370" y="170" font-size="12" fill="#64748b" text-anchor="middle">. . . . (Streaming Chunks 2 & 3) . . . .</text>
+
+    <!-- Flow 4: TYPE_EOF -->
+    <line x1="120" y1="200" x2="615" y2="200" stroke="#7c3aed" stroke-width="1.5"/>
+    <polygon points="620,200 612,196 612,204" fill="#7c3aed"/>
+    <text x="370" y="195" fill="#5b21b6" text-anchor="middle" font-weight="bold">4. TYPE_EOF [5 Bytes: Type 0x03, Length 0]</text>
+
+    <rect x="540" y="208" width="160" height="28" rx="3" fill="#d1fae5" stroke="#10b981"/>
+    <text x="620" y="222" font-size="7.5" font-weight="bold" fill="#065f46" text-anchor="middle">Flush & Close File Stream</text>
+    <text x="620" y="232" font-size="7" fill="#059669" text-anchor="middle">Progress: 100% (Transfer Finished)</text>
+  </svg>
+</div>
+
+<!-- SECTION 6 -->
+<h2>6. Zero-Disk Streaming Directory ZIP Pipeline</h2>
+<p>
+Recursive folder transfers avoid creating temporary archive files on disk by utilizing inter-thread piped memory streams on both ends:
+</p>
+<div class="diagram-box">
+  <div class="pipe-row">
+    <strong>Sender Pipeline:</strong>
+    <span><code>localDir.walkTopDown()</code></span>
+    <span class="pipe-arrow">&rarr;</span>
+    <span><code>ZipOutputStream</code></span>
+    <span class="pipe-arrow">&rarr;</span>
+    <span><code>PipedOutputStream / PipedInputStream</code></span>
+    <span class="pipe-arrow">&rarr;</span>
+    <span>256KB <code>TYPE_DATA</code></span>
+  </div>
+  <div class="pipe-row" style="margin-top: 6pt;">
+    <strong>Receiver Pipeline:</strong>
+    <span><code>TYPE_DATA</code> Chunks</span>
+    <span class="pipe-arrow">&rarr;</span>
+    <span><code>PipedOutputStream / PipedInputStream</code></span>
+    <span class="pipe-arrow">&rarr;</span>
+    <span><code>ZipInputStream</code></span>
+    <span class="pipe-arrow">&rarr;</span>
+    <span>Extract Entries to Target Folder</span>
+  </div>
+</div>
+
+<!-- SECTION 7 -->
+<h2>7. Summary Technical Reference</h2>
+<table>
+  <tr>
+    <th>Specification Parameter</th>
+    <th>Value / Limit</th>
+    <th>Subsystem Reference</th>
+  </tr>
+  <tr>
+    <td><strong>Physical USB Transport</strong></td>
+    <td>Android Open Accessory (AOA) 2.0 Bulk IN / OUT</td>
+    <td><code>DesktopAoaTransport</code> / <code>AndroidAoaTransport</code></td>
+  </tr>
+  <tr>
+    <td><strong>Android usbfs Safe Burst</strong></td>
+    <td>16,384 Bytes (16 KB safe physical burst)</td>
+    <td><code>AndroidAoaTransport.MAX_USBFS_BURST_SIZE</code></td>
+  </tr>
+  <tr>
+    <td><strong>Desktop Direct NIO Buffer</strong></td>
+    <td>307,200 Bytes (300 KB off-heap direct buffer)</td>
+    <td><code>DesktopAoaTransport.readBuffer</code></td>
+  </tr>
+  <tr>
+    <td><strong>Sliding Window Slab</strong></td>
+    <td>5,242,880 Bytes (5 MB preallocated circular buffer)</td>
+    <td><code>SlidingWindowBuffer</code></td>
+  </tr>
+  <tr>
+    <td><strong>Frame Header Size</strong></td>
+    <td>5 Bytes (1-Byte Type + 4-Byte Payload Length BE)</td>
+    <td><code>PacketCodec.HEADER_SIZE</code></td>
+  </tr>
+  <tr>
+    <td><strong>Encryption Suite</strong></td>
+    <td>ECDH P-256 Key Exchange + AES-256-GCM</td>
+    <td><code>SecureSession</code> / <code>AesGcmEngine</code></td>
+  </tr>
+  <tr>
+    <td><strong>Crypto Overhead per Packet</strong></td>
+    <td>33 Bytes (5B Header + 12B IV + 16B Poly1305 Tag)</td>
+    <td><code>PacketCodec.encodeDataPacket()</code></td>
+  </tr>
+  <tr>
+    <td><strong>Transfer Block Size</strong></td>
+    <td>262,144 Bytes (256 KB logical file chunks)</td>
+    <td><code>SecureTransferClientImpl.CHUNK_SIZE</code></td>
+  </tr>
+</table>
+
+</body>
+</html>
