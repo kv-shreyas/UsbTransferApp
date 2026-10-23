@@ -2,7 +2,6 @@ package com.example.securequicktransferapp.data.usb
 
 import com.example.securequicktransferapp.domain.model.DiscoveredUsbDevice
 import com.example.usbdriverinstaller.api.IUsbDriverInstallManager
-import com.example.usbdriverinstaller.api.UsbDriverInstallerFactory
 import org.usb4java.Context
 import org.usb4java.Device
 import org.usb4java.DeviceDescriptor
@@ -83,8 +82,8 @@ open class UsbDeviceManager(
      * Uses LibUsb.getBusNumber, LibUsb.getPortNumber, and LibUsb.getPortNumbers for hub hierarchy.
      */
     private fun getHardwareIdentifier(device: Device): Triple<String, Int, Int> {
-        val busNumber = LibUsb.getBusNumber(device).toInt() and 0xFF
-        val portNumber = LibUsb.getPortNumber(device).toInt() and 0xFF
+        val busNumber = LibUsb.getBusNumber(device) and 0xFF
+        val portNumber = LibUsb.getPortNumber(device) and 0xFF
 
         val pathBuffer = ByteBuffer.allocateDirect(7)
         val numPorts = LibUsb.getPortNumbers(device, pathBuffer)
@@ -179,13 +178,7 @@ open class UsbDeviceManager(
      */
     private fun probeDeviceAccessibility(device: Device, vid: Int, pid: Int, deviceName: String) {
         val key = "VID_${String.format("%04X", vid)}_PID_${String.format("%04X", pid)}"
-        if (!probedDevices.add(key)) return
-
-        // 1. If Windows Registry already confirms a WinUSB / libusb driver is installed, skip probe entirely
-        if (UsbDriverInstallerFactory.getDefaultInstaller().isDriverAlreadyInstalled(vid, pid)) {
-            println("[UsbDeviceManager] Driver already installed for $key — skipping accessibility probe.")
-            return
-        }
+        if (!probedDevices.add(key)) return        // Probe device directly via LibUsb.open (true physical test of driver availability)
 
         val tempHandle = DeviceHandle()
         val openResult = LibUsb.open(device, tempHandle)
@@ -220,10 +213,7 @@ open class UsbDeviceManager(
      * allowing the DriverInstallManager to prompt the user to install the WinUSB driver.
      */
     open fun reportDriverIssue(vendorId: Int, productId: Int, deviceName: String = "Android Device") {
-        if (UsbDriverInstallerFactory.getDefaultInstaller().isDriverAlreadyInstalled(vendorId, productId)) {
-            println("[UsbDeviceManager] reportDriverIssue ignored: driver already installed for VID:${String.format("%04X", vendorId)} PID:${String.format("%04X", productId)}")
-            return
-        }
+        println("[UsbDeviceManager] reportDriverIssue: notifying DriverInstallManager for VID:${String.format("%04X", vendorId)} PID:${String.format("%04X", productId)}")
         driverInstallManager?.onDeviceNeedsDriver(vendorId, productId, deviceName)
     }
 

@@ -17,6 +17,17 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
 
     private val tag = "ZadigDriverInstaller"
 
+    private fun getSystemExe(relativeSubpath: String): String {
+        val sysRoot = System.getenv("SystemRoot") ?: System.getenv("WINDIR") ?: "C:\\Windows"
+        val file = File(sysRoot, relativeSubpath)
+        return if (file.exists()) file.absolutePath else file.name
+    }
+
+    private val powershellExe get() = getSystemExe("System32\\WindowsPowerShell\\v1.0\\powershell.exe")
+    private val cmdExe get() = getSystemExe("System32\\cmd.exe")
+    private val pnputilExe get() = getSystemExe("System32\\pnputil.exe")
+    private val regExe get() = getSystemExe("System32\\reg.exe")
+
     override fun isWindows(): Boolean {
         return System.getProperty("os.name")?.lowercase()?.contains("win") == true
     }
@@ -30,7 +41,7 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
 
             // Query Windows Registry SetupAPI for the active driver service
             val process = ProcessBuilder(
-                "reg", "query",
+                regExe, "query",
                 "HKLM\\SYSTEM\\CurrentControlSet\\Enum\\USB\\VID_${vidStr}&PID_${pidStr}",
                 "/s", "/f", "Service", "/t", "REG_SZ"
             )
@@ -66,11 +77,6 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
         val vidClean = String.format("%04X", vendorId)
         val pidClean = String.format("%04X", productId)
 
-        if (isDriverAlreadyInstalled(vendorId, productId)) {
-            println("[$tag] WinUSB driver is already installed for VID=$vidHex PID=$pidHex — skipping redundant installation.")
-            return DriverInstallResult.Success
-        }
-
         println("[$tag] Starting WinUSB installation for VID=$vidHex PID=$pidHex ($deviceName)...")
 
         // 1. Extract wdi-simple.exe
@@ -100,22 +106,34 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
             appendLine("echo [USB Driver Installer] Starting driver setup for VID $vidClean PID $pidClean... >> \"${logFile.absolutePath}\"")
 
             // A. Remove conflicting ssudbus (Samsung) or usbser (CDC serial) drivers for this PID
-            appendLine("powershell -NoProfile -Command \"Get-ChildItem 'C:\\Windows\\INF\\oem*.inf' | ForEach-Object { \$c = Get-Content \$_.FullName -Raw -ErrorAction SilentlyContinue; if (\$c -match '$pidClean' -and (\$c -match 'usbser' -or \$c -match 'ssudbus')) { Write-Host 'Removing conflicting driver:' \$_.Name; pnputil /delete-driver \$_.Name /uninstall /force } }\" >> \"${logFile.absolutePath}\" 2>&1")
+            appendLine("\"$powershellExe\" -NoProfile -Command \"Get-ChildItem 'C:\\Windows\\INF\\oem*.inf' -ErrorAction SilentlyContinue | ForEach-Object { \$c = Get-Content \$_.FullName -Raw -ErrorAction SilentlyContinue; if (\$c -match '$pidClean' -and (\$c -match 'usbser' -or \$c -match 'ssudbus')) { Write-Host 'Removing conflicting driver:' \$_.Name; & '$pnputilExe' /delete-driver \$_.Name /uninstall /force } }\" >> \"${logFile.absolutePath}\" 2>&1")
 
-            // B. Register certificates into TrustedPublisher and Root
-            appendLine("powershell -NoProfile -Command \"if (Test-Path '$forwardSlashPath/aoa_driver.cer') { Import-Certificate -FilePath '$forwardSlashPath/aoa_driver.cer' -CertStoreLocation 'Cert:\\LocalMachine\\TrustedPublisher' | Out-Null; Import-Certificate -FilePath '$forwardSlashPath/aoa_driver.cer' -CertStoreLocation 'Cert:\\LocalMachine\\Root' | Out-Null }\" >> \"${logFile.absolutePath}\" 2>&1")
-            appendLine("powershell -NoProfile -Command \"Get-ChildItem '$forwardSlashPath/*.cat' | ForEach-Object { try { \$sig = Get-AuthenticodeSignature \$_.FullName; if (\$sig.SignerCertificate) { \$store = Get-Item -Path 'Cert:\\LocalMachine\\TrustedPublisher'; \$store.Open('ReadWrite'); \$store.Add(\$sig.SignerCertificate); \$store.Close() } } catch {} }\" >> \"${logFile.absolutePath}\" 2>&1")
+            // B. Direct automated driver installation via bundled wdi-simple.exe
+            appendLine("echo [USB Driver Installer] Running wdi-simple.exe for VID $vidHex PID $pidHex... >> \"${logFile.absolutePath}\"")
+            appendLine("\"${wdiExe.absolutePath}\" -n \"$deviceName\" -m \"Android\" -v $vidHex -p $pidHex -t 0 -s --stealth-cert >> \"${logFile.absolutePath}\" 2>&1")
 
-            // C. Install bundled WinUSB driver packages via PnPUtil
-            appendLine("if exist \"${driverOutputDir.absolutePath}\\Android_Accessory_Interface.inf\" pnputil /add-driver \"${driverOutputDir.absolutePath}\\Android_Accessory_Interface.inf\" /install >> \"${logFile.absolutePath}\" 2>&1")
-            appendLine("if exist \"${driverOutputDir.absolutePath}\\Android_Accessory_Interface_(Interface_0).inf\" pnputil /add-driver \"${driverOutputDir.absolutePath}\\Android_Accessory_Interface_(Interface_0).inf\" /install >> \"${logFile.absolutePath}\" 2>&1")
+            // C. Pre-install drivers for both 0x2D00 and 0x2D01 if VID is 18D1
+            if (vidClean.equals("18D1", ignoreCase = true)) {
+                appendLine("echo [USB Driver Installer] Ensuring AOA standard PIDs (2D00, 2D01) are bound... >> \"${logFile.absolutePath}\"")
+                appendLine("\"${wdiExe.absolutePath}\" -n \"Android Open Accessory\" -m \"Google, Inc.\" -v 0x18D1 -p 0x2D00 -t 0 -s --stealth-cert >> \"${logFile.absolutePath}\" 2>&1")
+                appendLine("\"${wdiExe.absolutePath}\" -n \"Android Open Accessory\" -m \"Google, Inc.\" -v 0x18D1 -p 0x2D01 -t 0 -s --stealth-cert >> \"${logFile.absolutePath}\" 2>&1")
+            }
 
-            // D. Rescan and restart USB devices
+            // D. Fallback: Register certificates into TrustedPublisher and Root, then add INF via pnputil
+            appendLine("\"$powershellExe\" -NoProfile -Command \"if (Test-Path '$forwardSlashPath/aoa_driver.cer') { Import-Certificate -FilePath '$forwardSlashPath/aoa_driver.cer' -CertStoreLocation 'Cert:\\LocalMachine\\TrustedPublisher' | Out-Null; Import-Certificate -FilePath '$forwardSlashPath/aoa_driver.cer' -CertStoreLocation 'Cert:\\LocalMachine\\Root' | Out-Null }\" >> \"${logFile.absolutePath}\" 2>&1")
+            appendLine("\"$powershellExe\" -NoProfile -Command \"Get-ChildItem '$forwardSlashPath/*.cat' -ErrorAction SilentlyContinue | ForEach-Object { try { \$sig = Get-AuthenticodeSignature \$_.FullName; if (\$sig.SignerCertificate) { \$store = Get-Item -Path 'Cert:\\LocalMachine\\TrustedPublisher'; \$store.Open('ReadWrite'); \$store.Add(\$sig.SignerCertificate); \$store.Close() } } catch {} }\" >> \"${logFile.absolutePath}\" 2>&1")
+
+            appendLine("if exist \"${driverOutputDir.absolutePath}\\Android_Accessory_Interface.inf\" \"$pnputilExe\" /add-driver \"${driverOutputDir.absolutePath}\\Android_Accessory_Interface.inf\" /install >> \"${logFile.absolutePath}\" 2>&1")
+            appendLine("if exist \"${driverOutputDir.absolutePath}\\Android_Accessory_Interface_(Interface_0).inf\" \"$pnputilExe\" /add-driver \"${driverOutputDir.absolutePath}\\Android_Accessory_Interface_(Interface_0).inf\" /install >> \"${logFile.absolutePath}\" 2>&1")
+
+            // E. Rescan and restart USB devices
             appendLine("echo [USB Driver Installer] Rescanning and restarting USB devices for $vidClean:$pidClean... >> \"${logFile.absolutePath}\"")
-            appendLine("pnputil /scan-devices >> \"${logFile.absolutePath}\" 2>&1")
-            appendLine("pnputil /restart-device /deviceid \"USB\\VID_$vidClean&PID_$pidClean\" >> \"${logFile.absolutePath}\" 2>&1")
-            appendLine("pnputil /restart-device /deviceid \"USB\\VID_$vidClean&PID_$pidClean&MI_00\" >> \"${logFile.absolutePath}\" 2>&1")
-            appendLine("echo [USB Driver Installer] WinUSB driver successfully installed. >> \"${logFile.absolutePath}\"")
+            appendLine("\"$pnputilExe\" /scan-devices >> \"${logFile.absolutePath}\" 2>&1")
+            appendLine("\"$pnputilExe\" /restart-device /deviceid \"USB\\VID_$vidClean&PID_$pidClean\" >> \"${logFile.absolutePath}\" 2>&1")
+            appendLine("\"$pnputilExe\" /restart-device /deviceid \"USB\\VID_$vidClean&PID_$pidClean&MI_00\" >> \"${logFile.absolutePath}\" 2>&1")
+            appendLine("\"$pnputilExe\" /restart-device /deviceid \"USB\\VID_18D1&PID_2D00\" >> \"${logFile.absolutePath}\" 2>&1")
+            appendLine("\"$pnputilExe\" /restart-device /deviceid \"USB\\VID_18D1&PID_2D01\" >> \"${logFile.absolutePath}\" 2>&1")
+            appendLine("echo [USB Driver Installer] WinUSB driver setup completed. >> \"${logFile.absolutePath}\"")
             appendLine("exit /b 0")
         }
         batchFile.writeText(batchContent, Charsets.UTF_8)
@@ -125,7 +143,7 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
             appendLine("\$ErrorActionPreference = 'Stop'")
             appendLine("\$batchPath = Join-Path \$PSScriptRoot 'run_install.bat'")
             appendLine("try {")
-            appendLine("    \$proc = Start-Process -FilePath 'cmd.exe' -ArgumentList @('/c', \"`\"\$batchPath`\"\") -Verb RunAs -Wait -PassThru -WindowStyle Hidden")
+            appendLine("    \$proc = Start-Process -FilePath '$cmdExe' -ArgumentList @('/c', \"`\"\$batchPath`\"\") -Verb RunAs -Wait -PassThru -WindowStyle Hidden")
             appendLine("    exit \$proc.ExitCode")
             appendLine("} catch {")
             appendLine("    exit 1223") // ERROR_CANCELLED (User declined UAC prompt)
@@ -134,7 +152,7 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
         psFile.writeText(psContent, Charsets.UTF_8)
 
         val command = listOf(
-            "powershell.exe",
+            powershellExe,
             "-NoProfile",
             "-ExecutionPolicy", "Bypass",
             "-File",
@@ -212,7 +230,7 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
             appendLine("Get-ChildItem 'C:\\Windows\\INF\\oem*.inf' -ErrorAction SilentlyContinue | ForEach-Object {")
             appendLine("    \$c = Get-Content \$_.FullName -Raw -ErrorAction SilentlyContinue")
             appendLine("    if (\$c -match '18D1' -and \$c -match 'usbser') {")
-            appendLine("        pnputil /delete-driver \$_.Name /uninstall /force | Out-Null")
+            appendLine("        & '$pnputilExe' /delete-driver \$_.Name /uninstall /force | Out-Null")
             appendLine("    }")
             appendLine("}")
             appendLine("# 2. Launch Zadig in elevated mode with working directory pointing to zadig.ini")
@@ -223,11 +241,11 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
         val scriptPath = runnerScript.absolutePath.replace("'", "''")
 
         val command = listOf(
-            "powershell.exe",
+            powershellExe,
             "-NoProfile",
             "-ExecutionPolicy", "Bypass",
             "-Command",
-            "Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '$scriptPath') -Verb RunAs -Wait"
+            "Start-Process -FilePath '$powershellExe' -ArgumentList @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', '$scriptPath') -Verb RunAs -Wait"
         )
 
         return try {
@@ -243,8 +261,14 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
             println("[$tag] Zadig process finished with exit code: $exitCode")
             exitCode == 0
         } catch (e: Exception) {
-            println("[$tag] Failed to launch Zadig GUI: ${e.message}")
-            false
+            println("[$tag] Failed to launch Zadig GUI via PowerShell: ${e.message}, attempting direct launch...")
+            try {
+                ProcessBuilder(zadigExe.absolutePath).directory(zadigDir).start()
+                true
+            } catch (e2: Exception) {
+                println("[$tag] Direct launch failed: ${e2.message}")
+                false
+            }
         }
     }
 
@@ -267,8 +291,8 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
         val pidClean = String.format("%04X", productId)
         return try {
             val cmd = listOf(
-                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                "Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile', '-Command', \"Get-ChildItem 'C:\\Windows\\INF\\oem*.inf' | ForEach-Object { \$c = Get-Content \$_.FullName -Raw -ErrorAction SilentlyContinue; if (\$c -match '$pidClean' -and (\$c -match 'usbser' -or \$c -match 'ssudbus')) { pnputil /delete-driver \$_.Name /uninstall /force } }\") -Verb RunAs -Wait"
+                powershellExe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                "Start-Process -FilePath '$powershellExe' -ArgumentList @('-NoProfile', '-Command', \"Get-ChildItem 'C:\\Windows\\INF\\oem*.inf' | ForEach-Object { \$c = Get-Content \$_.FullName -Raw -ErrorAction SilentlyContinue; if (\$c -match '$pidClean' -and (\$c -match 'usbser' -or \$c -match 'ssudbus')) { & '$pnputilExe' /delete-driver \$_.Name /uninstall /force } }\") -Verb RunAs -Wait"
             )
             val process = ProcessBuilder(cmd).start()
             process.waitFor(30, TimeUnit.SECONDS)
@@ -285,8 +309,8 @@ class ZadigDriverInstallerImpl : IUsbDriverInstaller {
         val pidClean = String.format("%04X", productId)
         return try {
             val cmd = listOf(
-                "powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
-                "Start-Process -FilePath 'pnputil.exe' -ArgumentList @('/scan-devices') -Verb RunAs -Wait; Start-Process -FilePath 'pnputil.exe' -ArgumentList @('/restart-device', '/deviceid', 'USB\\VID_$vidClean&PID_$pidClean') -Verb RunAs -Wait"
+                powershellExe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command",
+                "Start-Process -FilePath '$pnputilExe' -ArgumentList @('/scan-devices') -Verb RunAs -Wait; Start-Process -FilePath '$pnputilExe' -ArgumentList @('/restart-device', '/deviceid', 'USB\\VID_$vidClean&PID_$pidClean') -Verb RunAs -Wait"
             )
             val process = ProcessBuilder(cmd).start()
             process.waitFor(30, TimeUnit.SECONDS)

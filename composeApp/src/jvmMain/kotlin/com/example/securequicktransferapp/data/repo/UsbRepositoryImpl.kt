@@ -119,7 +119,13 @@ class UsbRepositoryImpl(
                         Thread.sleep(600)
                         if (!connection.open(accessory)) {
                             logger.e(TAG, "Failed to open connection to accessory in AOA mode.")
-                            deviceManager.reportDriverIssue(0x18D1, 0x2D00, "Android Open Accessory")
+                            val aDesc = org.usb4java.DeviceDescriptor()
+                            val accessoryPid = if (org.usb4java.LibUsb.getDeviceDescriptor(accessory, aDesc) == org.usb4java.LibUsb.SUCCESS) {
+                                aDesc.idProduct().toInt() and 0xFFFF
+                            } else {
+                                0x2D01
+                            }
+                            deviceManager.reportDriverIssue(0x18D1, accessoryPid, "Android Open Accessory")
                             if (deviceManager.isDriverInstalling()) {
                                 logger.i(TAG, "WinUSB driver installation in progress for AOA mode. Awaiting completion...")
                                 val installed = kotlinx.coroutines.runBlocking { deviceManager.waitForDriverInstall() }
