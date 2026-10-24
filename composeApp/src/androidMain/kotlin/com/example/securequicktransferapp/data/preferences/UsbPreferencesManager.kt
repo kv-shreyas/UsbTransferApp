@@ -15,17 +15,12 @@ class UsbPreferencesManager @Inject constructor(
 
     var usbRole: UsbRole?
         get() = when (prefs.getString(KEY_ROLE, null)) {
-            "HOST" -> UsbRole.Host(prefs.getString(KEY_ROLE_NAME, "Remote Device") ?: "Remote Device")
-            "CLIENT" -> UsbRole.Client(prefs.getString(KEY_ROLE_NAME, "Remote Host") ?: "Remote Host")
+            "CLIENT" -> UsbRole.Client(prefs.getString(KEY_ROLE_NAME, "Desktop Host") ?: "Desktop Host")
             else -> null
         }
         set(value) {
             val editor = prefs.edit()
             when (value) {
-                is UsbRole.Host -> {
-                    editor.putString(KEY_ROLE, "HOST")
-                    editor.putString(KEY_ROLE_NAME, value.connectedDeviceName)
-                }
                 is UsbRole.Client -> {
                     editor.putString(KEY_ROLE, "CLIENT")
                     editor.putString(KEY_ROLE_NAME, value.connectedHostName)

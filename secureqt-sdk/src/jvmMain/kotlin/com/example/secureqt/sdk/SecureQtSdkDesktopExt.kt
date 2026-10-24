@@ -1,13 +1,12 @@
 package com.example.secureqt.sdk
 
-import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.transport.desktop.DesktopAoaConnector
 import com.example.secureqt.sdk.transport.desktop.DesktopAoaTransport
 import org.usb4java.Device
 import org.usb4java.DeviceHandle
 
 /**
- * Convenience desktop extensions for [SecureQtSdk].
+ * Convenience desktop extensions for [SecureQtSdk] operating as USB Host.
  */
 
 /**
@@ -38,29 +37,4 @@ fun SecureQtSdk.switchDeviceToAoa(
     model: String = "DataTransfer"
 ): Boolean {
     return DesktopAoaConnector.switchToAoa(device, manufacturer, model)
-}
-
-/**
- * Connects directly to an attached AOA device, claims its bulk interface, and returns an active [DesktopAoaTransport].
- */
-fun SecureQtSdk.connectDesktopDevice(device: Device): DesktopAoaTransport? {
-    return DesktopAoaConnector.connectToDevice(device)
-}
-
-/**
- * Scans the USB bus, switches the Android device to AOA mode if needed,
- * claims the bulk endpoints, and establishes a ready-to-use [SecureChannel].
- *
- * @param manufacturer Manufacturer identifier matching Android intent-filter
- * @param model Model identifier matching Android intent-filter
- * @param timeoutMs Timeout in milliseconds for device detection and AOA rebooting
- * @return A connected [SecureChannel] ready for handshake, or null if no device found
- */
-fun SecureQtSdk.autoConnectDesktop(
-    manufacturer: String = "AndroidOpenAccessory",
-    model: String = "DataTransfer",
-    timeoutMs: Long = 10000L
-): SecureChannel? {
-    val transport = DesktopAoaConnector.autoConnect(manufacturer, model, timeoutMs) ?: return null
-    return createChannel(transport)
 }

@@ -1,14 +1,11 @@
 package com.example.securequicktransferapp.data.usb.broadcast
 
 import android.hardware.usb.UsbAccessory
-import android.hardware.usb.UsbDevice
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 
 sealed class UsbPermissionEvent {
-    data class DeviceGranted(val device: UsbDevice) : UsbPermissionEvent()
     data class AccessoryGranted(val accessory: UsbAccessory) : UsbPermissionEvent()
-    data class DeviceDenied(val device: UsbDevice) : UsbPermissionEvent()
     data class AccessoryDenied(val accessory: UsbAccessory) : UsbPermissionEvent()
 }
 

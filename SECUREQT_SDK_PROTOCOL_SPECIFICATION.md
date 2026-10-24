@@ -25,11 +25,11 @@ flowchart TD
     end
 
     subgraph Client["Client: Android (Native AOA / Android App)"]
-        STC_A["AndroidHostCommandSender / AndroidClientCommandReceiver"]
+        STC_A["AndroidClientCommandReceiver"]
         SC_A["SecureChannel / UsbDataSource"]
         SWB["SlidingWindowBuffer (5MB Circular Buffer)"]
         AAT["AndroidAoaTransport (16KB usbfs Bursting)"]
-        UCM["UsbConnectionManager (ParcelFileDescriptor / UsbDeviceConnection)"]
+        UCM["UsbConnectionManager (ParcelFileDescriptor / UsbAccessory)"]
         UI_Android["Android UI / Service / Storage Provider"]
     end
 

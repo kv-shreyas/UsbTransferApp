@@ -11,7 +11,6 @@
         </intent>
     </queries>
 
-    <uses-feature android:name="android.hardware.usb.host" />
     <uses-feature android:name="android.hardware.usb.accessory" />
 
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
@@ -47,15 +46,11 @@
 
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED" />
-                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
 
             <meta-data
                 android:name="android.hardware.usb.action.USB_ACCESSORY_ATTACHED"
                 android:resource="@xml/accessory_filter" />
-            <meta-data
-                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
-                android:resource="@xml/device_filter" />
 
         </activity>
 

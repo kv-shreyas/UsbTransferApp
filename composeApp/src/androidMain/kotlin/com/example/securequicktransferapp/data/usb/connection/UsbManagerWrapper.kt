@@ -8,13 +8,10 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.hardware.usb.UsbAccessory
-import android.hardware.usb.UsbDevice
-import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
 import android.os.BatteryManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
-import android.util.Log
 import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.channels.awaitClose
@@ -23,7 +20,6 @@ import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import java.io.File
 import javax.inject.Inject
 
 class UsbManagerWrapper @Inject constructor(
@@ -60,37 +56,10 @@ class UsbManagerWrapper @Inject constructor(
         }
     }
 
-    fun getDevices(): Collection<UsbDevice> = usbManager.deviceList.values
-
     fun getAccessories(): Array<UsbAccessory>? = usbManager.accessoryList
-
-    fun hasPermission(device: UsbDevice): Boolean {
-        return usbManager.hasPermission(device)
-    }
 
     fun hasPermission(accessory: UsbAccessory): Boolean {
         return usbManager.hasPermission(accessory)
-    }
-
-    fun requestPermission(device: UsbDevice) {
-        registerPermissionReceiverIfNeeded()
-        usbLogger.i("UsbManagerWrapper", "Requesting permission for device ${device.productName} (${device.deviceId})")
-        val intent = Intent(UsbPermissionReceiver.ACTION_USB_PERMISSION).apply {
-            setPackage(context.packageName)
-        }
-        val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            PendingIntent.FLAG_MUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
-        } else {
-            PendingIntent.FLAG_UPDATE_CURRENT
-        }
-        val pendingIntent = PendingIntent.getBroadcast(
-            context,
-            device.deviceId,
-            intent,
-            flags
-        )
-
-        usbManager.requestPermission(device, pendingIntent)
     }
 
     fun requestPermission(accessory: UsbAccessory) {
@@ -111,10 +80,6 @@ class UsbManagerWrapper @Inject constructor(
             flags
         )
         usbManager.requestPermission(accessory, pendingIntent)
-    }
-
-    fun openDevice(device: UsbDevice): UsbDeviceConnection? {
-        return usbManager.openDevice(device)
     }
 
     fun openAccessory(accessory: UsbAccessory): ParcelFileDescriptor? {
@@ -139,8 +104,6 @@ class UsbManagerWrapper @Inject constructor(
             addAction(Intent.ACTION_POWER_DISCONNECTED)
             addAction("android.hardware.usb.action.USB_STATE")
             addAction("android.hardware.usb.action.USB_PORT_CHANGED")
-            addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED)
-            addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
             addAction(UsbManager.ACTION_USB_ACCESSORY_ATTACHED)
             addAction(UsbManager.ACTION_USB_ACCESSORY_DETACHED)
         }
@@ -185,11 +148,9 @@ class UsbManagerWrapper @Inject constructor(
                     val connected = intent.getBooleanExtra("connected", false)
                     if (!connected) return false
                 }
-                UsbManager.ACTION_USB_DEVICE_DETACHED,
                 UsbManager.ACTION_USB_ACCESSORY_DETACHED -> {
-                    val hasRemainingDevices = getDevices().isNotEmpty()
                     val hasRemainingAccessories = !getAccessories().isNullOrEmpty()
-                    if (!hasRemainingDevices && !hasRemainingAccessories) {
+                    if (!hasRemainingAccessories) {
                         return false
                     }
                 }
@@ -199,10 +160,9 @@ class UsbManagerWrapper @Inject constructor(
             }
         }
 
-        // 2. Check active USB devices or accessories via UsbManager
-        val hasDevices = getDevices().isNotEmpty()
+        // 2. Check active accessories via UsbManager
         val hasAccessories = !getAccessories().isNullOrEmpty()
-        if (hasDevices || hasAccessories) return true
+        if (hasAccessories) return true
 
         // 3. Check sticky USB_STATE broadcast (instantaneous kernel USB gadget state)
         val usbStateIntent = try {
@@ -215,19 +175,9 @@ class UsbManagerWrapper @Inject constructor(
         }
 
         // 4. Fallback: Check if USB data power is connected via BatteryManager.
-        // This detects the cable on the peripheral side BEFORE the remote host
-        // switches us to AOA Accessory mode (when no UsbDevice/UsbAccessory is visible yet).
         return isUsbPowerConnected()
     }
 
-    /**
-     * Checks if a USB data cable is providing power, even when no USB device or accessory
-     * is enumerated yet. This is useful for detecting cable presence on the peripheral side
-     * of the connection before AOA mode switching occurs.
-     *
-     * Note: BATTERY_PLUGGED_USB specifically means USB data port power, NOT AC charger
-     * (which would be BATTERY_PLUGGED_AC).
-     */
     private fun isUsbPowerConnected(): Boolean {
         return try {
             val batteryIntent = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))

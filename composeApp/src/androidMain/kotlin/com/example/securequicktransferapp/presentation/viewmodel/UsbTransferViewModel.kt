@@ -1,7 +1,6 @@
 package com.example.securequicktransferapp.presentation.viewmodel
 
 import android.hardware.usb.UsbAccessory
-import android.hardware.usb.UsbDevice
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,14 +10,11 @@ import com.example.securequicktransferapp.data.logging.UsbLogger
 import com.example.securequicktransferapp.data.preferences.UsbPreferencesManager
 import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionBus
 import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionEvent
-import com.example.securequicktransferapp.data.usb.command.AndroidHostCommandSender
-import com.example.securequicktransferapp.data.usb.connection.AoaHostSwitcher
 import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
 import com.example.securequicktransferapp.data.usb.connection.UsbManagerWrapper
 import com.example.securequicktransferapp.data.usb.service.ClientServiceController
 import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
 import com.example.securequicktransferapp.domain.model.TransferProgress
-import com.example.securequicktransferapp.domain.usecases.UsbUseCases
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,14 +31,16 @@ import java.io.File
 import javax.inject.Inject
 import kotlin.time.Duration.Companion.milliseconds
 
+/**
+ * Presentation ViewModel for Android Client mode.
+ * Android functions exclusively as the USB Client (AOA Accessory), receiving
+ * and executing commands sent by the Desktop USB Host.
+ */
 @HiltViewModel
 class UsbTransferViewModel @Inject constructor(
     private val usbManagerWrapper: UsbManagerWrapper,
     private val connectionManager: UsbConnectionManager,
-    private val aoaHostSwitcher: AoaHostSwitcher,
     private val dataSource: UsbDataSource,
-    private val hostCommandSender: AndroidHostCommandSender,
-    private val usbUseCases: UsbUseCases,
     private val preferencesManager: UsbPreferencesManager,
     private val clientServiceController: ClientServiceController,
     val usbLogger: UsbLogger
@@ -200,36 +198,31 @@ class UsbTransferViewModel @Inject constructor(
         startCableMonitor()
         viewModelScope.launch {
             clientServiceController.clientUiState.collect { state ->
-                if (_usbRole.value is UsbRole.Client) {
-                    if (clientServiceController.isServiceRunning.value || state is UsbUiState.NoDevice || state is UsbUiState.Idle) {
-                        _uiState.value = state
-                    }
-                    if (state is UsbUiState.Success && !state.deviceId.isNullOrBlank()) {
-                        val currentRole = _usbRole.value as UsbRole.Client
-                        if (currentRole.connectedHostName != state.deviceId) {
-                            _usbRole.value = UsbRole.Client(connectedHostName = state.deviceId)
-                            preferencesManager.usbRole = _usbRole.value
-                        }
+                if (clientServiceController.isServiceRunning.value || state is UsbUiState.NoDevice || state is UsbUiState.Idle) {
+                    _uiState.value = state
+                }
+                if (state is UsbUiState.Success && !state.deviceId.isNullOrBlank()) {
+                    val currentRole = _usbRole.value as? UsbRole.Client
+                    if (currentRole?.connectedHostName != state.deviceId) {
+                        _usbRole.value = UsbRole.Client(connectedHostName = state.deviceId)
+                        preferencesManager.usbRole = _usbRole.value
                     }
                 }
             }
         }
         viewModelScope.launch {
             clientServiceController.clientTransferProgress.collect { progress ->
-                if (_usbRole.value is UsbRole.Client && clientServiceController.isServiceRunning.value) {
+                if (clientServiceController.isServiceRunning.value) {
                     _progressState.value = progress
                 }
             }
         }
     }
 
-    private var currentDevice: UsbDevice? = null
     private var currentAccessory: UsbAccessory? = null
     private var commandJob: Job? = null
     private var connectJob: Job? = null
     private var cableMonitorJob: Job? = null
-
-
 
     private fun startCableMonitor() {
         cableMonitorJob?.cancel()
@@ -242,7 +235,7 @@ class UsbTransferViewModel @Inject constructor(
                 }
 
                 if (!isConnected) {
-                    if (wasConnected || currentDevice != null || currentAccessory != null || _uiState.value !is UsbUiState.NoDevice) {
+                    if (wasConnected || currentAccessory != null || _uiState.value !is UsbUiState.NoDevice) {
                         usbLogger.i(TAG, "USB cable physically unplugged! Triggering disconnect and setting NoDevice state.")
                         disconnect(sendSignal = false)
                     } else {
@@ -250,12 +243,11 @@ class UsbTransferViewModel @Inject constructor(
                     }
                 } else {
                     val hasAccessory = usbManagerWrapper.getAccessories()?.isNotEmpty() == true
-                    // Whenever cable is plugged in fresh (wasConnected was false), re-detect device.
                     if (!wasConnected) {
-                        usbLogger.i(TAG, "USB cable physically plugged in! Re-detecting device...")
+                        usbLogger.i(TAG, "USB cable physically plugged in! Detecting accessory...")
                         detectAndConnect()
                     } else if (hasAccessory && currentAccessory == null && !isBusyOrConnected()) {
-                        usbLogger.i(TAG, "USB Accessory detected! Host switched to AOA mode. Auto-connecting...")
+                        usbLogger.i(TAG, "USB Accessory detected! Desktop Host initialized AOA mode. Auto-connecting...")
                         detectAndConnect()
                     } else if (_uiState.value is UsbUiState.NoDevice && !isBusyOrConnected()) {
                         detectAndConnect()
@@ -266,27 +258,19 @@ class UsbTransferViewModel @Inject constructor(
     }
 
     fun detectDevice() {
-        usbLogger.d(TAG, "detectDevice: Scanning for USB devices and accessories...")
-        val devices = usbManagerWrapper.getDevices()
+        usbLogger.d(TAG, "detectDevice: Scanning for USB accessories...")
         val accessories = usbManagerWrapper.getAccessories()
-        
-        val device = devices.firstOrNull()
         val accessory = accessories?.firstOrNull()
 
-        if (device != null) {
-            usbLogger.i(TAG, "detectDevice: Found USB Device - ${device.productName} (ID: ${device.deviceId}, VID=${String.format("%04X", device.vendorId)}, PID=${String.format("%04X", device.productId)})")
-            currentDevice = device
-            currentAccessory = null
-            _uiState.value = UsbUiState.DeviceDetected(name = device.productName ?: "USB Device")
-        } else if (accessory != null) {
-            usbLogger.i(TAG, "detectDevice: Found USB Accessory - ${accessory.model} (Manufacturer: ${accessory.manufacturer})")
+        if (accessory != null) {
+            val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "Desktop Host"
+            usbLogger.i(TAG, "detectDevice: Found USB Accessory - ${accessory.model} (Host: $hostName)")
             currentAccessory = accessory
-            currentDevice = null
-            val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "USB Accessory"
             _uiState.value = UsbUiState.DeviceDetected(name = hostName)
         } else {
-            usbLogger.w(TAG, "detectDevice: No USB devices or accessories detected.")
-            _uiState.value = UsbUiState.NoDevice
+            usbLogger.w(TAG, "detectDevice: No USB accessory detected.")
+            currentAccessory = null
+            _uiState.value = if (_isCablePhysicallyConnected.value) UsbUiState.Idle else UsbUiState.NoDevice
         }
     }
 
@@ -308,10 +292,8 @@ class UsbTransferViewModel @Inject constructor(
 
     fun detectAndConnect() {
         if (_uiState.value is UsbUiState.RequestingPermission) {
-            val dev = currentDevice
             val acc = currentAccessory
-            val hasPerm = (acc != null && usbManagerWrapper.hasPermission(acc)) ||
-                          (dev != null && usbManagerWrapper.hasPermission(dev))
+            val hasPerm = acc != null && usbManagerWrapper.hasPermission(acc)
             if (hasPerm) {
                 usbLogger.i(TAG, "detectAndConnect: Received intent/broadcast while in RequestingPermission and permission is now GRANTED! Proceeding immediately...")
             } else {
@@ -325,48 +307,38 @@ class UsbTransferViewModel @Inject constructor(
 
         val wasError = _uiState.value is UsbUiState.Error
         detectDevice()
-        val device = currentDevice
         val accessory = currentAccessory
-        val isAlreadyAoa = AoaHostSwitcher.isAoaDevice(device)
 
         if (wasError) {
             usbLogger.d(TAG, "detectAndConnect: In Error state after previous connection attempt. Waiting for user interaction or physical re-plug.")
             return
         }
 
-        // Auto-connect IMMEDIATELY if:
-        // 1) It's a UsbAccessory (remote Host already switched us to AOA, so we connect as Client)
-        // 2) Or it's a UsbDevice already in AOA mode (remote device already switched and waiting for Host to open endpoints)
         if (accessory != null) {
-            val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "USB Host"
-            usbLogger.i(TAG, "detectAndConnect: UsbAccessory detected ($hostName). Remote device switched us to AOA mode. Auto-connecting as Client...")
+            val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "Desktop Host"
+            usbLogger.i(TAG, "detectAndConnect: UsbAccessory detected ($hostName). Desktop Host initialized AOA mode. Auto-connecting as Client...")
             _usbRole.value = UsbRole.Client(connectedHostName = hostName)
             preferencesManager.usbRole = _usbRole.value
             requestPermissionAndConnect()
-        } else if (isAlreadyAoa && device != null) {
-            usbLogger.i(TAG, "detectAndConnect: AOA UsbDevice detected (${device.productName}). Remote device is in AOA mode waiting for Host. Auto-connecting as Host...")
-            _usbRole.value = UsbRole.Host(connectedDeviceName = device.productName ?: "AOA Device")
-            preferencesManager.usbRole = _usbRole.value
-            requestPermissionAndConnect()
-        } else if (device != null) {
-            // Normal MTP device plugged in. NEVER auto-blast AOA switch without user interaction to prevent dual-switch deadlocks.
-            usbLogger.i(TAG, "detectAndConnect: Normal USB Device detected (${device.productName}). Waiting for user to select role / tap 'Initialize Connection' before triggering AOA switch.")
-            _uiState.value = UsbUiState.DeviceDetected(name = device.productName ?: "Android Device")
         } else {
-            usbLogger.d(TAG, "detectAndConnect: No USB device or accessory found.")
+            usbLogger.d(TAG, "detectAndConnect: No USB accessory found. Waiting for Desktop Host to initiate AOA connection.")
         }
     }
 
     fun requestPermissionAndConnect() {
-        if (currentDevice == null && currentAccessory == null) {
+        if (currentAccessory == null) {
             detectDevice()
         }
-        val dev = currentDevice
-        val acc = currentAccessory
-        val hasPerm = (acc != null && usbManagerWrapper.hasPermission(acc)) ||
-                      (dev != null && usbManagerWrapper.hasPermission(dev))
+        val accessory = currentAccessory
+        val hasPerm = accessory != null && usbManagerWrapper.hasPermission(accessory)
         if (isBusyOrConnected() && !(_uiState.value is UsbUiState.RequestingPermission && hasPerm)) {
             usbLogger.d(TAG, "requestPermissionAndConnect: Already actively connecting or checking (state: ${_uiState.value}, connectJob=${connectJob?.isActive}). Ignoring redundant request.")
+            return
+        }
+
+        if (accessory == null) {
+            usbLogger.d(TAG, "requestPermissionAndConnect: No accessory available. Physical cable connected: ${_isCablePhysicallyConnected.value}")
+            _uiState.value = if (_isCablePhysicallyConnected.value) UsbUiState.Idle else UsbUiState.NoDevice
             return
         }
 
@@ -377,181 +349,44 @@ class UsbTransferViewModel @Inject constructor(
             
             connectionManager.disconnect()
 
-            val device = currentDevice
-            val accessory = currentAccessory
-
-            if (device != null) {
-                if (!usbManagerWrapper.hasPermission(device)) {
-                    usbLogger.d(TAG, "requestPermissionAndConnect: Requesting permission for device ${device.deviceId}")
-                    _uiState.value = UsbUiState.RequestingPermission
-                    usbManagerWrapper.requestPermission(device)
-                    val granted = withTimeoutOrNull(60_000.milliseconds) {
-                        var isGranted = false
-                        while (isActive) {
-                            if (usbManagerWrapper.hasPermission(device)) {
-                                isGranted = true
-                                break
-                            }
-                            val event = withTimeoutOrNull(250.milliseconds) { UsbPermissionBus.flow.firstOrNull() }
-                            if (event is UsbPermissionEvent.DeviceGranted && event.device.deviceId == device.deviceId) {
-                                isGranted = true
-                                break
-                            } else if (event is UsbPermissionEvent.DeviceDenied && event.device.deviceId == device.deviceId) {
-                                isGranted = false
-                                break
-                            }
+            if (!usbManagerWrapper.hasPermission(accessory)) {
+                usbLogger.d(TAG, "requestPermissionAndConnect: Requesting permission for accessory ${accessory.model}")
+                _uiState.value = UsbUiState.RequestingPermission
+                usbManagerWrapper.requestPermission(accessory)
+                val granted = withTimeoutOrNull(60_000.milliseconds) {
+                    var isGranted = false
+                    while (isActive) {
+                        if (usbManagerWrapper.hasPermission(accessory)) {
+                            isGranted = true
+                            break
                         }
-                        isGranted
+                        val event = withTimeoutOrNull(250.milliseconds) { UsbPermissionBus.flow.firstOrNull() }
+                        if (event is UsbPermissionEvent.AccessoryGranted && event.accessory.model == accessory.model && event.accessory.manufacturer == accessory.manufacturer) {
+                            isGranted = true
+                            break
+                        } else if (event is UsbPermissionEvent.AccessoryDenied && event.accessory.model == accessory.model && event.accessory.manufacturer == accessory.manufacturer) {
+                            isGranted = false
+                            break
+                        }
                     }
-                    if (granted == true || usbManagerWrapper.hasPermission(device)) {
-                        usbLogger.i(TAG, "requestPermissionAndConnect: Permission GRANTED for device ${device.deviceId}")
-                        proceedWithDevice(device)
-                    } else {
-                        usbLogger.w(TAG, "requestPermissionAndConnect: Permission denied or timed out for device ${device.deviceId}")
-                        _uiState.value = UsbUiState.Error("USB permission denied or timed out")
-                    }
-                } else {
-                    usbLogger.d(TAG, "requestPermissionAndConnect: Already have permission for device ${device.deviceId}")
-                    proceedWithDevice(device)
+                    isGranted
                 }
-            } else if (accessory != null) {
-                if (!usbManagerWrapper.hasPermission(accessory)) {
-                    usbLogger.d(TAG, "requestPermissionAndConnect: Requesting permission for accessory ${accessory.model}")
-                    _uiState.value = UsbUiState.RequestingPermission
-                    usbManagerWrapper.requestPermission(accessory)
-                    val granted = withTimeoutOrNull(60_000.milliseconds) {
-                        var isGranted = false
-                        while (isActive) {
-                            if (usbManagerWrapper.hasPermission(accessory)) {
-                                isGranted = true
-                                break
-                            }
-                            val event = withTimeoutOrNull(250.milliseconds) { UsbPermissionBus.flow.firstOrNull() }
-                            if (event is UsbPermissionEvent.AccessoryGranted && event.accessory.model == accessory.model && event.accessory.manufacturer == accessory.manufacturer) {
-                                isGranted = true
-                                break
-                            } else if (event is UsbPermissionEvent.AccessoryDenied && event.accessory.model == accessory.model && event.accessory.manufacturer == accessory.manufacturer) {
-                                isGranted = false
-                                break
-                            }
-                        }
-                        isGranted
-                    }
-                    if (granted == true || usbManagerWrapper.hasPermission(accessory)) {
-                        usbLogger.i(TAG, "requestPermissionAndConnect: Permission GRANTED for accessory ${accessory.model}")
-                        proceedWithAccessory(accessory)
-                    } else {
-                        usbLogger.w(TAG, "requestPermissionAndConnect: Permission denied or timed out for accessory ${accessory.model}")
-                        _uiState.value = UsbUiState.Error("USB permission denied or timed out")
-                    }
-                } else {
-                    usbLogger.d(TAG, "requestPermissionAndConnect: Already have permission for accessory ${accessory.model}")
+                if (granted == true || usbManagerWrapper.hasPermission(accessory)) {
+                    usbLogger.i(TAG, "requestPermissionAndConnect: Permission GRANTED for accessory ${accessory.model}")
                     proceedWithAccessory(accessory)
-                }
-            } else {
-                usbLogger.e(TAG, "requestPermissionAndConnect: Failed - No device or accessory selected.")
-                _uiState.value = UsbUiState.NoDevice
-            }
-        }
-    }
-
-    fun selectRoleAndConnect(role: UsbRole) {
-        usbLogger.i(TAG, "selectRoleAndConnect: $role")
-        val previousRole = _usbRole.value
-        if (previousRole != role) {
-            usbLogger.i(TAG, "Role switched ($previousRole -> $role). Resetting previous connection state...")
-            connectJob?.cancel()
-            connectJob = null
-            commandJob?.cancel()
-            commandJob = null
-
-            connectionManager.disconnect()
-
-            detectDevice()
-        }
-        _usbRole.value = role
-        preferencesManager.usbRole = role
-        requestPermissionAndConnect()
-    }
-
-    /**
-     * Called when a UsbDevice is detected. Since this Android device sees a UsbDevice,
-     * it is the physical USB host controller. The role is aligned to Host and the remote
-     * device is switched to AOA mode if needed.
-     */
-    private suspend fun proceedWithDevice(device: UsbDevice) {
-        usbLogger.d(TAG, "proceedWithDevice: Attempting to connect via Host Mode (Role: ${_usbRole.value})...")
-        _uiState.value = UsbUiState.Connecting
-
-        val isAlreadyAoa = AoaHostSwitcher.isAoaDevice(device)
-
-        // When this device detects a UsbDevice, it is the physical USB host controller.
-        // Align role to Host so it initiates AOA switch and handshake.
-        // Always update the role to ensure the real connectedDeviceName is populated rather than the hardcoded fallback from UI manual selection.
-        val actualDeviceName = device.productName ?: "Remote Device"
-        if (_usbRole.value !is UsbRole.Host || (_usbRole.value as UsbRole.Host).connectedDeviceName != actualDeviceName) {
-            usbLogger.i(TAG, "proceedWithDevice: Hardware USB Host detected. Aligning role to Host(connectedDeviceName=$actualDeviceName)")
-            _usbRole.value = UsbRole.Host(actualDeviceName)
-            preferencesManager.usbRole = _usbRole.value
-        }
-
-        if (!isAlreadyAoa) {
-            usbLogger.i(TAG, "proceedWithDevice: Checking if remote device supports Android Accessory (AOA) mode...")
-            _uiState.value = UsbUiState.DeviceDetected("Checking remote device AOA compatibility...")
-            if (!aoaHostSwitcher.isAoaSupported(device)) {
-                usbLogger.e(TAG, "proceedWithDevice: Remote device does not support AOA mode protocol.")
-                _uiState.value = UsbUiState.Error("Incompatible Device: The connected USB device does not support Android Accessory Mode.")
-                return
-            }
-
-            usbLogger.i(TAG, "proceedWithDevice: Remote device is in normal mode (VID=${String.format("%04X", device.vendorId)}, PID=${String.format("%04X", device.productId)}). Switching remote device to AOA Accessory mode...")
-            _uiState.value = UsbUiState.DeviceDetected("Switching remote device to AOA mode...")
-            if (aoaHostSwitcher.switchToAoaMode(device)) {
-                usbLogger.i(TAG, "proceedWithDevice: AOA switch triggered. Waiting up to 20s for remote device to re-enumerate as Accessory (0x18D1:0x2D00..0x2D05)...")
-                _uiState.value = UsbUiState.DeviceDetected("Waiting for remote AOA mode re-enumeration...")
-                var aoaDevice: UsbDevice? = null
-                for (i in 0 until 80) {
-                    delay(250)
-                    val devices = usbManagerWrapper.getDevices()
-                    aoaDevice = devices.firstOrNull { AoaHostSwitcher.isAoaDevice(it) }
-                    if (aoaDevice != null) {
-                        usbLogger.i(TAG, "proceedWithDevice: Found re-enumerated AOA device (${aoaDevice.productName}, PID=${String.format("%04X", aoaDevice.productId)}) after ${(i + 1) * 250}ms!")
-                        break
-                    }
-                    if ((i + 1) % 8 == 0) {
-                        usbLogger.d(TAG, "proceedWithDevice: Still waiting for AOA device (${(i + 1) * 250}ms/20000ms)... visible USB devices: ${devices.map { "${it.productName ?: "Dev"} (${String.format("%04X", it.vendorId)}:${String.format("%04X", it.productId)})" }}")
-                    }
-                }
-                if (aoaDevice == null) {
-                    usbLogger.e(TAG, "proceedWithDevice: Timed out waiting for AOA re-enumeration.")
-                    _uiState.value = UsbUiState.Error("Timed out waiting for remote device AOA re-enumeration")
-                    return
-                }
-                if (connectionManager.connect(aoaDevice)) {
-                    usbLogger.i(TAG, "proceedWithDevice: Host connection to AOA device successful.")
-                    currentDevice = aoaDevice
-                    startHostHandshakeAndCommands()
                 } else {
-                    _uiState.value = UsbUiState.Error("Failed to open connection to AOA device")
+                    usbLogger.w(TAG, "requestPermissionAndConnect: Permission denied or timed out for accessory ${accessory.model}")
+                    _uiState.value = UsbUiState.Error("USB permission denied or timed out")
                 }
             } else {
-                usbLogger.e(TAG, "proceedWithDevice: Failed to switch remote device to AOA mode.")
-                _uiState.value = UsbUiState.Error("Failed to switch remote device to AOA mode")
-            }
-        } else {
-            // Device is already in AOA mode, connect directly
-            if (connectionManager.connect(device)) {
-                usbLogger.i(TAG, "proceedWithDevice: Host connection to already-in-AOA device successful.")
-                startHostHandshakeAndCommands()
-            } else {
-                usbLogger.e(TAG, "proceedWithDevice: Failed to connect to AOA device.")
-                _uiState.value = UsbUiState.Error("Failed to connect to AOA device")
+                usbLogger.d(TAG, "requestPermissionAndConnect: Already have permission for accessory ${accessory.model}")
+                proceedWithAccessory(accessory)
             }
         }
     }
 
     private suspend fun proceedWithAccessory(accessory: UsbAccessory) {
-        val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "USB Host"
+        val hostName = accessory.description?.takeIf { it.isNotBlank() && it != "Handshake Demo" } ?: accessory.model ?: "Desktop Host"
         usbLogger.d(TAG, "proceedWithAccessory: Starting client foreground service for accessory: $hostName...")
         _uiState.value = UsbUiState.Connecting
         _usbRole.value = UsbRole.Client(connectedHostName = hostName)
@@ -559,44 +394,16 @@ class UsbTransferViewModel @Inject constructor(
         clientServiceController.startService(accessory)
     }
 
-    private suspend fun startHostHandshakeAndCommands() {
-        usbLogger.i(TAG, "startHostHandshakeAndCommands: Initiating handshake as USB Host (Initiator)...")
-        _uiState.value = UsbUiState.DeviceDetected("Establishing secure channel...")
-        if (dataSource.performHandshakeAsInitiator()) {
-            usbLogger.i(TAG, "startHostHandshakeAndCommands: Handshake SUCCESS. Waiting for client ready signal...")
-            _uiState.value = UsbUiState.DeviceDetected("⏳ Checking remote Client status... Please ensure 'Client' mode & OS permission are granted on the other device.")
-            if (hostCommandSender.waitForClientReady()) {
-                usbLogger.i(TAG, "startHostHandshakeAndCommands: Client ready! Host is connected and ready to send commands.")
-                _uiState.value = UsbUiState.Success("Connected as Host (Ready)")
-            } else {
-                usbLogger.e(TAG, "startHostHandshakeAndCommands: Client failed ready handshake.")
-                _uiState.value = UsbUiState.Error("Timed out waiting for remote device to enter Client mode.")
-            }
-        } else {
-            usbLogger.e(TAG, "startHostHandshakeAndCommands: Handshake FAILED as Initiator.")
-            _uiState.value = UsbUiState.Error("Cryptographic handshake failed or timed out.")
-        }
-    }
-
-
     fun cancelTransfer() {
         commandJob?.cancel()
         commandJob = null
         _progressState.value = _progressState.value.copy(statusMessage = "Transfer Cancelled ❌", isComplete = true)
         _uiState.value = UsbUiState.Success("Transfer Cancelled")
-        viewModelScope.launch(Dispatchers.IO) {
-            try {
-                usbUseCases.cancelTransfer()
-            } catch (e: Exception) {
-                usbLogger.w(TAG, "cancelTransfer error: ${e.message}")
-            }
-        }
     }
 
     fun dismissProgress() {
         _progressState.value = TransferProgress()
     }
-
 
     fun resetConnection() {
         usbLogger.i(TAG, "resetConnection: User requested full reset. Resetting connection, role, and all state to start fresh.")
@@ -606,14 +413,10 @@ class UsbTransferViewModel @Inject constructor(
         commandJob = null
 
         viewModelScope.launch(Dispatchers.IO) {
-            // Attempt to send disconnect packet to remote device
+            // Attempt to send disconnect packet to Desktop Host
             try {
                 withTimeoutOrNull(250.milliseconds) {
-                    if (_usbRole.value is UsbRole.Host) {
-                        hostCommandSender.sendDisconnect()
-                    } else {
-                        dataSource.sendSecure(byteArrayOf(4.toByte()))
-                    }
+                    dataSource.sendSecure(byteArrayOf(4.toByte()))
                     delay(50.milliseconds)
                 }
             } catch (e: Exception) {
@@ -628,7 +431,6 @@ class UsbTransferViewModel @Inject constructor(
                 connectionManager.disconnect()
                 dataSource.disconnect()
 
-                currentDevice = null
                 currentAccessory = null
 
                 // Clear persisted preferences
@@ -639,12 +441,12 @@ class UsbTransferViewModel @Inject constructor(
                 _usbRole.value = null
                 dismissProgress()
 
-                // Check physical cable and reset UI state to Idle so user can select role or connect to fresh device
+                // Check physical cable and reset UI state to Idle so client is ready
                 val isCable = usbManagerWrapper.isUsbCablePhysicallyConnected()
                 _isCablePhysicallyConnected.value = isCable
                 _uiState.value = if (isCable) UsbUiState.Idle else UsbUiState.NoDevice
 
-                usbLogger.i(TAG, "resetConnection: Reset complete. Ready to connect to any fresh device.")
+                usbLogger.i(TAG, "resetConnection: Reset complete. Ready for Desktop Host connection.")
             }
         }
     }
@@ -660,11 +462,7 @@ class UsbTransferViewModel @Inject constructor(
             if (sendSignal) {
                 try {
                     withTimeoutOrNull(250.milliseconds) {
-                        if (_usbRole.value is UsbRole.Host) {
-                            hostCommandSender.sendDisconnect()
-                        } else {
-                            dataSource.sendSecure(byteArrayOf(4.toByte()))
-                        }
+                        dataSource.sendSecure(byteArrayOf(4.toByte()))
                         delay(50.milliseconds)
                     }
                 } catch (e: Exception) {
@@ -673,15 +471,10 @@ class UsbTransferViewModel @Inject constructor(
             }
 
             withContext(Dispatchers.Main) {
+                clientServiceController.reset()
+                connectionManager.disconnect()
+                dataSource.disconnect()
 
-                if (_usbRole.value is UsbRole.Client || clientServiceController.isServiceRunning.value) {
-                    clientServiceController.reset()
-                } else {
-                    connectionManager.disconnect()
-                    dataSource.disconnect()
-                }
-
-                currentDevice = null
                 currentAccessory = null
 
                 if (!sendSignal || !_isCablePhysicallyConnected.value || !usbManagerWrapper.isUsbCablePhysicallyConnected()) {

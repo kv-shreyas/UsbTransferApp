@@ -21,8 +21,7 @@ private const val TAG = "AndroidClientCommandReceiver"
  * device acts as the USB Client (receiver), parsing incoming command packets and
  * dispatching each command to its registered [ICommandHandler].
  *
- * Symmetrically pairs with [AndroidHostCommandSender] (when Android acts as Host)
- * and [com.example.securequicktransferapp.data.repo.DesktopHostCommandSender] (when Desktop acts as Host).
+ * Receives and processes commands sent from [com.example.securequicktransferapp.data.repo.DesktopHostCommandSender] (Desktop Host).
  *
  * **SOLID principles:**
  * - **SRP**: Only responsible for the receive loop and dispatch — not for any command business logic.

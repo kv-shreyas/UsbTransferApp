@@ -1,13 +1,11 @@
 package com.example.securequicktransferapp.domain
 
 import com.example.secureqt.sdk.SecureQtSdk
-import com.example.secureqt.sdk.autoConnectDesktop
 import com.example.secureqt.sdk.createDesktopTransport
-import com.example.securequicktransferapp.data.repo.DesktopHostCommandSender
 import org.usb4java.DeviceHandle
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
-import kotlin.test.assertNull
 
 class SecureQtSdkDesktopExtTest {
 
@@ -21,18 +19,8 @@ class SecureQtSdkDesktopExtTest {
             ifaceNum = 0
         )
         assertNotNull(transport)
-    }
-
-    @Test
-    fun testAutoConnectDesktopWhenNoDeviceAttached() {
-        // When no physical device is connected, autoConnectDesktop should return null gracefully without crashing
-        val channel = SecureQtSdk.autoConnectDesktop(timeoutMs = 100L)
-        assertNull(channel)
-    }
-
-    @Test
-    fun testRepositoryAutoConnectDirectWhenNoDeviceAttached() {
-        val channel = DesktopHostCommandSender.autoConnectDirect(timeoutMs = 100L)
-        assertNull(channel)
+        assertEquals(0x81.toByte(), transport.endpointIn)
+        assertEquals(0x01.toByte(), transport.endpointOut)
+        assertEquals(0, transport.interfaceNumber)
     }
 }

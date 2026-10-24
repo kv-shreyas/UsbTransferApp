@@ -9,8 +9,8 @@ import java.nio.ByteBuffer
  * **Architecture decision — why this lives in the SDK:**
  * The *structure* of how arguments are serialised (length-prefixed UTF-8 strings,
  * 8-byte file sizes, etc.) is part of the shared transport contract between host
- * and client. Both the Desktop host (`SecureTransferClientImpl`) and the Android
- * host (`AndroidHostCommandSender`) need identical serialisation. Centralising it here
+ * and client. The Desktop host (`SecureTransferClientImpl`) uses this for
+ * encoding commands sent to the Android client. Centralising it here
  * eliminates the repetitive `ByteBuffer.allocate(1 + 4 + bytes.size)` pattern that
  * previously appeared in every command method.
  *

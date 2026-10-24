@@ -1,11 +1,9 @@
 package com.example.securequicktransferapp.data.usb.connection
 
 import android.hardware.usb.UsbAccessory
-import android.hardware.usb.UsbDevice
 import android.util.Log
 import com.example.secureqt.sdk.SecureQtSdk
 import com.example.secureqt.sdk.createAndroidAccessoryTransport
-import com.example.secureqt.sdk.createAndroidDeviceTransport
 import com.example.secureqt.sdk.transport.android.AndroidAoaTransport
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,20 +22,6 @@ class UsbConnectionManager @Inject constructor(
     var transport: AndroidAoaTransport? = null
         private set
 
-    fun connect(device: UsbDevice): Boolean {
-        usbLogger.d(TAG, "Connecting to device: ${device.deviceName} (interfaces: ${device.interfaceCount})")
-
-        val aoaTransport = SecureQtSdk.createAndroidDeviceTransport(wrapper.usbManager, device)
-        if (aoaTransport != null) {
-            transport = aoaTransport
-            usbLogger.i(TAG, "Successfully claimed interface and bulk endpoints via SecureQtSdk")
-            return true
-        }
-
-        usbLogger.e(TAG, "Missing bulk endpoints or failed to claim interface across all ${device.interfaceCount} interfaces")
-        return false
-    }
-
     fun connect(accessory: UsbAccessory): Boolean {
         if (isConnected()) {
             usbLogger.d(TAG, "AOA already connected to accessory: $accessory")
@@ -52,7 +36,7 @@ class UsbConnectionManager @Inject constructor(
             return true
         }
 
-        usbLogger.e(TAG, "Failed to open accessory via AndroidAoaConnector")
+        usbLogger.e(TAG, "Failed to open accessory via AndroidAoaTransport")
         return false
     }
 

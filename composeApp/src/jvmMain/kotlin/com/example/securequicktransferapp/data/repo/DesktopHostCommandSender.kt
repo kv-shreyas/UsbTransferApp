@@ -5,7 +5,6 @@ import com.example.securequicktransferapp.domain.model.RemoteFile
 import com.example.securequicktransferapp.data.usb.UsbConnection
 import com.example.securequicktransferapp.data.usb.UsbDeviceManager
 import com.example.secureqt.sdk.SecureQtSdk
-import com.example.secureqt.sdk.autoConnectDesktop
 import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.logging.ILogger
 import com.example.securequicktransferapp.data.logging.ConsoleLogger
@@ -19,9 +18,8 @@ import kotlin.time.Duration.Companion.milliseconds
  * as the USB Host (initiator), sending file transfer and management commands to
  * the connected Android accessory / client.
  *
- * Symmetrically pairs with [com.example.securequicktransferapp.data.usb.command.AndroidHostCommandSender]
- * (when Android acts as Host) and delegates low-level transfer command encoding to
- * the SDK's [com.example.secureqt.sdk.client.ISecureTransferClient].
+ * Communicates with the Android client receiver ([AndroidClientCommandReceiver]) and
+ * delegates low-level transfer command encoding to the SDK's [com.example.secureqt.sdk.client.ISecureTransferClient].
  */
 class DesktopHostCommandSender(
     private val deviceManager: UsbDeviceManager,
@@ -268,15 +266,6 @@ class DesktopHostCommandSender(
             deviceManager.isDevicePhysicallyConnected(targetDeviceId)
         } else {
             deviceManager.isDevicePhysicallyConnected()
-        }
-    }
-
-    companion object {
-        /**
-         * Fast-path helper using the SDK desktop extension to auto-scan the USB bus and connect.
-         */
-        fun autoConnectDirect(timeoutMs: Long = 10000L): SecureChannel? {
-            return SecureQtSdk.autoConnectDesktop(timeoutMs = timeoutMs)
         }
     }
 }

@@ -1,12 +1,15 @@
 package com.example.secureqt.sdk.transport.desktop
 
-import org.usb4java.*
+import org.usb4java.ConfigDescriptor
+import org.usb4java.Device
+import org.usb4java.DeviceHandle
+import org.usb4java.LibUsb
 import java.nio.ByteBuffer
 import kotlin.experimental.or
 
 /**
- * Automates USB bus discovery, AOA protocol handshake, and endpoint configuration
- * for Desktop applications connecting to Android devices.
+ * Protocol utilities for Android Open Accessory (AOA) mode switching
+ * and USB bulk endpoint resolution on Desktop USB Host.
  */
 object DesktopAoaConnector {
 
@@ -14,128 +17,16 @@ object DesktopAoaConnector {
     private const val ACCESSORY_SEND_STRING = 52
     private const val ACCESSORY_START = 53
 
-    // Standard Android Open Accessory Hardware IDs
-    private const val GOOGLE_VID: Short = 0x18D1.toShort()
-    private const val AOA_PID_1: Short = 0x2D00.toShort() // Accessory only
-    private const val AOA_PID_2: Short = 0x2D01.toShort() // Accessory + ADB
-
-    private val ANDROID_VENDOR_IDS = hashSetOf(
-        0x18D1.toShort(), // Google
-        0x04E8.toShort(), // Samsung
-        0x2717.toShort(), // Xiaomi
-        0x12D1.toShort(), // Huawei
-        0x22D9.toShort(), // OPPO
-        0x22B8.toShort(), // Motorola
-        0x1004.toShort(), // LG
-        0x0FCE.toShort(), // Sony
-        0x0BB4.toShort(), // HTC
-        0x2B49.toShort(), // Vivo
-        0x05C6.toShort()  // Qualcomm
-    )
-
-    private var libusbInitialized = false
-
-    @Synchronized
-    fun ensureInitialized() {
-        if (!libusbInitialized) {
-            val result = LibUsb.init(null)
-            if (result != LibUsb.SUCCESS) {
-                throw IllegalStateException("Failed to initialize libusb: ${LibUsb.strError(result)}")
-            }
-            libusbInitialized = true
-        }
-    }
+    data class BulkEndpoints(val interfaceNumber: Int, val inAddr: Byte, val outAddr: Byte)
 
     /**
-     * Scans for an attached Android device. If already in AOA mode, connects immediately.
-     * If in standard MTP/PTP/Charge mode, commands it to switch to AOA mode, waits for re-enumeration,
-     * and establishes the connection.
+     * Sends the standard Android Open Accessory control transfers (requests 51, 52, 53)
+     * to command an attached Android device to reboot into AOA Accessory mode.
      *
-     * @param manufacturer Identification string sent to Android OS
-     * @param model Model string sent to Android OS (used to match intent filter)
-     * @param timeoutMs Maximum wait time for AOA re-enumeration
-     * @return An active [DesktopAoaTransport] or null if no device found
-     */
-    fun autoConnect(
-        manufacturer: String = "AndroidOpenAccessory",
-        model: String = "DataTransfer",
-        timeoutMs: Long = 10000L
-    ): DesktopAoaTransport? {
-        ensureInitialized()
-
-        // 1. Check if device is ALREADY in AOA mode
-        val existingAoa = findAoaDevice()
-        if (existingAoa != null) {
-            val transport = connectToDevice(existingAoa)
-            if (transport != null) return transport
-        }
-
-        // 2. Scan for candidate standard Android devices and switch to AOA
-        val candidateDevice = findCandidateAndroidDevice()
-        if (candidateDevice != null) {
-            val switched = switchToAoa(candidateDevice, manufacturer, model)
-            if (switched) {
-                // Wait for USB re-enumeration (typically takes 500ms - 2500ms)
-                val startTime = System.currentTimeMillis()
-                while (System.currentTimeMillis() - startTime < timeoutMs) {
-                    Thread.sleep(300)
-                    val aoaDev = findAoaDevice()
-                    if (aoaDev != null) {
-                        val transport = connectToDevice(aoaDev)
-                        if (transport != null) return transport
-                    }
-                }
-            }
-        }
-
-        return null
-    }
-
-    /**
-     * Connects directly to an AOA device and claims bulk endpoints.
-     */
-    fun connectToDevice(device: Device): DesktopAoaTransport? {
-        val handle = DeviceHandle()
-        var result = LibUsb.open(device, handle)
-
-        if (result != LibUsb.SUCCESS) {
-            // Retry a few times in case driver is still binding
-            for (i in 1..8) {
-                Thread.sleep(250)
-                result = LibUsb.open(device, handle)
-                if (result == LibUsb.SUCCESS) break
-            }
-        }
-
-        if (result != LibUsb.SUCCESS) return null
-
-        val endpoints = findBulkEndpoints(device)
-        if (endpoints == null) {
-            LibUsb.close(handle)
-            return null
-        }
-
-        LibUsb.setAutoDetachKernelDriver(handle, true)
-        if (LibUsb.kernelDriverActive(handle, endpoints.interfaceNumber) == 1) {
-            LibUsb.detachKernelDriver(handle, endpoints.interfaceNumber)
-        }
-
-        val claimResult = LibUsb.claimInterface(handle, endpoints.interfaceNumber)
-        if (claimResult != LibUsb.SUCCESS) {
-            LibUsb.close(handle)
-            return null
-        }
-
-        return DesktopAoaTransport(
-            handle = handle,
-            endpointIn = endpoints.inAddr,
-            endpointOut = endpoints.outAddr,
-            interfaceNumber = endpoints.interfaceNumber
-        )
-    }
-
-    /**
-     * Sends the three standard Android Open Accessory control transfers.
+     * @param device libusb [Device] to be switched.
+     * @param manufacturer Identification string sent to Android OS.
+     * @param model Model string sent to Android OS (used to match accessory filter).
+     * @return `true` if all control requests succeeded, `false` otherwise.
      */
     fun switchToAoa(
         device: Device,
@@ -212,8 +103,12 @@ object DesktopAoaConnector {
         }
     }
 
-    data class BulkEndpoints(val interfaceNumber: Int, val inAddr: Byte, val outAddr: Byte)
-
+    /**
+     * Resolves bulk IN and OUT endpoints by parsing the active config descriptor on [device].
+     *
+     * @param device libusb [Device] to inspect.
+     * @return [BulkEndpoints] containing interface number and endpoint addresses, or null if not found.
+     */
     fun findBulkEndpoints(device: Device): BulkEndpoints? {
         val config = ConfigDescriptor()
         if (LibUsb.getConfigDescriptor(device, 0, config) != LibUsb.SUCCESS) return null
@@ -247,46 +142,6 @@ object DesktopAoaConnector {
             }
         } finally {
             LibUsb.freeConfigDescriptor(config)
-        }
-        return null
-    }
-
-    private fun findAoaDevice(): Device? {
-        val list = DeviceList()
-        val count = LibUsb.getDeviceList(null, list)
-        if (count < 0) return null
-
-        try {
-            for (device in list) {
-                val desc = DeviceDescriptor()
-                if (LibUsb.getDeviceDescriptor(device, desc) == LibUsb.SUCCESS) {
-                    if (desc.idVendor() == GOOGLE_VID && (desc.idProduct() == AOA_PID_1 || desc.idProduct() == AOA_PID_2)) {
-                        return device
-                    }
-                }
-            }
-        } finally {
-            LibUsb.freeDeviceList(list, false)
-        }
-        return null
-    }
-
-    private fun findCandidateAndroidDevice(): Device? {
-        val list = DeviceList()
-        val count = LibUsb.getDeviceList(null, list)
-        if (count < 0) return null
-
-        try {
-            for (device in list) {
-                val desc = DeviceDescriptor()
-                if (LibUsb.getDeviceDescriptor(device, desc) == LibUsb.SUCCESS) {
-                    if (ANDROID_VENDOR_IDS.contains(desc.idVendor())) {
-                        return device
-                    }
-                }
-            }
-        } finally {
-            LibUsb.freeDeviceList(list, false)
         }
         return null
     }
