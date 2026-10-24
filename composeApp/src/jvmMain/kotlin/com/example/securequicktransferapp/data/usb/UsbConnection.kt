@@ -27,24 +27,12 @@ class UsbConnection : IUsbTransport {
     private var currentInterface = 0
 
     fun switchToAoa(device: Device): Boolean {
-        val tempHandle = DeviceHandle()
-        var openResult = LibUsb.open(device, tempHandle)
-        if (openResult == LibUsb.ERROR_ACCESS) {
-            killAdbServerIfRunning()
-            for (retry in 1..4) {
-                Thread.sleep(300)
-                openResult = LibUsb.open(device, tempHandle)
-                if (openResult == LibUsb.SUCCESS) break
-            }
+        // Delegate AOA protocol negotiation (51/52/53 control transfers) directly to SDK facade
+        val success = SecureQtSdk.switchDeviceToAoa(device)
+        if (!success) {
+            println("[UsbConnection] switchToAoa: switchDeviceToAoa returned false")
         }
-        if (openResult != LibUsb.SUCCESS) {
-            println("[UsbConnection] switchToAoa Error: LibUsb.open failed with code $openResult (${LibUsb.strError(openResult)})")
-            return false
-        }
-        LibUsb.close(tempHandle)
-
-        // Delegate AOA protocol negotiation (51/52/53 control transfers) to SDK facade
-        return SecureQtSdk.switchDeviceToAoa(device)
+        return success
     }
 
     fun isOpen(): Boolean = (transport?.isConnected() == true) || (handle != null)

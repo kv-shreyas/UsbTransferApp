@@ -116,8 +116,7 @@ class DesktopHostCommandSender(
                         }
                     }
                     if (accessory == null) {
-                        logger.w(TAG, "Device failed to reconnect in AOA mode within 10s. If the phone is locked, please unlock it. Prompting driver setup for AOA mode...")
-                        deviceManager.reportDriverIssue(0x18D1, 0x2D00, "Android Open Accessory")
+                        logger.w(TAG, "Device failed to reconnect in AOA mode within 10s. Please ensure: 1) Phone screen is UNLOCKED, 2) USB Tethering is DISABLED, 3) Accept the USB Accessory prompt on Android.")
                         return false
                     }
                     isAoaMode = true

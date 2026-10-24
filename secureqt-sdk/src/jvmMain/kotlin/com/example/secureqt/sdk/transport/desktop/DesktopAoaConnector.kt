@@ -34,7 +34,14 @@ object DesktopAoaConnector {
         model: String = "DataTransfer"
     ): Boolean {
         val tempHandle = DeviceHandle()
-        val openResult = LibUsb.open(device, tempHandle)
+        var openResult = LibUsb.open(device, tempHandle)
+        if (openResult != LibUsb.SUCCESS) {
+            for (retry in 1..3) {
+                Thread.sleep(200)
+                openResult = LibUsb.open(device, tempHandle)
+                if (openResult == LibUsb.SUCCESS) break
+            }
+        }
         if (openResult != LibUsb.SUCCESS) return false
 
         try {

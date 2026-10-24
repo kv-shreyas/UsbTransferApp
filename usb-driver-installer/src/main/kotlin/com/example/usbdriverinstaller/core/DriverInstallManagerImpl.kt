@@ -121,10 +121,14 @@ class DriverInstallManagerImpl(
             )
 
             when (result) {
-                is DriverInstallResult.Success, is DriverInstallResult.NotWindows -> {
+                is DriverInstallResult.Success -> {
                     println("[$tag] Driver installed successfully for $deviceName")
                     _driverInstallState.value = DriverInstallState.Installed(deviceName, vendorId, productId)
                     delay(3000)
+                    _driverInstallState.value = DriverInstallState.Idle
+                }
+                is DriverInstallResult.NotWindows -> {
+                    println("[$tag] Driver install skipped — host OS is not Windows.")
                     _driverInstallState.value = DriverInstallState.Idle
                 }
                 is DriverInstallResult.AccessDenied -> {
