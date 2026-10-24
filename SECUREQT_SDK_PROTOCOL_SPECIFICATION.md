@@ -26,7 +26,7 @@ flowchart TD
 
     subgraph Client["Client: Android (Native AOA / Android App)"]
         STC_A["AndroidClientCommandReceiver"]
-        SC_A["SecureChannel / UsbDataSource"]
+        SC_A["SecureChannel"]
         SWB["SlidingWindowBuffer (5MB Circular Buffer)"]
         AAT["AndroidAoaTransport (16KB usbfs Bursting)"]
         UCM["UsbConnectionManager (ParcelFileDescriptor / UsbAccessory)"]
@@ -383,7 +383,7 @@ sequenceDiagram
     autonumber
     participant Host as Desktop Host (SecureChannel)
     participant Bus as USB Bulk Pipe (AOA)
-    participant Client as Android Client (UsbDataSource)
+    participant Client as Android Client (SecureChannel)
 
     Note over Host,Client: Phase 1: Key Generation
     Host->>Host: Generate ECDH P-256 KeyPair (A_priv, A_pub)

@@ -1,13 +1,13 @@
 package com.example.securequicktransferapp.data.usb.command.handlers
 
 import android.content.Context
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.protocol.CommandPayloadParser
 import com.example.securequicktransferapp.data.logging.UsbLogger
 import com.example.securequicktransferapp.data.usb.command.CommandContext
 import com.example.securequicktransferapp.data.usb.command.ICommandHandler
 import com.example.securequicktransferapp.data.usb.storage.AndroidFilePathResolver
 import com.example.securequicktransferapp.data.usb.storage.SmartNavStorageResolver
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
 import com.example.securequicktransferapp.domain.command.AppCommandIds
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.delay
@@ -28,7 +28,7 @@ private const val TAG = "ListDirHandler"
 @Singleton
 class ListDirHandler @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val dataSource: UsbDataSource,
+    private val channel: SecureChannel,
     private val usbLogger: UsbLogger
 ) : ICommandHandler {
 
@@ -53,7 +53,7 @@ class ListDirHandler @Inject constructor(
         }
 
         // Send item count first
-        dataSource.sendSecure(ByteBuffer.allocate(4).putInt(items.size).array())
+        channel.sendSecure(ByteBuffer.allocate(4).putInt(items.size).array())
         delay(50) // brief yield to let the count packet land before items stream begins
 
         usbLogger.i(TAG, "Sending ${items.size} items for '$path'")
@@ -63,7 +63,7 @@ class ListDirHandler @Inject constructor(
                 .putLong(size)
                 .putInt(nameBytes.size)
                 .put(nameBytes)
-            dataSource.sendSecure(itemPacket.array())
+            channel.sendSecure(itemPacket.array())
         }
         return true
     }

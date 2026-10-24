@@ -1,6 +1,7 @@
 package com.example.securequicktransferapp.di
 
-import com.example.securequicktransferapp.data.usb.connection.IUsbConnection
+import com.example.secureqt.sdk.SecureQtSdk
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
 import dagger.Module
 import dagger.Provides
@@ -14,7 +15,7 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideIUsbConnection(
+    fun provideSecureChannel(
         connectionManager: UsbConnectionManager
-    ): IUsbConnection = connectionManager
+    ): SecureChannel = SecureQtSdk.createChannel(connectionManager)
 }

@@ -2,13 +2,13 @@ package com.example.securequicktransferapp.data.usb.command.handlers
 
 import android.content.Context
 import com.example.secureqt.sdk.SecureQtSdk
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.protocol.CommandPayloadParser
 import com.example.securequicktransferapp.data.logging.UsbLogger
 import com.example.securequicktransferapp.data.usb.command.CommandContext
 import com.example.securequicktransferapp.data.usb.command.ICommandHandler
 import com.example.securequicktransferapp.data.usb.storage.AndroidFilePathResolver
 import com.example.securequicktransferapp.data.usb.storage.SmartNavStorageResolver
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
 import com.example.securequicktransferapp.domain.command.AppCommandIds
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +41,7 @@ private const val TAG = "ReceiveFileHandler"
 @Singleton
 class ReceiveFileHandler @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val dataSource: UsbDataSource,
+    private val channel: SecureChannel,
     private val usbLogger: UsbLogger
 ) : ICommandHandler {
 
@@ -104,8 +104,8 @@ class ReceiveFileHandler @Inject constructor(
         launch(Dispatchers.IO) {
             try {
                 while (isActive) {
-                    val packet = dataSource.receiveRawPacket() ?: break
-                    if (packet.first == SecureQtSdk.Packets.TYPE_CANCEL) throw UsbDataSource.TransferCancelledException()
+                    val packet = channel.receiveRawPacket() ?: break
+                    if (packet.first == SecureQtSdk.Packets.TYPE_CANCEL) throw SecureChannel.TransferCancelledException()
                     if (packet.first != SecureQtSdk.Packets.TYPE_DATA) break
                     rawPacketChannel.send(packet.second)
                 }
@@ -118,7 +118,7 @@ class ReceiveFileHandler @Inject constructor(
         launch(Dispatchers.Default) {
             try {
                 for (raw in rawPacketChannel) {
-                    val decrypted = dataSource.decryptData(raw) ?: break
+                    val decrypted = channel.decryptData(raw) ?: break
                     decryptedChannel.send(decrypted)
                 }
             } finally {

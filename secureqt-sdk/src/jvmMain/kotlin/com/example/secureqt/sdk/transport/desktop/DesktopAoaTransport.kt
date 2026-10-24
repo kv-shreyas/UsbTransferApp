@@ -30,7 +30,7 @@ class DesktopAoaTransport(
     private val readLock = Any()
     private val writeLock = Any()
 
-    fun readSync(buffer: ByteArray): Int {
+    private fun readSync(buffer: ByteArray): Int {
         synchronized(readLock) {
             if (!connected || handle.pointer == 0L) return -1
 
@@ -78,7 +78,7 @@ class DesktopAoaTransport(
         readSync(buffer)
     }
 
-    fun writeSync(buffer: ByteArray): Boolean {
+    private fun writeSync(buffer: ByteArray): Boolean {
         synchronized(writeLock) {
             if (!connected || handle.pointer == 0L) return false
 

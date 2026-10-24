@@ -37,7 +37,7 @@ class AndroidAoaTransport(
     private var fileInputStream: FileInputStream? = pfd?.let { FileInputStream(it.fileDescriptor) }
     private var fileOutputStream: FileOutputStream? = pfd?.let { FileOutputStream(it.fileDescriptor) }
 
-    fun readSync(buffer: ByteArray, offset: Int = 0, length: Int = buffer.size - offset): Int {
+    private fun readSync(buffer: ByteArray, offset: Int = 0, length: Int = buffer.size - offset): Int {
         val stream = fileInputStream ?: return -1
         return try {
             stream.read(buffer, offset, length)
@@ -50,7 +50,7 @@ class AndroidAoaTransport(
         readSync(buffer, 0, buffer.size)
     }
 
-    fun writeSync(buffer: ByteArray, offset: Int = 0, length: Int = buffer.size - offset): Boolean {
+    private fun writeSync(buffer: ByteArray, offset: Int = 0, length: Int = buffer.size - offset): Boolean {
         val stream = fileOutputStream ?: return false
         return try {
             var currentOffset = offset

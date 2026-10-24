@@ -66,7 +66,6 @@ class UsbSessionNativeMemoryLeakTest {
             isConnected = false
         }
 
-        override fun receiveStream(): Flow<ByteArray> = flowOf()
         override suspend fun listDirectory(path: String): List<RemoteFile> = emptyList()
         override fun sendFile(file: File, destinationPath: String, isDirectory: Boolean, remoteFileName: String): Flow<Int> = flowOf(100)
         override fun fetchFile(remotePath: String, localFile: File): Flow<Int> = flowOf(100)

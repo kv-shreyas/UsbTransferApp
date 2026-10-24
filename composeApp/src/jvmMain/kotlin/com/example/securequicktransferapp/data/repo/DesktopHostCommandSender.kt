@@ -204,8 +204,6 @@ class DesktopHostCommandSender(
         connection.close()
     }
 
-    override fun receiveStream(): Flow<ByteArray> = channelFlow { }
-
     override suspend fun listDirectory(path: String): List<RemoteFile> {
         return transferClient.listRemoteFiles(path).map { RemoteFile(it.name, it.isDirectory, it.size, path + "/" + it.name) }
     }

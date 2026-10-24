@@ -2,13 +2,13 @@ package com.example.securequicktransferapp.data.usb.command.handlers
 
 import android.content.Context
 import com.example.secureqt.sdk.SecureQtSdk
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.protocol.CommandPayloadParser
 import com.example.securequicktransferapp.data.logging.UsbLogger
 import com.example.securequicktransferapp.data.usb.command.CommandContext
 import com.example.securequicktransferapp.data.usb.command.ICommandHandler
 import com.example.securequicktransferapp.data.usb.storage.AndroidFilePathResolver
 import com.example.securequicktransferapp.data.usb.storage.SmartNavStorageResolver
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
 import com.example.securequicktransferapp.data.usb.util.ZipUtils
 import com.example.securequicktransferapp.domain.command.AppCommandIds
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -37,7 +37,7 @@ private const val TAG = "FetchDirHandler"
 @Singleton
 class FetchDirHandler @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val dataSource: UsbDataSource,
+    private val channel: SecureChannel,
     private val usbLogger: UsbLogger
 ) : ICommandHandler {
 
@@ -65,7 +65,7 @@ class FetchDirHandler @Inject constructor(
         }
 
         usbLogger.d(TAG, "Sending SmartNav ZIP: $zipSize bytes from '$zipPath'")
-        dataSource.sendSecure(ByteBuffer.allocate(8).putLong(zipSize).array())
+        channel.sendSecure(ByteBuffer.allocate(8).putLong(zipSize).array())
 
         val input: InputStream = SmartNavStorageResolver.openInputStream(context, zipPath)
             ?: tryOpenFallbackStream(zipPath) ?: run { sendEmpty(); return }
@@ -93,7 +93,7 @@ class FetchDirHandler @Inject constructor(
             ZipUtils.zipDirectory(dir, tempZip)
             val zipSize = tempZip.length()
             usbLogger.d(TAG, "Sending ZIP: $zipSize bytes")
-            dataSource.sendSecure(ByteBuffer.allocate(8).putLong(zipSize).array())
+            channel.sendSecure(ByteBuffer.allocate(8).putLong(zipSize).array())
             sendStream(FileInputStream(tempZip))
         } catch (e: Exception) {
             usbLogger.e(TAG, "Error zipping/sending directory '$path'", e)
@@ -116,8 +116,8 @@ class FetchDirHandler @Inject constructor(
     }
 
     private suspend fun sendEmpty() {
-        dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0L).array())
-        dataSource.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
+        channel.sendSecure(ByteBuffer.allocate(8).putLong(0L).array())
+        channel.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
     }
 
     private suspend fun sendStream(input: InputStream) = coroutineScope {
@@ -141,7 +141,7 @@ class FetchDirHandler @Inject constructor(
         launch(Dispatchers.Default) {
             try {
                 for (chunk in chunkChannel) {
-                    val encrypted = dataSource.encryptAndWrapData(chunk) ?: break
+                    val encrypted = channel.encryptAndWrapData(chunk) ?: break
                     encryptedChannel.send(encrypted)
                 }
             } finally {
@@ -150,8 +150,8 @@ class FetchDirHandler @Inject constructor(
         }
 
         for (encrypted in encryptedChannel) {
-            if (!dataSource.sendPrebuiltPacket(encrypted)) break
+            if (!channel.sendPrebuiltPacket(encrypted)) break
         }
-        dataSource.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
+        channel.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
     }
 }

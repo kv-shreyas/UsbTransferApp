@@ -135,21 +135,6 @@ class UsbConnection : IUsbTransport {
         transport?.clearBuffer()
     }
 
-    fun bulkRead(): ByteArray? {
-        val t = transport ?: return null
-        val temp = ByteArray(300 * 1024)
-        val read = t.readSync(temp)
-        return if (read > 0) temp.copyOf(read) else null
-    }
-
-    fun bulkWrite(data: ByteArray): Boolean {
-        return transport?.writeSync(data) ?: false
-    }
-
-    fun clearInputBuffer() {
-        transport?.clearBuffer()
-    }
-
     fun close() {
         transport?.close()
         transport = null

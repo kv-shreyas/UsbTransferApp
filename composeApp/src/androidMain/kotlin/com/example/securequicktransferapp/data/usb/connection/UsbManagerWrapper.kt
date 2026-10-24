@@ -82,10 +82,6 @@ class UsbManagerWrapper @Inject constructor(
         usbManager.requestPermission(accessory, pendingIntent)
     }
 
-    fun openAccessory(accessory: UsbAccessory): ParcelFileDescriptor? {
-        return usbManager.openAccessory(accessory)
-    }
-
     fun observeCableState(): Flow<Boolean> = callbackFlow {
         trySend(isUsbCablePhysicallyConnected())
 

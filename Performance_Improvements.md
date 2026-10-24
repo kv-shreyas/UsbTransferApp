@@ -5,7 +5,7 @@ This document details the critical performance optimizations applied to both the
 ## 1. Eliminating O(N²) Memory Reallocation and GC Pauses
 
 **The Problem:**
-In both `UsbDataSource.kt` (Android) and `UsbRepositoryImpl.kt` (Desktop), the stream buffer was manually concatenating incoming bytes using Kotlin's `+` operator.
+In both `SecureChannel.kt` (Android & Desktop) and earlier legacy implementations, the stream buffer was manually concatenating incoming bytes using Kotlin's `+` operator.
 ```kotlin
 // OLD CODE
 private var leftoverBuffer = ByteArray(0)

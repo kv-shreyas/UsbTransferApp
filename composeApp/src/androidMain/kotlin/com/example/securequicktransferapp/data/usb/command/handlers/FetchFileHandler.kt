@@ -2,13 +2,13 @@ package com.example.securequicktransferapp.data.usb.command.handlers
 
 import android.content.Context
 import com.example.secureqt.sdk.SecureQtSdk
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.protocol.CommandPayloadParser
 import com.example.securequicktransferapp.data.logging.UsbLogger
 import com.example.securequicktransferapp.data.usb.command.CommandContext
 import com.example.securequicktransferapp.data.usb.command.ICommandHandler
 import com.example.securequicktransferapp.data.usb.storage.AndroidFilePathResolver
 import com.example.securequicktransferapp.data.usb.storage.SmartNavStorageResolver
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
 import com.example.securequicktransferapp.domain.command.AppCommandIds
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -41,7 +41,7 @@ private const val TAG = "FetchFileHandler"
 @Singleton
 class FetchFileHandler @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val dataSource: UsbDataSource,
+    private val channel: SecureChannel,
     private val usbLogger: UsbLogger
 ) : ICommandHandler {
 
@@ -55,14 +55,14 @@ class FetchFileHandler @Inject constructor(
         val resolved = resolveInputStream(path)
         if (resolved == null) {
             usbLogger.w(TAG, "File not found or unreadable: '$path'")
-            dataSource.sendSecure(ByteBuffer.allocate(8).putLong(0L).array())
-            dataSource.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
+            channel.sendSecure(ByteBuffer.allocate(8).putLong(0L).array())
+            channel.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
             return true
         }
 
         val (inputStream, length) = resolved
         usbLogger.d(TAG, "Sending $length bytes from '$path'")
-        dataSource.sendSecure(ByteBuffer.allocate(8).putLong(length).array())
+        channel.sendSecure(ByteBuffer.allocate(8).putLong(length).array())
 
         try {
             sendStream(inputStream)
@@ -114,7 +114,7 @@ class FetchFileHandler @Inject constructor(
         launch(Dispatchers.Default) {
             try {
                 for (chunk in chunkChannel) {
-                    val encrypted = dataSource.encryptAndWrapData(chunk) ?: break
+                    val encrypted = channel.encryptAndWrapData(chunk) ?: break
                     encryptedChannel.send(encrypted)
                 }
             } finally {
@@ -123,8 +123,8 @@ class FetchFileHandler @Inject constructor(
         }
 
         for (encrypted in encryptedChannel) {
-            if (!dataSource.sendPrebuiltPacket(encrypted)) break
+            if (!channel.sendPrebuiltPacket(encrypted)) break
         }
-        dataSource.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
+        channel.sendRawPacket(SecureQtSdk.Packets.TYPE_EOF, ByteArray(0))
     }
 }

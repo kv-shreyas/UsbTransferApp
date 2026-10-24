@@ -1,6 +1,6 @@
 package com.example.securequicktransferapp.data.usb.service
 
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.securequicktransferapp.data.usb.command.AndroidClientCommandReceiver
 import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
 import com.example.secureqt.sdk.SecureQtSdk
@@ -28,7 +28,7 @@ import javax.inject.Singleton
 class ClientServiceController @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val connectionManager: UsbConnectionManager,
-    private val dataSource: UsbDataSource,
+    private val channel: SecureChannel,
     private val commandReceiver: AndroidClientCommandReceiver,
     private val usbLogger: UsbLogger,
     private val usbManagerWrapper: UsbManagerWrapper
@@ -70,7 +70,7 @@ class ClientServiceController @Inject constructor(
             clientJob?.cancel()
             clientJob = null
             connectionManager.disconnect()
-            dataSource.disconnect()
+            channel.disconnect()
             isServiceRunning.value = false
             remoteDeviceId = null
             currentReceiveFileName = ""
@@ -92,7 +92,7 @@ class ClientServiceController @Inject constructor(
             clientJob?.cancel()
             clientJob = null
             connectionManager.disconnect()
-            dataSource.disconnect()
+            channel.disconnect()
             isServiceRunning.value = false
             remoteDeviceId = null
             currentReceiveFileName = ""
@@ -156,7 +156,7 @@ class ClientServiceController @Inject constructor(
                     clientUiState.value = UsbUiState.Success("Standby: Waiting for Host...", remoteDeviceId)
                     onStatusUpdate("Standby: Waiting for Host...")
 
-                    if (dataSource.performHandshake()) {
+                    if (channel.performHandshake(isInitiator = false)) {
                         usbLogger.i(TAG, "runClientLoop: Handshake SUCCESS. Secure channel established.")
                         clientUiState.value = UsbUiState.Success("Secure Channel Established", remoteDeviceId)
                         onStatusUpdate("Connected as Client: Listening for commands")

@@ -27,7 +27,7 @@ data class ReceivedCommand(
  * (strings, numbers, pairs) without coupling itself to application-specific command IDs.
  *
  * Sits as the direct decoding counterpart to [CommandPayloadBuilder].
- * Both the Android client/host and Desktop host use this parser to ensure decoding
+ * Both the Android client and Desktop host use this parser to ensure decoding
  * logic cannot drift between platforms.
  *
  * @see CommandPayloadBuilder for the complementary encoder (send side).

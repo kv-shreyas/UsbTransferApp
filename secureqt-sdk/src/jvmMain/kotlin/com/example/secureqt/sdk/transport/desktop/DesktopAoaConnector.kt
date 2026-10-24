@@ -46,7 +46,7 @@ object DesktopAoaConnector {
             val protocolBuffer = ByteBuffer.allocateDirect(2)
             val protocolResult = LibUsb.controlTransfer(
                 tempHandle,
-                (LibUsb.ENDPOINT_IN or LibUsb.REQUEST_TYPE_VENDOR).toByte(),
+                LibUsb.ENDPOINT_IN or LibUsb.REQUEST_TYPE_VENDOR,
                 ACCESSORY_GET_PROTOCOL.toByte(),
                 0.toShort(),
                 0.toShort(),
@@ -77,7 +77,7 @@ object DesktopAoaConnector {
 
                 val res = LibUsb.controlTransfer(
                     tempHandle,
-                    (LibUsb.ENDPOINT_OUT or LibUsb.REQUEST_TYPE_VENDOR).toByte(),
+                    LibUsb.ENDPOINT_OUT or LibUsb.REQUEST_TYPE_VENDOR,
                     ACCESSORY_SEND_STRING.toByte(),
                     0.toShort(),
                     i.toShort(),
@@ -90,7 +90,7 @@ object DesktopAoaConnector {
             // 3. Start Accessory
             val startRes = LibUsb.controlTransfer(
                 tempHandle,
-                (LibUsb.ENDPOINT_OUT or LibUsb.REQUEST_TYPE_VENDOR).toByte(),
+                LibUsb.ENDPOINT_OUT or LibUsb.REQUEST_TYPE_VENDOR,
                 ACCESSORY_START.toByte(),
                 0.toShort(),
                 0.toShort(),

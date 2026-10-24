@@ -8,7 +8,6 @@ interface UsbRepository {
     val isAoaMode: Boolean
     fun connect(): Boolean
     fun disconnect()
-    fun receiveStream(): Flow<ByteArray>
     fun sendFile(file: File, destinationPath: String, isDirectory: Boolean = false, remoteFileName: String = file.name): Flow<Int>
     fun fetchFile(remotePath: String, localFile: File): Flow<Int>
     fun fetchDirectory(remotePath: String, localFile: File): Flow<Int>

@@ -1,4 +1,5 @@
 package com.example.securequicktransferapp.presentation.ui
+import com.example.secureqt.sdk.SecureQtSdk
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -72,7 +73,6 @@ import com.example.securequicktransferapp.presentation.vm.MainViewModel
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.launch
-import java.lang.Math.pow
 
 @Composable
 fun SmartNavDesktopDashboard(
@@ -392,10 +392,7 @@ fun SmartNavDesktopDashboard(
                         
                         fun formatSize(sizeBytes: Long): String {
                             if (sizeBytes == -1L) return "Busy (Transferring)"
-                            if (sizeBytes <= 0) return "0 B"
-                            val units = arrayOf("B", "KB", "MB", "GB", "TB")
-                            val digitGroups = (kotlin.math.log10(sizeBytes.toDouble()) / kotlin.math.log10(1024.0)).toInt()
-                            return String.format("%.2f %s", sizeBytes / pow(1024.0, digitGroups.toDouble()), units[digitGroups])
+                            return SecureQtSdk.Utils.formatSize(sizeBytes)
                         }
 
                         OutlinedCard(

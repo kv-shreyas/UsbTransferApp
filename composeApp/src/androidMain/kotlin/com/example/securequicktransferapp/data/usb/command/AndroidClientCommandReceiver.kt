@@ -1,9 +1,9 @@
 package com.example.securequicktransferapp.data.usb.command
 
 import com.example.secureqt.sdk.SecureQtSdk
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.protocol.CommandPayloadParser
 import com.example.securequicktransferapp.data.logging.UsbLogger
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
 import com.example.securequicktransferapp.domain.command.AppCommandRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -33,7 +33,7 @@ private const val TAG = "AndroidClientCommandReceiver"
  */
 @Singleton
 class AndroidClientCommandReceiver @Inject constructor(
-    private val dataSource: UsbDataSource,
+    private val channel: SecureChannel,
     private val registry: CommandHandlerRegistry,
     private val logger: UsbLogger
 ) {
@@ -73,7 +73,7 @@ class AndroidClientCommandReceiver @Inject constructor(
         // Send a brief burst of PING packets so the Desktop knows the client is ready
         val ackJob = launch {
             repeat(4) {
-                try { dataSource.sendRawPacket(SecureQtSdk.Packets.TYPE_PING, ByteArray(0)) }
+                try { channel.sendRawPacket(SecureQtSdk.Packets.TYPE_PING, ByteArray(0)) }
                 catch (_: Exception) { return@launch }
                 delay(150.milliseconds)
             }
@@ -83,8 +83,8 @@ class AndroidClientCommandReceiver @Inject constructor(
             while (isActive) {
                 // Receive next encrypted command payload (blocks until data arrives)
                 val raw = try {
-                    dataSource.receiveSecure() ?: break
-                } catch (e: UsbDataSource.TransferCancelledException) {
+                    channel.receiveSecure() ?: break
+                } catch (e: SecureChannel.TransferCancelledException) {
                     logger.w(TAG, "Transfer cancelled by remote — resuming command loop")
                     withContext(Dispatchers.Main) { onReceiveCancelled() }
                     continue
@@ -106,7 +106,7 @@ class AndroidClientCommandReceiver @Inject constructor(
 
                 val shouldContinue: Boolean = try {
                     handler.handle(command.payload, cmdCtx)
-                } catch (e: UsbDataSource.TransferCancelledException) {
+                } catch (e: SecureChannel.TransferCancelledException) {
                     logger.w(TAG, "${handler::class.simpleName}: cancelled by remote")
                     withContext(Dispatchers.Main) { onReceiveCancelled() }
                     true

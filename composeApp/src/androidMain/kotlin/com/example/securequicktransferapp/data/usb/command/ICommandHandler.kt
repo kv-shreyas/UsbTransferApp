@@ -17,7 +17,7 @@ import java.nio.ByteBuffer
  * ```kotlin
  * @Singleton
  * class GetAppVersionHandler @Inject constructor(
- *     private val dataSource: UsbDataSource,
+ *     private val channel: SecureChannel,
  *     private val logger: UsbLogger
  * ) : ICommandHandler {
  *     override val commandId = AppCommandIds.CMD_GET_APP_VERSION
@@ -27,7 +27,7 @@ import java.nio.ByteBuffer
  *         // respond with: [4: versionLen][version bytes]
  *         val response = ByteBuffer.allocate(4 + version.size)
  *             .putInt(version.size).put(version).array()
- *         dataSource.sendSecure(response)
+ *         channel.sendSecure(response)
  *         return true  // continue the command loop
  *     }
  * }

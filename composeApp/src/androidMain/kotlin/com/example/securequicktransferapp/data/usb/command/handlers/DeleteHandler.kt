@@ -1,13 +1,13 @@
 package com.example.securequicktransferapp.data.usb.command.handlers
 
 import android.content.Context
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.protocol.CommandPayloadParser
 import com.example.securequicktransferapp.data.logging.UsbLogger
 import com.example.securequicktransferapp.data.usb.command.CommandContext
 import com.example.securequicktransferapp.data.usb.command.ICommandHandler
 import com.example.securequicktransferapp.data.usb.storage.AndroidFilePathResolver
 import com.example.securequicktransferapp.data.usb.storage.SmartNavStorageResolver
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
 import com.example.securequicktransferapp.domain.command.AppCommandIds
 import dagger.hilt.android.qualifiers.ApplicationContext
 import java.nio.ByteBuffer
@@ -25,7 +25,7 @@ private const val TAG = "DeleteHandler"
 @Singleton
 class DeleteHandler @Inject constructor(
     @param:ApplicationContext private val context: Context,
-    private val dataSource: UsbDataSource,
+    private val channel: SecureChannel,
     private val usbLogger: UsbLogger
 ) : ICommandHandler {
 
@@ -52,7 +52,7 @@ class DeleteHandler @Inject constructor(
         }
 
         usbLogger.d(TAG, "Delete result: success=$success")
-        dataSource.sendSecure(byteArrayOf(if (success) 1.toByte() else 0.toByte()))
+        channel.sendSecure(byteArrayOf(if (success) 1.toByte() else 0.toByte()))
         return true
     }
 }

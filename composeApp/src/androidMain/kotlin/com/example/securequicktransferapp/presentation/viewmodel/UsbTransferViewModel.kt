@@ -13,7 +13,7 @@ import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionEvent
 import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
 import com.example.securequicktransferapp.data.usb.connection.UsbManagerWrapper
 import com.example.securequicktransferapp.data.usb.service.ClientServiceController
-import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
+import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.securequicktransferapp.domain.model.TransferProgress
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -40,7 +40,7 @@ import kotlin.time.Duration.Companion.milliseconds
 class UsbTransferViewModel @Inject constructor(
     private val usbManagerWrapper: UsbManagerWrapper,
     private val connectionManager: UsbConnectionManager,
-    private val dataSource: UsbDataSource,
+    private val channel: SecureChannel,
     private val preferencesManager: UsbPreferencesManager,
     private val clientServiceController: ClientServiceController,
     val usbLogger: UsbLogger
@@ -416,7 +416,7 @@ class UsbTransferViewModel @Inject constructor(
             // Attempt to send disconnect packet to Desktop Host
             try {
                 withTimeoutOrNull(250.milliseconds) {
-                    dataSource.sendSecure(byteArrayOf(4.toByte()))
+                    channel.sendSecure(byteArrayOf(4.toByte()))
                     delay(50.milliseconds)
                 }
             } catch (e: Exception) {
@@ -429,7 +429,7 @@ class UsbTransferViewModel @Inject constructor(
 
                 // Clean up hardware connections and crypto session
                 connectionManager.disconnect()
-                dataSource.disconnect()
+                channel.disconnect()
 
                 currentAccessory = null
 
@@ -462,7 +462,7 @@ class UsbTransferViewModel @Inject constructor(
             if (sendSignal) {
                 try {
                     withTimeoutOrNull(250.milliseconds) {
-                        dataSource.sendSecure(byteArrayOf(4.toByte()))
+                        channel.sendSecure(byteArrayOf(4.toByte()))
                         delay(50.milliseconds)
                     }
                 } catch (e: Exception) {
@@ -473,7 +473,7 @@ class UsbTransferViewModel @Inject constructor(
             withContext(Dispatchers.Main) {
                 clientServiceController.reset()
                 connectionManager.disconnect()
-                dataSource.disconnect()
+                channel.disconnect()
 
                 currentAccessory = null
 
