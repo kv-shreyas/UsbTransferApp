@@ -14,14 +14,23 @@ import kotlinx.coroutines.flow.channelFlow
 import java.io.File
 import kotlin.time.Duration.Companion.milliseconds
 
-class UsbRepositoryImpl(
+/**
+ * Desktop Host Command Sender: Implements [UsbRepository] when the Desktop acts
+ * as the USB Host (initiator), sending file transfer and management commands to
+ * the connected Android accessory / client.
+ *
+ * Symmetrically pairs with [com.example.securequicktransferapp.data.usb.command.AndroidHostCommandSender]
+ * (when Android acts as Host) and delegates low-level transfer command encoding to
+ * the SDK's [com.example.secureqt.sdk.client.ISecureTransferClient].
+ */
+class DesktopHostCommandSender(
     private val deviceManager: UsbDeviceManager,
     private val connection: UsbConnection,
     private val targetDeviceId: String? = null,
     private val logger: ILogger = ConsoleLogger()
 ) : UsbRepository {
 
-    private val TAG = "UsbRepo"
+    private val TAG = "DesktopHostCommandSender"
     override var isAoaMode: Boolean = false
         private set
 
@@ -248,6 +257,10 @@ class UsbRepositoryImpl(
 
     override fun cancelTransfer() {
         transferClient.cancelTransfer()
+    }
+
+    override suspend fun executeCustomCommand(commandId: Byte, payload: ByteArray): ByteArray? {
+        return transferClient.executeCustomCommand(commandId, payload)
     }
 
     override fun checkPhysicalConnection(): Pair<Boolean, String?> {

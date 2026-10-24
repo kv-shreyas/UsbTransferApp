@@ -25,7 +25,7 @@ flowchart TD
     end
 
     subgraph Client["Client: Android (Native AOA / Android App)"]
-        STC_A["HostCommandSender / UsbCommandProcessor"]
+        STC_A["AndroidHostCommandSender / AndroidClientCommandReceiver"]
         SC_A["SecureChannel / UsbDataSource"]
         SWB["SlidingWindowBuffer (5MB Circular Buffer)"]
         AAT["AndroidAoaTransport (16KB usbfs Bursting)"]
@@ -62,7 +62,9 @@ object SecureQtSdk {
     fun createChannel(transport: IUsbTransport): SecureChannel = SecureChannel(transport)
     fun createTransferClient(channel: SecureChannel): ISecureTransferClient = SecureTransferClientImpl(channel)
     
-    val Commands = CommandConstants
+    val CommandPayloadParser = com.example.secureqt.sdk.protocol.CommandPayloadParser
+    val CommandPayloadBuilder = com.example.secureqt.sdk.protocol.CommandPayloadBuilder
+    val StandardCommands = StandardCommandIds
     val Packets = PacketTypes
     val Codec = PacketCodec
     val Utils = FormatUtils
@@ -191,7 +193,7 @@ Emergency out-of-band abort signal dispatched upon user request.
 
 ---
 
-### 2.3 Application Command Payload Schemas (`CommandConstants`)
+### 2.3 Application Command Payload Schemas (`StandardCommandIds` / `AppCommandIds`)
 
 All application command payloads are encrypted inside `TYPE_DATA` packets. Once decrypted, their inner structures are defined as follows:
 
@@ -567,7 +569,7 @@ All control instructions, folder navigations, renames, and queries are transmitt
       |-- buffer = [0x09][4B idLength][idBytes]            |
       |-- sendSecure(buffer)                               |
       v                                                    v
-[ AES-GCM Encrypt ] === TYPE_DATA (USB Wire) ===> [ UsbCommandProcessor ]
+[ AES-GCM Encrypt ] === TYPE_DATA (USB Wire) ===> [ AndroidClientCommandReceiver ]
                                                            |-- Read 0x09 Command
                                                            |-- Parse UTF-8 Host String
                                                            |-- Broadcast to ViewModel

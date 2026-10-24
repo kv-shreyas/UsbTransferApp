@@ -2,8 +2,11 @@ package com.example.securequicktransferapp.domain.usecases
 
 import com.example.securequicktransferapp.domain.repo.UsbRepository
 import com.example.securequicktransferapp.domain.model.RemoteFile
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.FileOutputStream
 
@@ -53,7 +56,9 @@ class UsbUseCases(private val repo: UsbRepository) {
         var total = 0L
         try {
             repo.receiveStream().collect { chunk ->
-                fos.write(chunk)
+                withContext(Dispatchers.IO) {
+                    fos.write(chunk)
+                }
                 total += chunk.size
                 emit(total)
             }
@@ -61,4 +66,5 @@ class UsbUseCases(private val repo: UsbRepository) {
             fos.close()
         }
     }
+        .flowOn(Dispatchers.IO)
 }

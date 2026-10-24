@@ -11,7 +11,7 @@ import com.example.securequicktransferapp.data.logging.UsbLogger
 import com.example.securequicktransferapp.data.preferences.UsbPreferencesManager
 import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionBus
 import com.example.securequicktransferapp.data.usb.broadcast.UsbPermissionEvent
-import com.example.securequicktransferapp.data.usb.command.HostCommandSender
+import com.example.securequicktransferapp.data.usb.command.AndroidHostCommandSender
 import com.example.securequicktransferapp.data.usb.connection.AoaHostSwitcher
 import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
 import com.example.securequicktransferapp.data.usb.connection.UsbManagerWrapper
@@ -41,7 +41,7 @@ class UsbTransferViewModel @Inject constructor(
     private val connectionManager: UsbConnectionManager,
     private val aoaHostSwitcher: AoaHostSwitcher,
     private val dataSource: UsbDataSource,
-    private val hostCommandSender: HostCommandSender,
+    private val hostCommandSender: AndroidHostCommandSender,
     private val usbUseCases: UsbUseCases,
     private val preferencesManager: UsbPreferencesManager,
     private val clientServiceController: ClientServiceController,

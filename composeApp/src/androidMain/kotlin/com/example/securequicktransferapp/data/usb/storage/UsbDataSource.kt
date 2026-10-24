@@ -13,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val TAG = "UsbDataSource"
 
@@ -93,7 +94,7 @@ class UsbDataSource @Inject constructor(
         for (i in 0 until 240) {
             packet = receivePacket()
             if (packet == null) {
-                delay(250)
+                delay(250.milliseconds)
                 continue
             }
             if (packet.first == SecureQtSdk.Packets.TYPE_PUBLIC_KEY) {
@@ -244,7 +245,7 @@ class UsbDataSource @Inject constructor(
     suspend fun receiveSecure(): ByteArray? = withContext(Dispatchers.IO) {
         val packet = receiveRawPacket() ?: return@withContext null
         
-        if (packet.first == SecureQtSdk.Commands.CMD_CANCEL_TRANSFER) {
+        if (packet.first == SecureQtSdk.Packets.TYPE_CANCEL) {
             throw TransferCancelledException()
         }
         

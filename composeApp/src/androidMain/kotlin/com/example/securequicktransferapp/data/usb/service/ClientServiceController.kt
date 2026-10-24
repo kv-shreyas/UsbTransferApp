@@ -1,9 +1,7 @@
 package com.example.securequicktransferapp.data.usb.service
 
 import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
-
-import com.example.securequicktransferapp.data.usb.command.UsbCommandProcessor
-
+import com.example.securequicktransferapp.data.usb.command.AndroidClientCommandReceiver
 import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
 import com.example.secureqt.sdk.SecureQtSdk
 
@@ -31,7 +29,7 @@ class ClientServiceController @Inject constructor(
     @param:ApplicationContext private val context: Context,
     private val connectionManager: UsbConnectionManager,
     private val dataSource: UsbDataSource,
-    private val commandProcessor: UsbCommandProcessor,
+    private val commandReceiver: AndroidClientCommandReceiver,
     private val usbLogger: UsbLogger,
     private val usbManagerWrapper: UsbManagerWrapper
 ) {
@@ -163,7 +161,7 @@ class ClientServiceController @Inject constructor(
                         clientUiState.value = UsbUiState.Success("Secure Channel Established", remoteDeviceId)
                         onStatusUpdate("Connected as Client: Listening for commands")
 
-                        commandProcessor.startListening(
+                        commandReceiver.startListening(
                             onReceiveStarted = { fileName, fileSize ->
                                 currentReceiveFileName = fileName
                                 currentReceiveFileSize = fileSize

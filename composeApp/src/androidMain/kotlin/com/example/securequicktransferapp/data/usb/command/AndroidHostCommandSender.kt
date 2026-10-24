@@ -1,14 +1,12 @@
 package com.example.securequicktransferapp.data.usb.command
 
 import com.example.securequicktransferapp.data.usb.storage.UsbDataSource
-
 import com.example.securequicktransferapp.data.usb.storage.SmartNavStorageResolver
-
 import com.example.securequicktransferapp.data.usb.connection.UsbManagerWrapper
-
 import android.content.Context
 import com.example.secureqt.sdk.SecureQtSdk
-
+import com.example.secureqt.sdk.protocol.CommandPayloadBuilder
+import com.example.securequicktransferapp.domain.command.AppCommandIds
 import com.example.securequicktransferapp.domain.model.RemoteFile
 import com.example.securequicktransferapp.domain.repo.UsbRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,16 +28,22 @@ import java.nio.ByteBuffer
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Android Host Command Sender: Implements [UsbRepository] when the Android device acts
+ * as the USB Host (initiator), sending commands to a connected client device.
+ *
+ * Distinct from Desktop host command sender ([DesktopHostCommandSender]) and Android
+ * client receiver ([AndroidClientCommandReceiver]).
+ */
 @Singleton
-class HostCommandSender @Inject constructor(
+class AndroidHostCommandSender @Inject constructor(
     private val dataSource: UsbDataSource,
     private val usbManagerWrapper: UsbManagerWrapper,
     @param:ApplicationContext private val context: Context,
     private val usbLogger: com.example.securequicktransferapp.data.logging.UsbLogger
 ) : UsbRepository {
     companion object {
-        private const val TAG = "HostCommandSender"
-
+        private const val TAG = "AndroidHostCommandSender"
         private const val CHUNK_SIZE = 256 * 1024
     }
 
@@ -47,7 +51,7 @@ class HostCommandSender @Inject constructor(
 
     suspend fun waitForClientReady(): Boolean = withContext(Dispatchers.IO) {
         usbLogger.i(TAG, "waitForClientReady: Checking if remote device is in Client mode (waiting for TYPE_ACK up to 60s)...")
-        for (i in 0 until 240) { // Try up to 240 times (60 seconds total) for remote device to enter Client mode and accept permission
+        for (i in 0 until 240) {
             if (i % 2 == 0) {
                 try {
                     dataSource.sendRawPacket(SecureQtSdk.Packets.TYPE_PING, ByteArray(0))
@@ -82,12 +86,7 @@ class HostCommandSender @Inject constructor(
     suspend fun listRemoteFiles(path: String): List<RemoteFile> = commandMutex.withLock {
         withContext(Dispatchers.IO) {
             usbLogger.i(TAG, "listRemoteFiles: Requesting directory listing for '$path'")
-            val pathBytes = path.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                .put(SecureQtSdk.Commands.CMD_LIST_DIR)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .array()
+            val payload = CommandPayloadBuilder.buildWithString(AppCommandIds.CMD_LIST_DIR, path)
 
             if (!dataSource.sendSecure(payload)) {
                 usbLogger.e(TAG, "listRemoteFiles: Failed to send CMD_LIST")
@@ -174,13 +173,11 @@ class HostCommandSender @Inject constructor(
                 if (!localFile.exists() || !localFile.isFile) return@coroutineScope false
 
                 val fullRemotePath = if (remotePath.endsWith("/")) remotePath + localFile.name else "$remotePath/${localFile.name}"
-                val fileNameBytes = fullRemotePath.toByteArray(Charsets.UTF_8)
-                val header = ByteBuffer.allocate(1 + 4 + fileNameBytes.size + 8)
-                    .put(SecureQtSdk.Commands.CMD_SEND_FILE_START)
-                    .putInt(fileNameBytes.size)
-                    .put(fileNameBytes)
-                    .putLong(localFile.length())
-                    .array()
+                val header = CommandPayloadBuilder.buildFileStart(
+                    AppCommandIds.CMD_SEND_FILE_START,
+                    fullRemotePath,
+                    localFile.length()
+                )
 
                 if (!dataSource.sendSecure(header)) {
                     usbLogger.e(TAG, "sendFile: Failed to send CMD_SEND_FILE header")
@@ -259,12 +256,7 @@ class HostCommandSender @Inject constructor(
         withContext(Dispatchers.IO + NonCancellable) {
             coroutineScope {
                 usbLogger.i(TAG, "fetchFile: Fetching '$remotePath' to '${localSaveDir.absolutePath}'")
-                val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-                val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                    .put(SecureQtSdk.Commands.CMD_FETCH_FILE_START)
-                    .putInt(pathBytes.size)
-                    .put(pathBytes)
-                    .array()
+                val header = CommandPayloadBuilder.buildWithString(AppCommandIds.CMD_FETCH_FILE_START, remotePath)
 
                 if (!dataSource.sendSecure(header)) {
                     usbLogger.e(TAG, "fetchFile: Failed to send CMD_FETCH_FILE header")
@@ -359,12 +351,7 @@ class HostCommandSender @Inject constructor(
         withContext(Dispatchers.IO + NonCancellable) {
             coroutineScope {
                 usbLogger.i(TAG, "fetchRemoteDirectory: Fetching directory '$remotePath' as ZIP to '${localSaveDir.absolutePath}'")
-                val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-                val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                    .put(SecureQtSdk.Commands.CMD_FETCH_DIR_ZIP_START)
-                    .putInt(pathBytes.size)
-                    .put(pathBytes)
-                    .array()
+                val header = CommandPayloadBuilder.buildWithString(AppCommandIds.CMD_FETCH_DIR_ZIP_START, remotePath)
 
                 if (!dataSource.sendSecure(header)) {
                     usbLogger.e(TAG, "fetchRemoteDirectory: Failed to send CMD_FETCH_DIR header")
@@ -459,13 +446,7 @@ class HostCommandSender @Inject constructor(
 
     suspend fun deleteRemote(remotePath: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO + NonCancellable) {
-            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                .put(SecureQtSdk.Commands.CMD_DELETE_FILE)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .array()
-
+            val payload = CommandPayloadBuilder.buildWithString(AppCommandIds.CMD_DELETE_FILE, remotePath)
             if (!dataSource.sendSecure(payload)) return@withContext false
             val resp = withTimeoutOrNull(10000) { dataSource.receiveSecure() }
             resp != null && resp.isNotEmpty() && resp[0].toInt() == 1
@@ -474,30 +455,16 @@ class HostCommandSender @Inject constructor(
 
     suspend fun renameRemote(remotePath: String, newName: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO + NonCancellable) {
-            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-            val nameBytes = newName.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size + 4 + nameBytes.size)
-                .put(SecureQtSdk.Commands.CMD_RENAME_FILE)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .putInt(nameBytes.size)
-                .put(nameBytes)
-                .array()
-
+            val payload = CommandPayloadBuilder.buildWithTwoStrings(AppCommandIds.CMD_RENAME_FILE, remotePath, newName)
             if (!dataSource.sendSecure(payload)) return@withContext false
             val resp = withTimeoutOrNull(10000) { dataSource.receiveSecure() }
             resp != null && resp.isNotEmpty() && resp[0].toInt() == 1
         }
     }
+
     suspend fun createFolderRemote(remotePath: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO + NonCancellable) {
-            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                .put(SecureQtSdk.Commands.CMD_CREATE_FOLDER)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .array()
-
+            val payload = CommandPayloadBuilder.buildWithString(AppCommandIds.CMD_CREATE_FOLDER, remotePath)
             if (!dataSource.sendSecure(payload)) return@withContext false
             val resp = withTimeoutOrNull(10000) { dataSource.receiveSecure() }
             resp != null && resp.isNotEmpty() && resp[0].toInt() == 1
@@ -506,7 +473,8 @@ class HostCommandSender @Inject constructor(
 
     suspend fun sendDisconnect() = withContext(Dispatchers.IO) {
         try {
-            dataSource.sendSecure(byteArrayOf(SecureQtSdk.Commands.CMD_DISCONNECT))
+            val payload = CommandPayloadBuilder.buildSimple(AppCommandIds.CMD_DISCONNECT)
+            dataSource.sendSecure(payload)
         } catch (e: Exception) {
             usbLogger.w(TAG, "Failed to send disconnect command", e)
         }
@@ -560,6 +528,21 @@ class HostCommandSender @Inject constructor(
 
     override fun cancelTransfer() {
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { dataSource.sendRawPacket(SecureQtSdk.Packets.TYPE_CANCEL, ByteArray(0)) }
+    }
+
+    override suspend fun executeCustomCommand(commandId: Byte, payload: ByteArray): ByteArray? = commandMutex.withLock {
+        withContext(Dispatchers.IO + NonCancellable) {
+            val fullPayload = if (payload.isEmpty()) {
+                CommandPayloadBuilder.buildSimple(commandId)
+            } else {
+                ByteBuffer.allocate(1 + payload.size)
+                    .put(commandId)
+                    .put(payload)
+                    .array()
+            }
+            if (!dataSource.sendSecure(fullPayload)) return@withContext null
+            dataSource.receiveSecure()
+        }
     }
 
     override fun checkPhysicalConnection(): Pair<Boolean, String?> = Pair(usbManagerWrapper.isUsbCablePhysicallyConnected(), null)

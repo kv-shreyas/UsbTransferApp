@@ -18,4 +18,5 @@ interface UsbRepository {
     suspend fun createFolder(remotePath: String): Boolean
     fun cancelTransfer()
     fun checkPhysicalConnection(): Pair<Boolean, String?>
+    suspend fun executeCustomCommand(commandId: Byte, payload: ByteArray = ByteArray(0)): ByteArray? = null
 }

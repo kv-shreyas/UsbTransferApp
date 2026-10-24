@@ -3,6 +3,8 @@ package com.example.secureqt.sdk.client
 import com.example.secureqt.sdk.SecureQtSdk
 import com.example.secureqt.sdk.channel.SecureChannel
 import com.example.secureqt.sdk.model.SdkRemoteFile
+import com.example.secureqt.sdk.protocol.CommandPayloadBuilder
+import com.example.secureqt.sdk.protocol.StandardCommandIds
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.channels.Channel
@@ -12,7 +14,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -27,12 +28,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
     override suspend fun listRemoteFiles(path: String): List<SdkRemoteFile> = commandMutex.withLock {
         withContext(Dispatchers.IO) {
             val result = mutableListOf<SdkRemoteFile>()
-            val pathBytes = path.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                .put(SecureQtSdk.Commands.CMD_LIST_DIR)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .array()
+            val payload = CommandPayloadBuilder.buildWithString(StandardCommandIds.CMD_LIST_DIR, path)
 
             if (!channel.sendSecure(payload)) return@withContext emptyList()
 
@@ -64,13 +60,11 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
 
             val finalFileName = remoteFileName ?: localFile.name
             val fullRemotePath = if (remotePath.endsWith("/")) remotePath + finalFileName else "$remotePath/$finalFileName"
-            val fileNameBytes = fullRemotePath.toByteArray(Charsets.UTF_8)
-            val header = ByteBuffer.allocate(1 + 4 + fileNameBytes.size + 8)
-                .put(SecureQtSdk.Commands.CMD_SEND_FILE_START)
-                .putInt(fileNameBytes.size)
-                .put(fileNameBytes)
-                .putLong(localFile.length())
-                .array()
+            val header = CommandPayloadBuilder.buildFileStart(
+                StandardCommandIds.CMD_SEND_FILE_START,
+                fullRemotePath,
+                localFile.length()
+            )
 
             if (!channel.sendSecure(header)) return@withContext false
 
@@ -83,7 +77,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                 try {
                     FileInputStream(localFile).use { stream ->
                         while (isActive) {
-                        if (isCancelled) { break }
+                            if (isCancelled) break
                             val buffer = ByteArray(CHUNK_SIZE)
                             val bytesRead = stream.read(buffer)
                             if (bytesRead == -1) break
@@ -145,15 +139,12 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
             if (!localDir.exists() || !localDir.isDirectory) return@withContext false
 
             val fullRemotePath = if (remotePath.endsWith("/")) remotePath + localDir.name else "$remotePath/${localDir.name}"
-            val fileNameBytes = fullRemotePath.toByteArray(Charsets.UTF_8)
-            
             // Note: total size of ZIP stream is unknown beforehand, we send 0
-            val header = ByteBuffer.allocate(1 + 4 + fileNameBytes.size + 8)
-                .put(SecureQtSdk.Commands.CMD_SEND_DIR_ZIP_START)
-                .putInt(fileNameBytes.size)
-                .put(fileNameBytes)
-                .putLong(0L) // Size unknown for dynamic zip
-                .array()
+            val header = CommandPayloadBuilder.buildFileStart(
+                StandardCommandIds.CMD_SEND_DIR_ZIP_START,
+                fullRemotePath,
+                0L
+            )
 
             if (!channel.sendSecure(header)) return@withContext false
 
@@ -185,7 +176,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                     }
 
                     while (isActive) {
-                        if (isCancelled) { break }
+                        if (isCancelled) break
                         val buffer = ByteArray(CHUNK_SIZE)
                         val bytesRead = pipedIn.read(buffer)
                         if (bytesRead == -1) break
@@ -218,7 +209,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
                 }
                 
                 val originalChunkSize = encryptedChunk.size - 33
-                sentBytes += originalChunkSize // Exact progress based on unencrypted payload
+                sentBytes += originalChunkSize
                 
                 val now = System.currentTimeMillis()
                 if (now - lastSentTime > 250L) {
@@ -242,12 +233,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
     override suspend fun fetchFile(remotePath: String, localSaveDir: File, onProgress: ((Long, Long) -> Unit)?): Boolean = commandMutex.withLock {
         isCancelled = false
         withContext(Dispatchers.IO + NonCancellable) {
-            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-            val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                .put(SecureQtSdk.Commands.CMD_FETCH_FILE_START)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .array()
+            val header = CommandPayloadBuilder.buildWithString(StandardCommandIds.CMD_FETCH_FILE_START, remotePath)
 
             if (!channel.sendSecure(header)) return@withContext false
 
@@ -318,17 +304,12 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
     override suspend fun fetchRemoteDirectory(remotePath: String, localSaveDir: File, onProgress: ((Long, Long) -> Unit)?): Boolean = commandMutex.withLock {
         isCancelled = false
         withContext(Dispatchers.IO + NonCancellable) {
-            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-            val header = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                .put(SecureQtSdk.Commands.CMD_FETCH_DIR_ZIP_START)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .array()
+            val header = CommandPayloadBuilder.buildWithString(StandardCommandIds.CMD_FETCH_DIR_ZIP_START, remotePath)
 
             if (!channel.sendSecure(header)) return@withContext false
 
             val fileInfoData = channel.receiveSecure() ?: return@withContext false
-            if (fileInfoData.size < 8) return@withContext false // Must have at least 8 bytes for size
+            if (fileInfoData.size < 8) return@withContext false
             val buffer = ByteBuffer.wrap(fileInfoData)
             val totalSize = buffer.long
             val dirName = remotePath.substringAfterLast('/')
@@ -422,12 +403,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
 
     override suspend fun deleteFile(remotePath: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO) {
-            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                .put(SecureQtSdk.Commands.CMD_DELETE_FILE)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .array()
+            val payload = CommandPayloadBuilder.buildWithString(StandardCommandIds.CMD_DELETE_FILE, remotePath)
             if (!channel.sendSecure(payload)) return@withContext false
             val response = channel.receiveSecure()
             response?.firstOrNull() == 1.toByte()
@@ -436,15 +412,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
 
     override suspend fun renameFile(remotePath: String, newName: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO) {
-            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-            val nameBytes = newName.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size + 4 + nameBytes.size)
-                .put(SecureQtSdk.Commands.CMD_RENAME_FILE)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .putInt(nameBytes.size)
-                .put(nameBytes)
-                .array()
+            val payload = CommandPayloadBuilder.buildWithTwoStrings(StandardCommandIds.CMD_RENAME_FILE, remotePath, newName)
             if (!channel.sendSecure(payload)) return@withContext false
             val response = channel.receiveSecure()
             response?.firstOrNull() == 1.toByte()
@@ -453,12 +421,7 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
 
     override suspend fun createFolder(remotePath: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO) {
-            val pathBytes = remotePath.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + pathBytes.size)
-                .put(SecureQtSdk.Commands.CMD_CREATE_FOLDER)
-                .putInt(pathBytes.size)
-                .put(pathBytes)
-                .array()
+            val payload = CommandPayloadBuilder.buildWithString(StandardCommandIds.CMD_CREATE_FOLDER, remotePath)
             if (!channel.sendSecure(payload)) return@withContext false
             val response = channel.receiveSecure()
             response?.firstOrNull() == 1.toByte()
@@ -467,19 +430,15 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
 
     override suspend fun sendDeviceId(deviceId: String): Boolean = commandMutex.withLock {
         withContext(Dispatchers.IO) {
-            val idBytes = deviceId.toByteArray(Charsets.UTF_8)
-            val payload = ByteBuffer.allocate(1 + 4 + idBytes.size)
-                .put(SecureQtSdk.Commands.CMD_SET_DEVICE_ID)
-                .putInt(idBytes.size)
-                .put(idBytes)
-                .array()
+            val payload = CommandPayloadBuilder.buildWithString(StandardCommandIds.CMD_SET_DEVICE_ID, deviceId)
             channel.sendSecure(payload)
         }
     }
 
     override suspend fun sendDisconnect() {
         withContext(Dispatchers.IO) {
-            channel.sendSecure(byteArrayOf(SecureQtSdk.Commands.CMD_DISCONNECT))
+            val payload = CommandPayloadBuilder.buildSimple(StandardCommandIds.CMD_DISCONNECT)
+            channel.sendSecure(payload)
             channel.disconnect()
         }
     }
@@ -488,6 +447,21 @@ class SecureTransferClientImpl(private val channel: SecureChannel) : ISecureTran
         isCancelled = true
         kotlinx.coroutines.CoroutineScope(Dispatchers.IO).launch { 
             channel.sendRawPacket(SecureQtSdk.Packets.TYPE_CANCEL, ByteArray(0)) 
+        }
+    }
+
+    override suspend fun executeCustomCommand(commandId: Byte, payload: ByteArray): ByteArray? = commandMutex.withLock {
+        withContext(Dispatchers.IO) {
+            val fullPayload = if (payload.isEmpty()) {
+                CommandPayloadBuilder.buildSimple(commandId)
+            } else {
+                ByteBuffer.allocate(1 + payload.size)
+                    .put(commandId)
+                    .put(payload)
+                    .array()
+            }
+            if (!channel.sendSecure(fullPayload)) return@withContext null
+            channel.receiveSecure()
         }
     }
 }

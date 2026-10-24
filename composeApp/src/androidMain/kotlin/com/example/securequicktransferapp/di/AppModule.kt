@@ -1,6 +1,6 @@
 package com.example.securequicktransferapp.di
 
-import com.example.securequicktransferapp.data.usb.command.HostCommandSender
+import com.example.securequicktransferapp.data.usb.command.AndroidHostCommandSender
 import com.example.securequicktransferapp.data.usb.connection.IUsbConnection
 import com.example.securequicktransferapp.data.usb.connection.UsbConnectionManager
 import dagger.Module
@@ -22,7 +22,7 @@ object AppModule {
     @Provides
     @Singleton
     fun provideUsbRepository(
-        sender: HostCommandSender
+        sender: AndroidHostCommandSender
     ): com.example.securequicktransferapp.domain.repo.UsbRepository = sender
 
     @Provides

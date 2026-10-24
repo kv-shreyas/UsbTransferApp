@@ -3,7 +3,7 @@ package com.example.securequicktransferapp.domain
 import com.example.secureqt.sdk.SecureQtSdk
 import com.example.secureqt.sdk.autoConnectDesktop
 import com.example.secureqt.sdk.createDesktopTransport
-import com.example.securequicktransferapp.data.repo.UsbRepositoryImpl
+import com.example.securequicktransferapp.data.repo.DesktopHostCommandSender
 import org.usb4java.DeviceHandle
 import kotlin.test.Test
 import kotlin.test.assertNotNull
@@ -32,7 +32,7 @@ class SecureQtSdkDesktopExtTest {
 
     @Test
     fun testRepositoryAutoConnectDirectWhenNoDeviceAttached() {
-        val channel = UsbRepositoryImpl.autoConnectDirect(timeoutMs = 100L)
+        val channel = DesktopHostCommandSender.autoConnectDirect(timeoutMs = 100L)
         assertNull(channel)
     }
 }

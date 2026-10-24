@@ -1,6 +1,6 @@
 package com.example.securequicktransferapp.data.usb
 
-import com.example.securequicktransferapp.data.repo.UsbRepositoryImpl
+import com.example.securequicktransferapp.data.repo.DesktopHostCommandSender
 import com.example.securequicktransferapp.domain.model.DeviceSessionStatus
 import com.example.securequicktransferapp.domain.model.DiscoveredUsbDevice
 import com.example.securequicktransferapp.domain.model.RemoteFile
@@ -26,7 +26,7 @@ class UsbSession(
     var discoveredDevice: DiscoveredUsbDevice,
     val deviceManager: UsbDeviceManager,
     val connection: UsbConnection = UsbConnection(),
-    val repository: UsbRepository = UsbRepositoryImpl(deviceManager, connection, deviceId)
+    val repository: UsbRepository = DesktopHostCommandSender(deviceManager, connection, deviceId)
 ) {
     val sessionMutex = Mutex()
 

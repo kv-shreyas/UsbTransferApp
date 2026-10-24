@@ -5,8 +5,8 @@ import java.io.File
 
 /**
  * High-level client API for interacting with a secure transfer host.
- * This encapsulates all the file chunking, directory zipping, and command protocol routing
- * so that consumers (like Android or Desktop apps) can just call these methods directly.
+ * Encapsulates file chunking, directory zipping, and command protocol routing
+ * so that consumers (like Android or Desktop apps) can call these methods directly.
  */
 interface ISecureTransferClient {
     /**
@@ -63,4 +63,15 @@ interface ISecureTransferClient {
      * Aborts an ongoing file transfer instantly.
      */
     fun cancelTransfer()
+
+    /**
+     * Executes an arbitrary custom application-level command over the secure channel.
+     * Enables extensible RPC-style commands (e.g. get app-version from client, query device info)
+     * resulting in a response payload, following SOLID principles without modifying SDK interfaces.
+     *
+     * @param commandId Application-specific command byte (e.g. from `AppCommandIds`).
+     * @param payload Pre-encoded arguments (use `CommandPayloadBuilder` or raw bytes).
+     * @return Decrypted response payload received from peer, or null if communication failed.
+     */
+    suspend fun executeCustomCommand(commandId: Byte, payload: ByteArray = ByteArray(0)): ByteArray?
 }
