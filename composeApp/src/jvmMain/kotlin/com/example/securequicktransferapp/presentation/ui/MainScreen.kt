@@ -50,7 +50,7 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.MenuOpen
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.filled.PermDeviceInformation
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Sync
@@ -60,14 +60,13 @@ import androidx.compose.material.icons.filled.UsbOff
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Divider
 import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -347,6 +346,10 @@ fun MainScreen(vm: MainViewModel, isDarkTheme: Boolean = true, onThemeToggle: ()
             }*/ else if (currentScreen == Constants.Screens.TRANSFERS) {
                 TransferQueueDashboard(
                     onBack = { currentScreen = Constants.Screens.EXPLORER },
+                )
+            } else if (currentScreen == Constants.Screens.DEVICE_INFO) {
+                ClientDeviceInfoScreen(
+                    onBack = { currentScreen = Constants.Screens.EXPLORER }
                 )
             } else if (!isConnected) {
                 DesktopNotConnectedView(
@@ -669,6 +672,8 @@ fun Sidebar(
                 NavigationItem("SmartNav Setup", Icons.Default.Explore, currentScreen == Constants.Screens.SMARTNAV, isExpanded) { onNavigate(Constants.Screens.SMARTNAV) }
                 Spacer(Modifier.height(8.dp))
                 NavigationItem("Transfers", Icons.Default.Sync, currentScreen == Constants.Screens.TRANSFERS, isExpanded) { onNavigate(Constants.Screens.TRANSFERS) }
+                Spacer(Modifier.height(8.dp))
+                NavigationItem("Device Info", Icons.Default.PermDeviceInformation, currentScreen == Constants.Screens.DEVICE_INFO, isExpanded) { onNavigate(Constants.Screens.DEVICE_INFO) }
                 Spacer(Modifier.height(24.dp))
             } else {
                 AnimatedVisibility(

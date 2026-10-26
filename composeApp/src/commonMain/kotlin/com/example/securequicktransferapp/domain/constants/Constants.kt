@@ -13,6 +13,7 @@ object Constants {
         const val TRANSFER_HISTORY = "transfer_history"
         const val SMARTNAV = "smartnav"
         const val SMARTNAV_MANAGEMENT = "smartnav_management"
+        const val DEVICE_INFO = "device_info"
     }
 
     object Tools {
