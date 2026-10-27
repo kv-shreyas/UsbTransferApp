@@ -50,10 +50,22 @@ jobs:
       - name: Prepare SDK distribution files
         run: |
           mkdir -p dist/sdk
-          cp secureqt-sdk/build/libs/secureqt-sdk-jvm.jar dist/sdk/secureqt-sdk-jvm.jar
-          cp secureqt-sdk/build/outputs/aar/secureqt-sdk-release.aar dist/sdk/secureqt-sdk-android.aar
-          cp usb-driver-installer/build/libs/*-standalone-*-all.jar dist/sdk/usb-driver-installer-standalone.jar
-          cp usb-driver-installer/build/libs/usb-driver-installer-*.jar dist/sdk/usb-driver-installer.jar || true
+          echo "=== Content of secureqt-sdk/build/libs ==="
+          ls -la secureqt-sdk/build/libs/ || true
+          echo "=== Content of secureqt-sdk/build/outputs ==="
+          ls -R secureqt-sdk/build/outputs/ || true
+          echo "=== Content of usb-driver-installer/build/libs ==="
+          ls -la usb-driver-installer/build/libs/ || true
+
+          cp secureqt-sdk/build/libs/secureqt-sdk-jvm*.jar dist/sdk/secureqt-sdk-jvm.jar
+          if [ -d "secureqt-sdk/build/outputs/aar" ]; then
+            cp secureqt-sdk/build/outputs/aar/*.aar dist/sdk/secureqt-sdk-android.aar || true
+          fi
+          cp usb-driver-installer/build/libs/*standalone*.jar dist/sdk/usb-driver-installer-standalone.jar || true
+          cp usb-driver-installer/build/libs/usb-driver-installer-[0-9]*.jar dist/sdk/usb-driver-installer.jar 2>/dev/null || true
+
+          echo "=== Staged files in dist/sdk ==="
+          ls -la dist/sdk/
         shell: bash
 
       - name: Upload SDK Artifacts
