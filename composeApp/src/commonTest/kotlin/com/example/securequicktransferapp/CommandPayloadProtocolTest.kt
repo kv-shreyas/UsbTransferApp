@@ -5,6 +5,8 @@ import com.example.secureqt.sdk.protocol.CommandPayloadParser
 import com.example.secureqt.sdk.protocol.StandardCommandIds
 import com.example.securequicktransferapp.domain.command.AppCommandIds
 import com.example.securequicktransferapp.domain.command.AppCommandRegistry
+import com.example.securequicktransferapp.domain.model.deviceinfo.ClientAppDetails
+import com.example.securequicktransferapp.domain.model.deviceinfo.ClientAppDetailsCodec
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -74,7 +76,42 @@ class CommandPayloadProtocolTest {
         assertEquals("CMD_LIST_DIR", AppCommandRegistry.nameFor(AppCommandIds.CMD_LIST_DIR))
         assertEquals("CMD_SEND_FILE_START", AppCommandRegistry.nameFor(AppCommandIds.CMD_SEND_FILE_START))
         assertEquals("CMD_GET_APP_VERSION", AppCommandRegistry.nameFor(AppCommandIds.CMD_GET_APP_VERSION))
+        assertEquals("CMD_GET_APP_DETAILS", AppCommandRegistry.nameFor(AppCommandIds.CMD_GET_APP_DETAILS))
         assertTrue(AppCommandRegistry.nameFor(0x7F.toByte()).startsWith("UNKNOWN"))
+    }
+
+    @Test
+    fun testClientAppDetailsCodecRoundTrip() {
+        val original = ClientAppDetails(
+            appName = "Secure Quick Transfer",
+            packageName = "com.example.securequicktransferapp",
+            appVersion = "2.4.1-alpha",
+            osVersion = 34
+        )
+
+        val encoded = ClientAppDetailsCodec.encode(original)
+        assertTrue(encoded.isNotEmpty())
+
+        val decoded = ClientAppDetailsCodec.decode(encoded)
+        assertEquals(original, decoded)
+        assertEquals("Secure Quick Transfer", decoded.appName)
+        assertEquals("com.example.securequicktransferapp", decoded.packageName)
+        assertEquals("2.4.1-alpha", decoded.appVersion)
+        assertEquals(34, decoded.osVersion)
+    }
+
+    @Test
+    fun testClientAppDetailsCodecWithEmptyStrings() {
+        val original = ClientAppDetails(
+            appName = "",
+            packageName = "com.pkg",
+            appVersion = "",
+            osVersion = 35
+        )
+
+        val encoded = ClientAppDetailsCodec.encode(original)
+        val decoded = ClientAppDetailsCodec.decode(encoded)
+        assertEquals(original, decoded)
     }
 
     @Test

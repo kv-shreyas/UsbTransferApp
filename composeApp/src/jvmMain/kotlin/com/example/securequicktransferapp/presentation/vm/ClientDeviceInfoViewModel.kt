@@ -17,10 +17,8 @@ import kotlinx.coroutines.launch
 
 data class ClientDeviceInfoUiState(
     val isLoading: Boolean = false,
-    val selectedDeviceId: String? = null,
     val connectedDevices: List<ClientDeviceSummary> = emptyList(),
     val detectedDevices: List<DetectedDeviceSummary> = emptyList(),
-    val currentAppDetails: ClientAppDetails? = null,
     val error: String? = null
 )
 
@@ -30,23 +28,16 @@ class ClientDeviceInfoViewModel(
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
 
-    private val _selectedDeviceId = MutableStateFlow<String?>(null)
-    val selectedDeviceId: StateFlow<String?> = _selectedDeviceId
-
     private val _isLoading = MutableStateFlow(false)
     private val _error = MutableStateFlow<String?>(null)
-
-    // Current application details state flow
-    private val _currentAppDetails = MutableStateFlow<ClientAppDetails?>(null)
+    private val _deviceDetails = MutableStateFlow<Map<String, ClientAppDetails>>(emptyMap())
 
     val uiState: StateFlow<ClientDeviceInfoUiState> = combine(
         sessionManager.sessionsState,
-        _selectedDeviceId,
-        _currentAppDetails,
+        _deviceDetails,
         _isLoading,
         _error
-    ) { sessions, selectedId, appDetails, loading, error ->
-        // Separate sessions strictly into connected (Ready) vs detected (Disconnected, Connecting, Error)
+    ) { sessions, detailsMap, loading, error ->
         val connectedSessions = sessions.filter { it.value.status is DeviceSessionStatus.Ready }
         val detectedSessions = sessions.filter { it.value.status !is DeviceSessionStatus.Ready }
 
@@ -57,10 +48,12 @@ class ClientDeviceInfoViewModel(
                 .substringBefore(",")
                 .trim()
                 .ifBlank { "Client Device ($id)" }
+
             ClientDeviceSummary(
                 deviceId = id,
                 displayName = shortName,
-                isConnected = true
+                isConnected = true,
+                appDetails = detailsMap[id] ?: repository.getCachedDeviceInfo(id)
             )
         }
 
@@ -71,6 +64,7 @@ class ClientDeviceInfoViewModel(
                 .substringBefore(",")
                 .trim()
                 .ifBlank { "Detected Device ($id)" }
+
             DetectedDeviceSummary(
                 deviceId = id,
                 displayName = shortName,
@@ -78,30 +72,10 @@ class ClientDeviceInfoViewModel(
             )
         }
 
-        // Auto-select first CONNECTED device if none selected or previously selected device is no longer connected
-        val effectiveSelectedId = when {
-            selectedId != null && connectedSessions.containsKey(selectedId) -> selectedId
-            connectedSessions.isNotEmpty() -> connectedSessions.keys.first()
-            else -> null
-        }
-
-        if (effectiveSelectedId != _selectedDeviceId.value) {
-            _selectedDeviceId.value = effectiveSelectedId
-            if (effectiveSelectedId != null) {
-                scope.launch {
-                    loadAppDetails(effectiveSelectedId)
-                }
-            } else {
-                _currentAppDetails.value = null
-            }
-        }
-
         ClientDeviceInfoUiState(
             isLoading = loading,
-            selectedDeviceId = effectiveSelectedId,
             connectedDevices = connectedSummaries,
             detectedDevices = detectedSummaries,
-            currentAppDetails = if (effectiveSelectedId != null) appDetails else null,
             error = error
         )
     }.stateIn(
@@ -111,41 +85,41 @@ class ClientDeviceInfoViewModel(
     )
 
     init {
-        // Observe sessions and initialize selection for connected devices only
+        // Observe sessions: automatically load app details for connected devices and clean up disconnected ones
         scope.launch {
             sessionManager.sessionsState.collect { sessions ->
-                val connected = sessions.filter { it.value.status is DeviceSessionStatus.Ready }
-                if (_selectedDeviceId.value == null && connected.isNotEmpty()) {
-                    val first = connected.keys.first()
-                    _selectedDeviceId.value = first
-                    loadAppDetails(first)
+                val connectedIds = sessions
+                    .filter { it.value.status is DeviceSessionStatus.Ready }
+                    .keys
+
+                if (_deviceDetails.value.keys.any { it !in connectedIds }) {
+                    _deviceDetails.value = _deviceDetails.value.filterKeys { it in connectedIds }
+                }
+
+                for (id in connectedIds) {
+                    if (!_deviceDetails.value.containsKey(id)) {
+                        launch {
+                            loadDeviceDetails(id)
+                        }
+                    }
                 }
             }
         }
     }
 
-    fun selectDevice(deviceId: String) {
-        val session = sessionManager.getSession(deviceId)
-        if (session == null || session.sessionState.value.status !is DeviceSessionStatus.Ready) {
-            return
-        }
-        if (_selectedDeviceId.value == deviceId) return
-        _selectedDeviceId.value = deviceId
-        scope.launch {
-            loadAppDetails(deviceId)
-        }
-    }
-
-    fun refreshCurrentDevice() {
-        val deviceId = _selectedDeviceId.value ?: return
+    fun refreshCurrentDevice(deviceId: String? = null) {
         scope.launch {
             _isLoading.value = true
             _error.value = null
-            val result = repository.queryDeviceInfo(deviceId)
-            result.onSuccess {
-                _currentAppDetails.value = it
-            }.onFailure {
-                _error.value = it.message ?: "Failed to query device info."
+            val targetIds = if (deviceId != null) {
+                listOf(deviceId)
+            } else {
+                sessionManager.sessionsState.value
+                    .filter { it.value.status is DeviceSessionStatus.Ready }
+                    .keys.toList()
+            }
+            for (id in targetIds) {
+                loadDeviceDetails(id)
             }
             _isLoading.value = false
         }
@@ -159,8 +133,7 @@ class ClientDeviceInfoViewModel(
             try {
                 val success = session.connect()
                 if (success) {
-                    _selectedDeviceId.value = deviceId
-                    loadAppDetails(deviceId)
+                    loadDeviceDetails(deviceId)
                 } else {
                     _error.value = "Failed to establish session with $deviceId."
                 }
@@ -172,21 +145,18 @@ class ClientDeviceInfoViewModel(
         }
     }
 
-    private suspend fun loadAppDetails(deviceId: String) {
+    private suspend fun loadDeviceDetails(deviceId: String) {
         val cached = repository.getCachedDeviceInfo(deviceId)
         if (cached != null) {
-            _currentAppDetails.value = cached
+            _deviceDetails.value = _deviceDetails.value + (deviceId to cached)
         }
-        _isLoading.value = true
-        _error.value = null
         val result = repository.queryDeviceInfo(deviceId)
-        result.onSuccess {
-            _currentAppDetails.value = it
-        }.onFailure {
-            if (_currentAppDetails.value == null) {
-                _error.value = it.message ?: "Failed to load device info."
+        result.onSuccess { details ->
+            _deviceDetails.value = _deviceDetails.value + (deviceId to details)
+        }.onFailure { e ->
+            if (!_deviceDetails.value.containsKey(deviceId)) {
+                _error.value = "Device $deviceId: ${e.message ?: "Failed to query app details."}"
             }
         }
-        _isLoading.value = false
     }
 }

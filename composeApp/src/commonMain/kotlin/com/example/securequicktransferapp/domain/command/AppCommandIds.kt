@@ -52,4 +52,7 @@ object AppCommandIds {
     // ── Application-specific custom extensions (0x10–0x1F) ────────────────────
     /** Retrieve application version information from client. */
     const val CMD_GET_APP_VERSION: Byte = 0x10
+
+    /** Retrieve detailed application metadata and cache information from client. */
+    const val CMD_GET_APP_DETAILS: Byte = 0x11
 }

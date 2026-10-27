@@ -6,6 +6,7 @@ import com.example.securequicktransferapp.data.usb.command.handlers.DeleteHandle
 import com.example.securequicktransferapp.data.usb.command.handlers.DisconnectHandler
 import com.example.securequicktransferapp.data.usb.command.handlers.FetchDirHandler
 import com.example.securequicktransferapp.data.usb.command.handlers.FetchFileHandler
+import com.example.securequicktransferapp.data.usb.command.handlers.GetAppDetailsHandler
 import com.example.securequicktransferapp.data.usb.command.handlers.ListDirHandler
 import com.example.securequicktransferapp.data.usb.command.handlers.ReceiveDirHandler
 import com.example.securequicktransferapp.data.usb.command.handlers.ReceiveFileHandler
@@ -65,6 +66,10 @@ abstract class CommandHandlerModule {
     @Binds
     @IntoSet
     abstract fun bindSetDeviceIdHandler(impl: SetDeviceIdHandler): ICommandHandler
+
+    @Binds
+    @IntoSet
+    abstract fun bindGetAppDetailsHandler(impl: GetAppDetailsHandler): ICommandHandler
 
     @Binds
     @IntoSet

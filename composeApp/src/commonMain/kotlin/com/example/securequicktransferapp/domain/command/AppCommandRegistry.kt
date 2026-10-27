@@ -24,6 +24,7 @@ object AppCommandRegistry {
         put(AppCommandIds.CMD_CREATE_FOLDER,       "CMD_CREATE_FOLDER")
         put(AppCommandIds.CMD_SET_DEVICE_ID,       "CMD_SET_DEVICE_ID")
         put(AppCommandIds.CMD_GET_APP_VERSION,     "CMD_GET_APP_VERSION")
+        put(AppCommandIds.CMD_GET_APP_DETAILS,     "CMD_GET_APP_DETAILS")
     }
 
     /**
