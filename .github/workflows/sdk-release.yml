@@ -28,8 +28,14 @@ jobs:
           java-version: '17'
           cache: 'gradle'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Accept Android SDK Licenses & Prepare Platforms
+        run: |
+          SDKMANAGER=$(find "$ANDROID_HOME/cmdline-tools" -name sdkmanager -type f | head -n 1)
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --licenses 2>/dev/null || true
+            yes | "$SDKMANAGER" "platforms;android-36" 2>/dev/null || true
+          fi
+        shell: bash
 
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
