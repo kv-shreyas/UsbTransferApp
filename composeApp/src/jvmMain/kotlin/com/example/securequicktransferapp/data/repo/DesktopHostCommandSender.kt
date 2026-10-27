@@ -99,11 +99,17 @@ class DesktopHostCommandSender(
                     }
                 }
             } else {
+                // Pre-emptively kill any background adb.exe server so it cannot claim PID 0x2D01 composite endpoints
+                connection.killAdbServerIfRunning()
+
                 if (connection.switchToAoa(device)) {
                     var accessory: org.usb4java.Device? = null
                     logger.i(TAG, "Waiting up to 10s for device to reconnect in AOA mode (targetId: $targetDeviceId)...")
                     for (i in 0 until 50) {
                         Thread.sleep(200)
+                        if (i % 10 == 0) {
+                            connection.killAdbServerIfRunning()
+                        }
                         accessory = if (targetDeviceId != null) {
                             deviceManager.findDeviceById(targetDeviceId, requireAccessory = true)
                                 ?: deviceManager.findAndroidDevice(requireAccessory = true)
@@ -117,6 +123,8 @@ class DesktopHostCommandSender(
                     }
                     if (accessory == null) {
                         logger.w(TAG, "Device failed to reconnect in AOA mode within 10s. Please ensure: 1) Phone screen is UNLOCKED, 2) USB Tethering is DISABLED, 3) Accept the USB Accessory prompt on Android.")
+                        // On Windows, if USB debugging is ON, the device re-enumerates as composite PID 0x2D01 (AOA + ADB), which may lack a WinUSB driver for Interface 0
+                        deviceManager.reportDriverIssue(0x18D1, 0x2D01, "Android Open Accessory (ADB Composite)")
                         return false
                     }
                     isAoaMode = true

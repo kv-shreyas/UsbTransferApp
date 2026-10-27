@@ -138,7 +138,7 @@ class UsbConnection : IUsbTransport {
         handle = null
     }
 
-    private fun killAdbServerIfRunning() {
+    fun killAdbServerIfRunning() {
         try {
             val os = System.getProperty("os.name", "").lowercase()
             if (os.contains("win")) {
