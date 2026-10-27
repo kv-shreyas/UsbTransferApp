@@ -3,7 +3,7 @@ package com.example.securequicktransferapp.domain.constants
 object Constants {
     object App {
         const val NAME = "Secure Quick Transfer"
-        const val PACKAGE_VERSION = "1.2.0" 
+        const val PACKAGE_VERSION = "1.2.1"
     }
 
     object Screens {
