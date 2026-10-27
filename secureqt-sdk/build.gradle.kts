@@ -3,6 +3,9 @@ plugins {
     alias(libs.plugins.androidLibrary)
 }
 
+group = "com.example.secureqt"
+version = "1.0.0"
+
 kotlin {
     jvmToolchain(11)
 
