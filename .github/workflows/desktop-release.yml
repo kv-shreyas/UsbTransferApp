@@ -41,7 +41,7 @@ jobs:
           retention-days: 7
 
   build-linux:
-    name: Build Linux DEB
+    name: Build Linux DEB & Standalone JAR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
@@ -57,20 +57,21 @@ jobs:
       - name: Grant execute permission for gradlew
         run: chmod +x gradlew
 
-      - name: Build Linux Installer (DEB)
-        run: ./gradlew :composeApp:packageReleaseDeb
+      - name: Build Linux Installer (DEB) and Standalone JAR
+        run: ./gradlew :composeApp:packageReleaseDeb :composeApp:packageReleaseUberJarForCurrentOS
 
-      - name: Rename Linux files
+      - name: Prepare Linux distribution files
         run: |
-          cd composeApp/build/compose/binaries/main-release/deb/
-          mv *.deb SecureQuickTransfer-Setup.deb
+          mkdir -p dist/linux
+          cp composeApp/build/compose/binaries/main-release/deb/*.deb dist/linux/SecureQuickTransfer-Setup.deb
+          cp composeApp/build/compose/jars/*.jar dist/linux/SecureQuickTransfer.jar
         shell: bash
 
-      - name: Upload Linux DEB Artifact
+      - name: Upload Linux Artifacts (DEB & JAR)
         uses: actions/upload-artifact@v4
         with:
           name: SecureQuickTransfer-Linux
-          path: composeApp/build/compose/binaries/main-release/deb/SecureQuickTransfer-Setup.deb
+          path: dist/linux/
           retention-days: 7
 
   publish-release:
@@ -97,8 +98,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: |
-            ./artifacts/windows/SecureQuickTransfer-Setup.msi
-            ./artifacts/windows/SecureQuickTransfer-Setup.exe
-            ./artifacts/linux/SecureQuickTransfer-Setup.deb
+            ./artifacts/windows/**/SecureQuickTransfer-Setup.msi
+            ./artifacts/windows/**/SecureQuickTransfer-Setup.exe
+            ./artifacts/linux/**/SecureQuickTransfer-Setup.deb
+            ./artifacts/linux/**/SecureQuickTransfer.jar
           draft: false
           prerelease: false

@@ -1,0 +1,81 @@
+name: SDK & Driver Installer Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version tag (e.g. sdk-v1.0.0)'
+        required: true
+        default: 'sdk-v1.0.0'
+  push:
+    tags:
+      - 'sdk-v*' # Triggers on tags like sdk-v1.0.0, sdk-v1.1.0, etc.
+
+jobs:
+  build-and-publish:
+    name: Build & Publish SDKs (JAR & AAR)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+          cache: 'gradle'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Grant execute permission for gradlew
+        run: chmod +x gradlew
+
+      - name: Build SDK JAR & AAR and USB Driver Installer Fat-JAR
+        run: |
+          ./gradlew :secureqt-sdk:jvmJar \
+                    :secureqt-sdk:bundleReleaseAar \
+                    :usb-driver-installer:standaloneJar \
+                    :usb-driver-installer:jar
+
+      - name: Prepare SDK distribution files
+        run: |
+          mkdir -p dist/sdk
+          cp secureqt-sdk/build/libs/secureqt-sdk-jvm.jar dist/sdk/secureqt-sdk-jvm.jar
+          cp secureqt-sdk/build/outputs/aar/secureqt-sdk-release.aar dist/sdk/secureqt-sdk-android.aar
+          cp usb-driver-installer/build/libs/*-standalone-*-all.jar dist/sdk/usb-driver-installer-standalone.jar
+          cp usb-driver-installer/build/libs/usb-driver-installer-*.jar dist/sdk/usb-driver-installer.jar || true
+        shell: bash
+
+      - name: Upload SDK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: SecureQT-SDK-Packages
+          path: dist/sdk/
+          retention-days: 14
+
+      - name: Determine Release Tag
+        id: release_info
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/* ]]; then
+            TAG="${GITHUB_REF#refs/tags/}"
+          else
+            TAG="${{ inputs.version }}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_info.outputs.tag }}
+          name: "SecureQT SDK & Driver Installer ${{ steps.release_info.outputs.tag }}"
+          files: |
+            dist/sdk/secureqt-sdk-jvm.jar
+            dist/sdk/secureqt-sdk-android.aar
+            dist/sdk/usb-driver-installer-standalone.jar
+          draft: false
+          prerelease: false
