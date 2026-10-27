@@ -86,7 +86,7 @@ class CommandPayloadProtocolTest {
             appName = "Secure Quick Transfer",
             packageName = "com.example.securequicktransferapp",
             appVersion = "2.4.1-alpha",
-            osVersion = 34
+            osVersion = "34"
         )
 
         val encoded = ClientAppDetailsCodec.encode(original)
@@ -97,7 +97,7 @@ class CommandPayloadProtocolTest {
         assertEquals("Secure Quick Transfer", decoded.appName)
         assertEquals("com.example.securequicktransferapp", decoded.packageName)
         assertEquals("2.4.1-alpha", decoded.appVersion)
-        assertEquals(34, decoded.osVersion)
+        assertEquals("34", decoded.osVersion)
     }
 
     @Test
@@ -106,7 +106,7 @@ class CommandPayloadProtocolTest {
             appName = "",
             packageName = "com.pkg",
             appVersion = "",
-            osVersion = 35
+            osVersion = "35"
         )
 
         val encoded = ClientAppDetailsCodec.encode(original)

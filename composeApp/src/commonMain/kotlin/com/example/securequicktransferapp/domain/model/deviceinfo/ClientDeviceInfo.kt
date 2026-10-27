@@ -4,7 +4,7 @@ data class ClientAppDetails(
     val appName: String,
     val packageName: String,
     val appVersion: String,
-    val osVersion: Int,
+    val osVersion: String,
 )
 
 data class ClientDeviceSummary(

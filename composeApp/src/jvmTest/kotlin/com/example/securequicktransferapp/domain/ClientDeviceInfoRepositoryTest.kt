@@ -74,7 +74,7 @@ class ClientDeviceInfoRepositoryTest {
             appName = "Secure Quick Transfer",
             packageName = "com.example.securequicktransferapp",
             appVersion = "2.1.0",
-            osVersion = 34
+            osVersion = "34"
         )
         val encodedBytes = ClientAppDetailsCodec.encode(expectedDetails)
 

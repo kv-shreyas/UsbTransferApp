@@ -71,7 +71,9 @@ class GetAppDetailsHandler @Inject constructor(
         }
 
         val appVersion = pkgInfo?.versionName ?: "1.0.0"
-        val osVersion = Build.VERSION.SDK_INT
+        val osVersion = Build.ID
+        usbLogger.i(TAG, "osVersion: $osVersion")
+
 
         return ClientAppDetails(
             appName = appName,

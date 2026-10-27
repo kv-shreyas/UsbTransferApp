@@ -148,11 +148,11 @@ class ClientDeviceInfoViewModel(
     private suspend fun loadDeviceDetails(deviceId: String) {
         val cached = repository.getCachedDeviceInfo(deviceId)
         if (cached != null) {
-            _deviceDetails.value = _deviceDetails.value + (deviceId to cached)
+            _deviceDetails.value += (deviceId to cached)
         }
         val result = repository.queryDeviceInfo(deviceId)
         result.onSuccess { details ->
-            _deviceDetails.value = _deviceDetails.value + (deviceId to details)
+            _deviceDetails.value += (deviceId to details)
         }.onFailure { e ->
             if (!_deviceDetails.value.containsKey(deviceId)) {
                 _error.value = "Device $deviceId: ${e.message ?: "Failed to query app details."}"

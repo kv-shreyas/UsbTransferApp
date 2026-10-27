@@ -9,7 +9,7 @@ import java.nio.ByteBuffer
  * - [4 bytes: appNameLen]    [appNameLen bytes: UTF-8]
  * - [4 bytes: pkgNameLen]    [pkgNameLen bytes: UTF-8]
  * - [4 bytes: appVersionLen] [appVersionLen bytes: UTF-8]
- * - [4 bytes: osVersion]     (Int)
+ * - [4 bytes: osVersionLen]  [osVersionLen bytes: UTF-8]
  */
 object ClientAppDetailsCodec {
 
@@ -17,17 +17,18 @@ object ClientAppDetailsCodec {
         val appNameBytes = details.appName.toByteArray(Charsets.UTF_8)
         val pkgNameBytes = details.packageName.toByteArray(Charsets.UTF_8)
         val appVersionBytes = details.appVersion.toByteArray(Charsets.UTF_8)
+        val osVersionBytes = details.osVersion.toByteArray(Charsets.UTF_8)
 
         val totalSize = 4 + appNameBytes.size +
                 4 + pkgNameBytes.size +
                 4 + appVersionBytes.size +
-                4   // osVersion (Int)
+                4 + osVersionBytes.size
 
         val buffer = ByteBuffer.allocate(totalSize)
         putString(buffer, appNameBytes)
         putString(buffer, pkgNameBytes)
         putString(buffer, appVersionBytes)
-        buffer.putInt(details.osVersion)
+        putString(buffer, osVersionBytes)
 
         return buffer.array()
     }
@@ -39,7 +40,7 @@ object ClientAppDetailsCodec {
         val appName = readString(buffer)
         val packageName = readString(buffer)
         val appVersion = readString(buffer)
-        val osVersion = buffer.int
+        val osVersion = readString(buffer)
 
         return ClientAppDetails(
             appName = appName,
