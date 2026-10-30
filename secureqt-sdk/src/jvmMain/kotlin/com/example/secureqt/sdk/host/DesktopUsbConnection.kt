@@ -1,8 +1,9 @@
-package com.example.securequicktransferapp.data.usb
+package com.example.secureqt.sdk.host
 
 import com.example.secureqt.sdk.SecureQtSdk
 import com.example.secureqt.sdk.createDesktopTransport
 import com.example.secureqt.sdk.findDesktopBulkEndpoints
+import com.example.secureqt.sdk.logging.ILogger
 import com.example.secureqt.sdk.switchDeviceToAoa
 import com.example.secureqt.sdk.transport.IUsbTransport
 import com.example.secureqt.sdk.transport.desktop.DesktopAoaTransport
@@ -13,8 +14,17 @@ import org.usb4java.LibUsb
 /**
  * Manages native USB lifecycle, driver binding retries, and AOA switching for Desktop.
  * Directly implements [IUsbTransport] by delegating to the SDK's [DesktopAoaTransport].
+ *
+ * @param killAdbOnWindows When true, `adb` is stopped on Windows if it may be holding the device.
+ *   This affects the whole machine, so disable it if your users rely on a running adb server.
+ * @param logger Receives diagnostic messages. Defaults to [StdoutLogger].
  */
-class UsbConnection : IUsbTransport {
+class DesktopUsbConnection(
+    private val killAdbOnWindows: Boolean = true,
+    private val logger: ILogger = StdoutLogger
+) : IUsbTransport {
+
+    private val TAG = "DesktopUsbConnection"
 
     private var handle: DeviceHandle? = null
 
@@ -30,7 +40,7 @@ class UsbConnection : IUsbTransport {
         // Delegate AOA protocol negotiation (51/52/53 control transfers) directly to SDK facade
         val success = SecureQtSdk.switchDeviceToAoa(device)
         if (!success) {
-            println("[UsbConnection] switchToAoa: switchDeviceToAoa returned false")
+            logger.i(TAG, "switchToAoa: switchDeviceToAoa returned false")
         }
         return success
     }
@@ -49,12 +59,12 @@ class UsbConnection : IUsbTransport {
         //   -12 (ERROR_NOT_SUPPORTED)  — WinUSB driver just installed but PnP binding not yet complete
         if (result == LibUsb.ERROR_ACCESS || result == LibUsb.ERROR_NOT_SUPPORTED) {
             if (result == LibUsb.ERROR_ACCESS) killAdbServerIfRunning()
-            println("[UsbConnection] open: code $result (${LibUsb.strError(result)}) — waiting for driver binding...")
+            logger.i(TAG, "open: code $result (${LibUsb.strError(result)}) — waiting for driver binding...")
             for (retry in 1..16) {
                 Thread.sleep(500)
                 result = LibUsb.open(device, handle)
                 if (result == LibUsb.SUCCESS) {
-                    println("[UsbConnection] open: driver bound on retry $retry")
+                    logger.i(TAG, "open: driver bound on retry $retry")
                     break
                 }
                 if (result != LibUsb.ERROR_ACCESS && result != LibUsb.ERROR_NOT_SUPPORTED) break
@@ -62,7 +72,7 @@ class UsbConnection : IUsbTransport {
         }
 
         if (result != LibUsb.SUCCESS) {
-            println("[UsbConnection] Error: Failed to open device handle. Code: $result (${LibUsb.strError(result)})")
+            logger.e(TAG, "Error: Failed to open device handle. Code: $result (${LibUsb.strError(result)})")
             handle = null
             return false
         }
@@ -70,7 +80,7 @@ class UsbConnection : IUsbTransport {
         // Auto-detect endpoints using SDK connector facade
         val endpointInfo = SecureQtSdk.findDesktopBulkEndpoints(device)
         if (endpointInfo == null) {
-            println("[UsbConnection] Error: Could not find AOA bulk endpoints.")
+            logger.e(TAG, "Error: Could not find AOA bulk endpoints.")
             LibUsb.close(handle)
             handle = null
             return false
@@ -81,21 +91,21 @@ class UsbConnection : IUsbTransport {
         endpointIn = endpointInfo.inAddr
         endpointOut = endpointInfo.outAddr
 
-        println("[UsbConnection] Using Interface $ifaceNum, IN=${String.format("0x%02X", endpointIn)}, OUT=${String.format("0x%02X", endpointOut)}")
+        logger.i(TAG, "Using Interface $ifaceNum, IN=${String.format("0x%02X", endpointIn)}, OUT=${String.format("0x%02X", endpointOut)}")
 
         // Enable auto-detach if supported, but explicitly detach kernel driver as fallback
         LibUsb.setAutoDetachKernelDriver(handle, true)
         if (LibUsb.kernelDriverActive(handle, ifaceNum) == 1) {
             val detachRes = LibUsb.detachKernelDriver(handle, ifaceNum)
             if (detachRes != LibUsb.SUCCESS) {
-                println("[UsbConnection] Warning: Failed to detach kernel driver on iface $ifaceNum. Code: $detachRes")
+                logger.w(TAG, "Warning: Failed to detach kernel driver on iface $ifaceNum. Code: $detachRes")
             }
         }
 
         val claimResult = LibUsb.claimInterface(handle, ifaceNum)
         if (claimResult != LibUsb.SUCCESS) {
             if (claimResult != LibUsb.ERROR_BUSY) {
-                println("[UsbConnection] Warning: Failed to claim interface $ifaceNum. Code: $claimResult (${LibUsb.strError(claimResult)})")
+                logger.w(TAG, "Warning: Failed to claim interface $ifaceNum. Code: $claimResult (${LibUsb.strError(claimResult)})")
             }
             LibUsb.close(handle)
             handle = null
@@ -139,6 +149,7 @@ class UsbConnection : IUsbTransport {
     }
 
     fun killAdbServerIfRunning() {
+        if (!killAdbOnWindows) return
         try {
             val os = System.getProperty("os.name", "").lowercase()
             if (os.contains("win")) {

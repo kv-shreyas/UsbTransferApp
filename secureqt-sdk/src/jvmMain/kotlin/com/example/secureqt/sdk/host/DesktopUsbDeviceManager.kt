@@ -1,7 +1,6 @@
-package com.example.securequicktransferapp.data.usb
+package com.example.secureqt.sdk.host
 
-import com.example.securequicktransferapp.domain.model.DiscoveredUsbDevice
-import com.example.usbdriverinstaller.api.IUsbDriverInstallManager
+import com.example.secureqt.sdk.logging.ILogger
 import org.usb4java.Context
 import org.usb4java.Device
 import org.usb4java.DeviceDescriptor
@@ -11,18 +10,22 @@ import org.usb4java.LibUsb
 import java.nio.ByteBuffer
 
 /**
- * Enumerates physical USB devices via libusb and exposes them as [DiscoveredUsbDevice] domain objects.
+ * Enumerates physical USB devices via libusb and exposes them as [DesktopUsbDevice] objects.
  *
  * On **Windows**, libusb requires a WinUSB-compatible kernel driver to claim USB interfaces.
  * If a known Android VID is detected but libusb cannot open the device (ERROR_ACCESS / ERROR_NOT_SUPPORTED),
- * [driverInstallManager] is notified so the UI can prompt the user to install the correct driver via Zadig.
+ * [driverSupport] is notified so the host application can install the correct driver.
  *
- * @param driverInstallManager Optional [DriverInstallManager] — when provided, driver-less device
- *   detection is active. Pass `null` to disable automatic driver prompts (e.g. in tests).
+ * @param driverSupport Optional [UsbDriverSupport] — when provided, driver-less device
+ *   detection is active. Pass `null` to disable driver handling.
+ * @param logger Receives diagnostic messages. Defaults to [StdoutLogger].
  */
-open class UsbDeviceManager(
-    val driverInstallManager: IUsbDriverInstallManager? = null
+open class DesktopUsbDeviceManager(
+    private val driverSupport: UsbDriverSupport? = null,
+    private val logger: ILogger = StdoutLogger
 ) {
+
+    private val TAG = "DesktopUsbDeviceManager"
 
     private val context = Context()
     private val usbLock = Any()
@@ -35,10 +38,10 @@ open class UsbDeviceManager(
             if (result == LibUsb.SUCCESS) {
                 isInitialized = true
             } else {
-                println("[UsbDeviceManager] LibUsb.init returned error code: $result")
+                logger.i(TAG, "LibUsb.init returned error code: $result")
             }
         } catch (t: Throwable) {
-            println("[UsbDeviceManager] Warning: Failed to initialize LibUsb native library: ${t.message}")
+            logger.w(TAG, "Warning: Failed to initialize LibUsb native library: ${t.message}")
             isInitialized = false
         }
     }
@@ -101,22 +104,22 @@ open class UsbDeviceManager(
 
     /**
      * Enumerates all physical USB devices connected to the host and returns all matching Android devices.
-     * Each returned [DiscoveredUsbDevice] has its native Device reference count incremented (+1).
+     * Each returned [DesktopUsbDevice] has its native Device reference count incremented (+1).
      * Callers must invoke [releaseDevice] on device handles when finished.
      *
      * On Windows, this method also performs a lightweight driver-accessibility probe for non-AOA devices.
-     * If the probe detects a missing WinUSB driver, [driverInstallManager] is notified.
+     * If the probe detects a missing WinUSB driver, [driverSupport] is notified.
      */
-    open fun discoverDevices(): List<DiscoveredUsbDevice> = synchronized(usbLock) {
+    open fun discoverDevices(): List<DesktopUsbDevice> = synchronized(usbLock) {
         if (!isInitialized) return emptyList()
         val list = DeviceList()
         val result = LibUsb.getDeviceList(context, list)
         if (result < 0) {
-            println("[UsbDeviceManager] LibUsb.getDeviceList error: $result (${LibUsb.strError(result)})")
+            logger.i(TAG, "LibUsb.getDeviceList error: $result (${LibUsb.strError(result)})")
             return emptyList()
         }
 
-        val discovered = mutableListOf<DiscoveredUsbDevice>()
+        val discovered = mutableListOf<DesktopUsbDevice>()
         try {
             for (device in list) {
                 val desc = DeviceDescriptor()
@@ -142,14 +145,14 @@ open class UsbDeviceManager(
                         // We do a lightweight open test: if it fails with ACCESS / NOT_SUPPORTED, the
                         // device likely has no WinUSB driver installed and we signal the install manager.
                         // Check if a WinUSB-compatible driver is present on Windows (strictly for AOA mode)
-                        if (driverInstallManager != null && isAoa) {
+                        if (driverSupport != null && isAoa) {
                             probeDeviceAccessibility(device, vid, pid, deviceName)
                         }
 
                         // Retain reference (+1) for returned device handle
                         LibUsb.refDevice(device)
                         discovered.add(
-                            DiscoveredUsbDevice(
+                            DesktopUsbDevice(
                                 id = id,
                                 busNumber = busNumber,
                                 portNumber = portNumber,
@@ -171,8 +174,8 @@ open class UsbDeviceManager(
 
     /**
      * Attempts a non-destructive open of [device] to detect whether a WinUSB-compatible driver
-     * is installed on Windows. If the open fails with an access/IO error, [driverInstallManager]
-     * is notified via [DriverInstallManager.onDeviceNeedsDriver].
+     * is installed on Windows. If the open fails with an access/IO error, [driverSupport]
+     * is notified via [UsbDriverSupport.onDeviceNeedsDriver].
      *
      * The temporary handle is closed immediately after the test — this is a probe only.
      */
@@ -185,50 +188,50 @@ open class UsbDeviceManager(
         if (openResult == LibUsb.ERROR_ACCESS) {
             // ERROR_ACCESS (-3) on Windows means the device is currently opened/claimed by an active connection.
             // A driver is already present and active; do not treat this as a missing driver!
-            println("[UsbDeviceManager] Device $key is currently in-use / claimed (code=-3). Driver is present.")
+            logger.i(TAG, "Device $key is currently in-use / claimed (code=-3). Driver is present.")
             return
         }
         when (openResult) {
             LibUsb.SUCCESS -> {
                 // Device is accessible — WinUSB (or compatible) driver is present. No action needed.
                 LibUsb.close(tempHandle)
-                println("[UsbDeviceManager] Driver probe OK for VID:${String.format("%04X", vid)} PID:${String.format("%04X", pid)}")
+                logger.i(TAG, "Driver probe OK for VID:${String.format("%04X", vid)} PID:${String.format("%04X", pid)}")
             }
             LibUsb.ERROR_NOT_SUPPORTED -> {
                 // On Windows: ERROR_NOT_SUPPORTED typically means no WinUSB driver is installed.
                 // ERROR_ACCESS means the driver exists but we don't have permissions (less common on Desktop).
-                println("[UsbDeviceManager] Driver probe FAILED (code=$openResult) for VID:${String.format("%04X", vid)} PID:${String.format("%04X", pid)} — notifying DriverInstallManager")
-                driverInstallManager?.onDeviceNeedsDriver(vid, pid, deviceName)
+                logger.w(TAG, "Driver probe FAILED (code=$openResult) for VID:${String.format("%04X", vid)} PID:${String.format("%04X", pid)} — notifying driver support")
+                driverSupport?.onDeviceNeedsDriver(vid, pid, deviceName)
             }
             else -> {
                 // Transient state (e.g. device temporarily busy) — remove key so it can be re-evaluated later
                 probedDevices.remove(key)
-                println("[UsbDeviceManager] Driver probe returned $openResult for VID:${String.format("%04X", vid)} — ignoring")
+                logger.i(TAG, "Driver probe returned $openResult for VID:${String.format("%04X", vid)} — ignoring")
             }
         }
     }
 
     /**
      * Reports that a device encountered a driver/permission issue during connection attempts,
-     * allowing the DriverInstallManager to prompt the user to install the WinUSB driver.
+     * allowing [driverSupport] to prompt the user to install the WinUSB driver.
      */
     open fun reportDriverIssue(vendorId: Int, productId: Int, deviceName: String = "Android Device") {
-        println("[UsbDeviceManager] reportDriverIssue: notifying DriverInstallManager for VID:${String.format("%04X", vendorId)} PID:${String.format("%04X", productId)}")
-        driverInstallManager?.onDeviceNeedsDriver(vendorId, productId, deviceName)
+        logger.i(TAG, "reportDriverIssue: notifying driver support for VID:${String.format("%04X", vendorId)} PID:${String.format("%04X", productId)}")
+        driverSupport?.onDeviceNeedsDriver(vendorId, productId, deviceName)
     }
 
     /**
      * Returns true if WinUSB driver installation is actively underway.
      */
     open fun isDriverInstalling(): Boolean {
-        return driverInstallManager?.driverInstallState?.value is com.example.usbdriverinstaller.api.DriverInstallState.Installing
+        return driverSupport?.isInstalling() ?: false
     }
 
     /**
      * Suspends until the active driver installation completes or times out.
      */
     open suspend fun waitForDriverInstall(timeoutMs: Long = 45000): Boolean {
-        return driverInstallManager?.waitForInstall(timeoutMs) ?: true
+        return driverSupport?.waitForInstall(timeoutMs) ?: true
     }
 
     /**
@@ -264,6 +267,22 @@ open class UsbDeviceManager(
             return null
         } finally {
             LibUsb.freeDeviceList(list, true)
+        }
+    }
+
+    /**
+     * Finds a device in AOA mode for a connection attempt. Returns a retained Device pointer (+1 ref count) or null.
+     *
+     * With a [targetDeviceId], only that physical port matches. Other AOA devices are never returned,
+     * because they may belong to another session.
+     *
+     * @param targetDeviceId Physical identifier to look for, or null to accept the first AOA device found.
+     */
+    open fun findAccessory(targetDeviceId: String?): Device? {
+        return if (targetDeviceId != null) {
+            findDeviceById(targetDeviceId, requireAccessory = true)
+        } else {
+            findAndroidDevice(requireAccessory = true)
         }
     }
 

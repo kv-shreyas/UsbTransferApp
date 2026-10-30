@@ -94,7 +94,7 @@ class UsbSessionNativeMemoryLeakTest {
         val sessionManager = UsbSessionManager(deviceManager)
 
         // Access internal activeSessions map via reflection to control polling test state cleanly
-        val activeSessionsField = UsbSessionManager::class.java.getDeclaredField("activeSessions")
+        val activeSessionsField = com.example.secureqt.sdk.host.DesktopUsbSessionManager::class.java.getDeclaredField("activeSessions")
         activeSessionsField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val activeSessions = activeSessionsField.get(sessionManager) as ConcurrentHashMap<String, UsbSession>
@@ -177,7 +177,7 @@ class UsbSessionNativeMemoryLeakTest {
         val deviceManager = UsbDeviceManager()
         val sessionManager = UsbSessionManager(deviceManager)
 
-        val activeSessionsField = UsbSessionManager::class.java.getDeclaredField("activeSessions")
+        val activeSessionsField = com.example.secureqt.sdk.host.DesktopUsbSessionManager::class.java.getDeclaredField("activeSessions")
         activeSessionsField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val activeSessions = activeSessionsField.get(sessionManager) as ConcurrentHashMap<String, UsbSession>
@@ -214,7 +214,7 @@ class UsbSessionNativeMemoryLeakTest {
         val deviceManager = UsbDeviceManager()
         val sessionManager = UsbSessionManager(deviceManager)
 
-        val activeSessionsField = UsbSessionManager::class.java.getDeclaredField("activeSessions")
+        val activeSessionsField = com.example.secureqt.sdk.host.DesktopUsbSessionManager::class.java.getDeclaredField("activeSessions")
         activeSessionsField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val activeSessions = activeSessionsField.get(sessionManager) as ConcurrentHashMap<String, UsbSession>

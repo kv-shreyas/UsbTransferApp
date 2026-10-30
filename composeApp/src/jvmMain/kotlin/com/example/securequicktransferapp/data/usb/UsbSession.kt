@@ -1,5 +1,6 @@
 package com.example.securequicktransferapp.data.usb
 
+import com.example.secureqt.sdk.host.ManagedUsbSession
 import com.example.securequicktransferapp.data.repo.DesktopHostCommandSender
 import com.example.securequicktransferapp.domain.model.DeviceSessionStatus
 import com.example.securequicktransferapp.domain.model.DiscoveredUsbDevice
@@ -22,12 +23,21 @@ import kotlinx.coroutines.sync.Mutex
  * @property repository Dedicated UsbRepository instance managing SDK communication for this device.
  */
 class UsbSession(
-    val deviceId: String,
+    override val deviceId: String,
     var discoveredDevice: DiscoveredUsbDevice,
     val deviceManager: UsbDeviceManager,
     val connection: UsbConnection = UsbConnection(),
     val repository: UsbRepository = DesktopHostCommandSender(deviceManager, connection, deviceId)
-) {
+) : ManagedUsbSession<UsbSessionState> {
+    override val isConnecting: Boolean
+        get() = _sessionState.value.status is DeviceSessionStatus.Connecting
+
+    override val isReady: Boolean
+        get() = _sessionState.value.status is DeviceSessionStatus.Ready
+
+    override val isTransportOpen: Boolean
+        get() = connection.isOpen()
+
     val sessionMutex = Mutex()
 
     /** Per-device transfer queue — processes items sequentially within this device */
@@ -40,7 +50,7 @@ class UsbSession(
             isAoaMode = discoveredDevice.isAoa
         )
     )
-    val sessionState: StateFlow<UsbSessionState> = _sessionState.asStateFlow()
+    override val sessionState: StateFlow<UsbSessionState> = _sessionState.asStateFlow()
 
     /**
      * Updates the underlying [DiscoveredUsbDevice] handle and state metadata upon re-enumeration (e.g. MTP -> AOA).
@@ -56,7 +66,7 @@ class UsbSession(
     /**
      * Initiates connection and SDK handshake for this physical device session.
      */
-    suspend fun connect(): Boolean {
+    override suspend fun connect(): Boolean {
         _sessionState.value = _sessionState.value.copy(status = DeviceSessionStatus.Connecting)
         val success = try {
             repository.connect()
@@ -74,7 +84,7 @@ class UsbSession(
     /**
      * Disconnects the session, closes native endpoints, releases native device handle, and updates state.
      */
-    fun disconnect() {
+    override fun disconnect() {
         _sessionState.value = _sessionState.value.copy(status = DeviceSessionStatus.Disconnected)
         try {
             repository.disconnect()

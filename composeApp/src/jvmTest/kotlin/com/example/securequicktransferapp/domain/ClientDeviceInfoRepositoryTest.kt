@@ -109,7 +109,7 @@ class ClientDeviceInfoRepositoryTest {
         stateFlow.value = stateFlow.value.copy(status = DeviceSessionStatus.Ready)
 
         // Inject session into sessionManager's activeSessions map via reflection
-        val activeSessionsField = sessionManager::class.java.getDeclaredField("activeSessions")
+        val activeSessionsField = com.example.secureqt.sdk.host.DesktopUsbSessionManager::class.java.getDeclaredField("activeSessions")
         activeSessionsField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val activeSessions = activeSessionsField.get(sessionManager) as ConcurrentHashMap<String, UsbSession>

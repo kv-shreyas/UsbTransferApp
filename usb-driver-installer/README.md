@@ -88,7 +88,7 @@ dependencies {
 ```kotlin
 dependencies {
     implementation(files("libs/usb-driver-installer-1.0.0.jar"))
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")   // or newer
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2")   // or newer
 }
 ```
 

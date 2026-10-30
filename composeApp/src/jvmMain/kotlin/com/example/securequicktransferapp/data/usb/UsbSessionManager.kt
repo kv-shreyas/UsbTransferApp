@@ -1,181 +1,30 @@
 package com.example.securequicktransferapp.data.usb
 
+import com.example.secureqt.sdk.host.DesktopUsbSessionManager
 import com.example.securequicktransferapp.domain.model.UsbSessionState
-import kotlinx.coroutines.*
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import java.util.concurrent.ConcurrentHashMap
 
 /**
- * Singleton USB Session Orchestrator managing dynamic device polling, active session lifecycle,
- * per-device Mutex isolation, and native LibUsb device handle reference count cleanup.
- *
- * @param deviceManager Native hardware enumerator instance used for device discovery and handle releases.
+ * App-level session manager: the SDK's [DesktopUsbSessionManager] owns polling and native
+ * handle lifecycle, while each [UsbSession] adds this app's transfer queue and UI state.
  */
 class UsbSessionManager(
-    private val deviceManager: UsbDeviceManager
+    deviceManager: UsbDeviceManager
+) : DesktopUsbSessionManager<UsbSession, UsbSessionState>(
+    deviceManager = deviceManager,
+    sessionFactory = { device ->
+        UsbSession(deviceId = device.id, discoveredDevice = device, deviceManager = deviceManager)
+    }
 ) {
-    private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private val activeSessions = ConcurrentHashMap<String, UsbSession>()
-    private val sessionJobs = ConcurrentHashMap<String, Job>()
-
-    private val _sessionsState = MutableStateFlow<Map<String, UsbSessionState>>(emptyMap())
-    val sessionsState: StateFlow<Map<String, UsbSessionState>> = _sessionsState.asStateFlow()
-
-    @Volatile
-    private var isPolling = false
-    private var pollingJob: Job? = null
-
-    /**
-     * Starts the periodic device polling loop (runs every 1500ms) on [Dispatchers.IO].
-     */
-    fun startPolling() {
-        if (isPolling) return
-        isPolling = true
-        pollingJob = scope.launch {
-            while (isActive && isPolling) {
-                try {
-                    pollDevices()
-                } catch (e: Exception) {
-                    println("[UsbSessionManager] Polling loop error: ${e.message}")
-                }
-                delay(1500)
-            }
-        }
-    }
-
-    /**
-     * Stops the device polling loop and cleanly disconnects and releases all active USB sessions.
-     */
-    fun stopPolling() {
-        isPolling = false
-        pollingJob?.cancel()
-        pollingJob = null
-        for ((id, job) in sessionJobs) {
-            job.cancel()
-        }
-        sessionJobs.clear()
-        for (session in activeSessions.values) {
-            try {
-                session.disconnect()
-            } catch (e: Exception) {
-                println("[UsbSessionManager] Disconnect error during stopPolling for ${session.deviceId}: ${e.message}")
-            }
-        }
-        activeSessions.clear()
-        _sessionsState.value = emptyMap()
-    }
-
-    /**
-     * Executes a single polling iteration:
-     * 1. Calls [deviceManager.discoverDevices] (+1 ref count on returned devices).
-     * 2. Detects unplugged devices and disconnects their [UsbSession] instances.
-     * 3. Detects newly plugged devices and instantiates new [UsbSession] instances taking handle ownership.
-     * 4. For already-tracked devices, invokes [deviceManager.releaseDevice] to prevent native handle leaks.
-     * 5. Updates the overall [sessionsState] Flow.
-     */
-    fun pollDevices() {
-        val discoveredDevices = deviceManager.discoverDevices()
-        val discoveredMap = discoveredDevices.associateBy { it.id }
-
-        // 1. Identify and remove disconnected sessions
-        val removedIds = activeSessions.keys.filter { id -> 
-            val session = activeSessions[id]
-            val status = session?.sessionState?.value?.status
-            val isConnecting = status is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Connecting
-            
-            // If the handle died internally (e.g. from an I/O error dropping the connection), we MUST drop the session so it can be cleanly re-detected and re-initialized.
-            // We only check this if the UI thinks the device is 'Ready', otherwise we might incorrectly drop freshly detected non-AOA devices before the user clicks Connect.
-            val isDisconnectedInternally = status is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Ready && session != null && !session.connection.isOpen()
-            
-            (id !in discoveredMap && !isConnecting) || isDisconnectedInternally
-        }
-        for (id in removedIds) {
-            sessionJobs.remove(id)?.cancel()
-            val session = activeSessions.remove(id)
-            if (session != null) {
-                try {
-                    session.disconnect()
-                } catch (e: Exception) {
-                    println("[UsbSessionManager] Error disconnecting removed session $id: ${e.message}")
-                }
-                println("[UsbSessionManager] Device removed: $id")
-            }
-        }
-
-        // 2. Identify newly connected devices & manage native ref counts
-        for ((id, devInfo) in discoveredMap) {
-            if (!activeSessions.containsKey(id)) {
-                println("[UsbSessionManager] New device detected: $id (${devInfo.deviceName})")
-                val session = UsbSession(
-                    deviceId = id,
-                    discoveredDevice = devInfo,
-                    deviceManager = deviceManager
-                )
-                activeSessions[id] = session
-
-                // Observe sessionState changes and propagate immediately to _sessionsState
-                val job = scope.launch {
-                    session.sessionState.collect {
-                        updateSessionsStateMap()
-                    }
-                }
-                sessionJobs[id] = job
-
-                // The device is now discovered and sits in 'Idle/DeviceDetected' state.
-                // We do NOT automatically connect here IF it's a fresh MTP device.
-                // The user must manually click Connect in the UI.
-                // BUT, if it's already in AOA mode, it means we just successfully switched it,
-                // or it was already in AOA mode, so we should automatically connect to finalize the handshake.
-                if (devInfo.isAoa) {
-                    scope.launch {
-                        if (deviceManager.isDriverInstalling()) {
-                            println("[UsbSessionManager] Device $id is AOA but driver install is in progress. Waiting...")
-                            deviceManager.waitForDriverInstall()
-                            delay(1200)
-                        }
-                        val status = session.sessionState.value.status
-                        if (status !is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Connecting &&
-                            status !is com.example.securequicktransferapp.domain.model.DeviceSessionStatus.Ready) {
-                            session.connect()
-                        }
-                    }
-                }
-            } else {
-                // Device already tracked in activeSessions.
-                // discoverDevices() returned a +1 refCount handle that won't be stored.
-                // MUST release reference to prevent native libusb handle leak!
-                deviceManager.releaseDevice(devInfo.device)
-            }
-        }
-
-        // 3. Update published StateFlow
-        updateSessionsStateMap()
-    }
-
     /**
      * Re-publishes current states of all active sessions into [sessionsState].
      */
-    fun updateSessionsStateMap() {
-        _sessionsState.value = activeSessions.mapValues { it.value.sessionState.value }
-    }
-
-    /**
-     * Retrieves an active [UsbSession] by physical device hardware identifier (e.g. "bus_1_port_3").
-     */
-    fun getSession(deviceId: String): UsbSession? = activeSessions[deviceId]
-
-    /**
-     * Returns an unmodifiable snapshot of all active sessions.
-     */
-    fun getActiveSessions(): Map<String, UsbSession> = activeSessions
+    fun updateSessionsStateMap() = publishSessionsState()
 
     /**
      * Updates state for a given session and refreshes [sessionsState].
      */
     fun updateSessionState(deviceId: String, transform: (UsbSessionState) -> UsbSessionState) {
-        val session = activeSessions[deviceId] ?: return
+        val session = getSession(deviceId) ?: return
         session.updateState(transform)
         updateSessionsStateMap()
     }

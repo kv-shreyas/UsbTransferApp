@@ -1,6 +1,7 @@
 package com.example.securequicktransferapp.di
 
 import com.example.securequicktransferapp.data.repo.ClientDeviceInfoRepositoryImpl
+import com.example.securequicktransferapp.data.usb.InstallerDriverSupport
 import com.example.securequicktransferapp.data.usb.UsbConnection
 import com.example.securequicktransferapp.data.usb.UsbDeviceManager
 import com.example.securequicktransferapp.data.usb.UsbSessionManager
@@ -16,7 +17,7 @@ val appModule = module {
     // Zadig-backed driver install state machine — singleton so UI can observe it from anywhere
     single<IUsbDriverInstallManager> { UsbDriverInstallerFactory.createManager() }
     // UsbDeviceManager receives the DriverInstallManager to trigger automatic WinUSB probing on Windows
-    single { UsbDeviceManager(driverInstallManager = get()) }
+    single { UsbDeviceManager(driverSupport = InstallerDriverSupport(get())) }
     single { UsbSessionManager(get()) }
     factory { UsbConnection() }
     single <IClientDeviceInfoRepository> { ClientDeviceInfoRepositoryImpl(sessionManager = get()) }

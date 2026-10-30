@@ -165,7 +165,7 @@ class UsbSessionConcurrencyStressTest {
         val numSessions = 5
 
         // Pre-populate sessions into sessionManager via reflection/poll or state mutation
-        val activeSessionsField = UsbSessionManager::class.java.getDeclaredField("activeSessions")
+        val activeSessionsField = com.example.secureqt.sdk.host.DesktopUsbSessionManager::class.java.getDeclaredField("activeSessions")
         activeSessionsField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val activeMap = activeSessionsField.get(sessionManager) as ConcurrentHashMap<String, UsbSession>
@@ -214,7 +214,7 @@ class UsbSessionConcurrencyStressTest {
         val deviceManager = UsbDeviceManager()
         val sessionManager = UsbSessionManager(deviceManager)
 
-        val activeSessionsField = UsbSessionManager::class.java.getDeclaredField("activeSessions")
+        val activeSessionsField = com.example.secureqt.sdk.host.DesktopUsbSessionManager::class.java.getDeclaredField("activeSessions")
         activeSessionsField.isAccessible = true
         @Suppress("UNCHECKED_CAST")
         val activeMap = activeSessionsField.get(sessionManager) as ConcurrentHashMap<String, UsbSession>
