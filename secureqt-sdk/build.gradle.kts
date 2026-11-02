@@ -11,7 +11,8 @@ kotlin {
 
     jvm {
         compilerOptions {
-            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11)
+            jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8)
+            freeCompilerArgs.add("-Xjdk-release=8")
         }
     }
 
@@ -48,7 +49,7 @@ android {
     }
 }
 
-// Self-contained JAR for release: SDK classes + usb4java (with natives), commons-lang3, coroutines, Kotlin stdlib.
+// Self-contained JAR for release: SDK classes + coroutines, Kotlin stdlib. USB host code lives in :secureqt-sdk-desktop.
 // jvmJar stays thin so Gradle consumers such as :composeApp still get normal dependency version resolution.
 tasks.register<Jar>("jvmStandaloneJar") {
     group = "build"
